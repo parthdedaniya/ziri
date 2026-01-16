@@ -6,58 +6,47 @@ import { useConfigStore } from '~/stores/config'
 import { useKeys } from '~/composables/useKeys'
 import { useRules } from '~/composables/useRules'
 
+definePageMeta({
+  layout: 'default'
+})
+
 const configStore = useConfigStore()
 const keysStore = useKeysStore()
 const rulesStore = useRulesStore()
 const { listKeys } = useKeys()
 const { listRules } = useRules()
 
+// Loading state for dashboard
+const isLoading = computed(() => keysStore.loading || rulesStore.loading)
+
 // Auto-load data when page mounts (if config is set)
 onMounted(async () => {
-  console.log('[INDEX PAGE] onMounted called')
-  console.log('[INDEX PAGE] Config state:', {
-    projectId: configStore.projectId,
-    isConfigured: configStore.isConfigured
-  })
-  
-  // Wait a tick to ensure config is loaded
   await nextTick()
-  console.log('[INDEX PAGE] After nextTick, isConfigured:', configStore.isConfigured)
   
   if (configStore.isConfigured) {
-    console.log('[INDEX PAGE] ✅ Config is set, loading data...')
     try {
-      // Load keys and rules in parallel
       await Promise.allSettled([
-        listKeys().catch((e) => {
-          console.error('[INDEX PAGE] Error loading keys:', e)
-        }),
-        listRules().catch((e) => {
-          console.error('[INDEX PAGE] Error loading rules:', e)
-        })
+        listKeys().catch(() => {}),
+        listRules().catch(() => {})
       ])
-      console.log('[INDEX PAGE] ✅ Data loaded')
     } catch (e) {
-      console.error('[INDEX PAGE] Error loading data:', e)
+      // Error handled by composables
     }
-  } else {
-    console.log('[INDEX PAGE] ❌ Config not set, skipping data load')
   }
 })
 
-// Demo stats
+// Dashboard stats
 const stats = computed(() => {
-  // Safely access store properties with fallbacks for SSR/prerendering
   const keys = keysStore.keys || []
   const rules = rulesStore.rules || []
   
   return {
-    totalKeys: keys.length || 12,
-    activeKeys: keys.filter(k => k.status === 'active').length || 10,
-    revokedKeys: keys.filter(k => k.status === 'revoked').length || 2,
-    totalRules: rules.length || 8,
-    activeRules: rules.length || 6, // All rules are active now (no #active check)
-    dailySpend: keysStore.totalDailySpend || 12.34,
+    totalKeys: keys.length || 0,
+    activeKeys: keys.filter(k => k.status === 'active' || (typeof k.status === 'number' && k.status === 1)).length || 0,
+    revokedKeys: keys.filter(k => k.status === 'revoked' || (typeof k.status === 'number' && k.status === 2)).length || 0,
+    totalRules: rules.length || 0,
+    activeRules: rules.length || 0,
+    dailySpend: keysStore.totalDailySpend || 0,
     dailyLimit: 500,
     successRate: 98.5
   }
@@ -87,7 +76,17 @@ const activityColumns = [
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       <!-- Total Keys -->
       <div class="card-interactive group">
-        <div class="flex items-center justify-between">
+        <div v-if="isLoading" class="flex items-center justify-between">
+          <div class="flex-1 space-y-2">
+            <UiLoadingSkeleton :lines="1" height="h-3" width="40%" />
+            <UiLoadingSkeleton :lines="1" height="h-8" width="60%" />
+            <UiLoadingSkeleton :lines="1" height="h-3" width="70%" />
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-indigo-100 dark:bg-indigo-900/30">
+            <UiLoadingSkeleton :lines="1" height="h-full" width="100%" rounded="rounded-xl" />
+          </div>
+        </div>
+        <div v-else class="flex items-center justify-between">
           <div>
             <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider">Total Keys</p>
             <p class="text-2xl font-bold text-[rgb(var(--text))] mt-1">{{ stats.totalKeys }}</p>
@@ -106,7 +105,17 @@ const activityColumns = [
 
       <!-- Active Rules -->
       <div class="card-interactive group">
-        <div class="flex items-center justify-between">
+        <div v-if="isLoading" class="flex items-center justify-between">
+          <div class="flex-1 space-y-2">
+            <UiLoadingSkeleton :lines="1" height="h-3" width="45%" />
+            <UiLoadingSkeleton :lines="1" height="h-8" width="55%" />
+            <UiLoadingSkeleton :lines="1" height="h-3" width="65%" />
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-green-100 dark:bg-green-900/30">
+            <UiLoadingSkeleton :lines="1" height="h-full" width="100%" rounded="rounded-xl" />
+          </div>
+        </div>
+        <div v-else class="flex items-center justify-between">
           <div>
             <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider">Active Rules</p>
             <p class="text-2xl font-bold text-[rgb(var(--text))] mt-1">{{ stats.activeRules }}</p>
@@ -124,7 +133,17 @@ const activityColumns = [
 
       <!-- Today's Spend -->
       <div class="card-interactive group">
-        <div class="flex items-center justify-between">
+        <div v-if="isLoading" class="flex items-center justify-between">
+          <div class="flex-1 space-y-2">
+            <UiLoadingSkeleton :lines="1" height="h-3" width="50%" />
+            <UiLoadingSkeleton :lines="1" height="h-8" width="70%" />
+            <UiLoadingSkeleton :lines="1" height="h-3" width="60%" />
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/30">
+            <UiLoadingSkeleton :lines="1" height="h-full" width="100%" rounded="rounded-xl" />
+          </div>
+        </div>
+        <div v-else class="flex items-center justify-between">
           <div>
             <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider">Today's Spend</p>
             <p class="text-2xl font-bold text-[rgb(var(--text))] mt-1">{{ formatCurrency(stats.dailySpend) }}</p>
@@ -142,7 +161,17 @@ const activityColumns = [
 
       <!-- Success Rate -->
       <div class="card-interactive group">
-        <div class="flex items-center justify-between">
+        <div v-if="isLoading" class="flex items-center justify-between">
+          <div class="flex-1 space-y-2">
+            <UiLoadingSkeleton :lines="1" height="h-3" width="55%" />
+            <UiLoadingSkeleton :lines="1" height="h-8" width="50%" />
+            <UiLoadingSkeleton :lines="1" height="h-3" width="75%" />
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-purple-100 dark:bg-purple-900/30">
+            <UiLoadingSkeleton :lines="1" height="h-full" width="100%" rounded="rounded-xl" />
+          </div>
+        </div>
+        <div v-else class="flex items-center justify-between">
           <div>
             <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider">Success Rate</p>
             <p class="text-2xl font-bold text-[rgb(var(--text))] mt-1">{{ stats.successRate }}%</p>

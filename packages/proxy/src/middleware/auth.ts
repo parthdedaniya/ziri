@@ -28,8 +28,8 @@ export function requireAdmin(
     const token = authHeader.substring(7)
     try {
       const payload = verifyAccessToken(token)
-      // Check if it's an admin token
-      if (payload.userId === 'admin' && payload.role === 'admin') {
+      // Check if user has admin role (role-based, not userId-based)
+      if (payload.role === 'admin') {
         req.admin = {
           userId: payload.userId,
           email: payload.email || 'admin@zs-ai.local',

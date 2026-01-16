@@ -8,9 +8,12 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test:cedar": "tsx test-cedar-wasm.ts"
   },
   "dependencies": {
+    "@cedar-policy/cedar-wasm": "^4.8.2",
+    "@sendgrid/mail": "^8.1.6",
     "@zs-ai/auth-plugin": "file:../auth-plugin",
     "@zs-ai/config": "file:../config",
     "bcrypt": "^5.1.1",
@@ -18,7 +21,8 @@
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.18.2",
-    "jsonwebtoken": "^9.0.3"
+    "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^7.0.12"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
@@ -26,6 +30,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/nodemailer": "^7.0.5",
     "tsx": "^4.7.0",
     "typescript": "^5.8.3"
   },

@@ -1,28 +1,39 @@
-import { useApi } from './useApi'
-import { useConfigStore } from '~/stores/config'
 import { useRulesStore } from '~/stores/rules'
 import { useToast } from './useToast'
+import { useAdminAuth } from './useAdminAuth'
 import type { Policy, CreatePolicyInput } from '~/types/cedar'
 import type { PoliciesResponse } from '~/types/api'
 import { extractPolicyEffect } from '~/utils/cedar'
 
 export function useRules() {
-    const { apiCall, loading, error } = useApi()
-    const configStore = useConfigStore()
     const rulesStore = useRulesStore()
     const toast = useToast()
+    const { getAuthHeader } = useAdminAuth()
 
     const listRules = async () => {
-        console.log('[RULES] listRules called, projectId:', configStore.projectId)
         rulesStore.loading = true
         rulesStore.error = null
         try {
-            const response = await apiCall<PoliciesResponse>(
-                `/api/v2025-01/projects/${configStore.projectId}/policies`
-            )
+            const authHeader = getAuthHeader()
+            if (!authHeader) {
+                throw new Error('Please login first')
+            }
+            
+            // Call proxy server endpoint (local mode) with auth header
+            const response = await fetch('/api/policies', {
+                headers: {
+                    'Authorization': authHeader
+                }
+            })
+            
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({ error: response.statusText }))
+                throw new Error(error.error || 'Failed to load policies')
+            }
+            
+            const data: PoliciesResponse = await response.json()
 
-            console.log('[RULES] ✅ Policies received, count:', response.data.policies.length)
-            const rules: Policy[] = response.data.policies.map(p => ({
+            const rules: Policy[] = data.data.policies.map(p => ({
                 policy: p.policy,
                 description: p.description,
                 effect: extractPolicyEffect(p.policy),
@@ -30,10 +41,8 @@ export function useRules() {
             }))
 
             rulesStore.rules = rules
-            console.log('[RULES] Rules processed:', rules.length)
             return rules
         } catch (e: any) {
-            console.error('[RULES] ❌ Error loading rules:', e.message)
             rulesStore.error = e.message
             toast.error('Failed to load rules')
             throw e
@@ -46,13 +55,28 @@ export function useRules() {
         rulesStore.loading = true
         rulesStore.error = null
         try {
-            await apiCall(`/api/v2025-01/projects/${configStore.projectId}/policies`, {
+            const authHeader = getAuthHeader()
+            if (!authHeader) {
+                throw new Error('Please login first')
+            }
+            
+            // Call proxy server endpoint (local mode) with auth header
+            const response = await fetch('/api/policies', {
                 method: 'POST',
-                body: {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': authHeader
+                },
+                body: JSON.stringify({
                     policy: input.policy,
                     description: input.description
-                }
+                })
             })
+            
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({ error: response.statusText }))
+                throw new Error(error.error || 'Failed to create policy')
+            }
 
             // Reload rules to get the updated list
             await listRules()
@@ -66,14 +90,69 @@ export function useRules() {
         }
     }
 
+    const updateRule = async (oldPolicy: string, input: CreatePolicyInput) => {
+        rulesStore.loading = true
+        rulesStore.error = null
+        try {
+            const authHeader = getAuthHeader()
+            if (!authHeader) {
+                throw new Error('Please login first')
+            }
+            
+            // Call proxy server endpoint (local mode) with auth header
+            const response = await fetch('/api/policies', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': authHeader
+                },
+                body: JSON.stringify({
+                    oldPolicy,
+                    policy: input.policy,
+                    description: input.description
+                })
+            })
+            
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({ error: response.statusText }))
+                throw new Error(error.error || 'Failed to update policy')
+            }
+
+            // Reload rules to get the updated list
+            await listRules()
+            toast.success('Rule updated successfully')
+        } catch (e: any) {
+            rulesStore.error = e.message
+            toast.error('Failed to update rule')
+            throw e
+        } finally {
+            rulesStore.loading = false
+        }
+    }
+
     const deleteRule = async (policy: string) => {
         rulesStore.loading = true
         rulesStore.error = null
         try {
-            await apiCall(`/api/v2025-01/projects/${configStore.projectId}/policies`, {
+            const authHeader = getAuthHeader()
+            if (!authHeader) {
+                throw new Error('Please login first')
+            }
+            
+            // Call proxy server endpoint (local mode) with auth header
+            const response = await fetch('/api/policies', {
                 method: 'DELETE',
-                body: { policy }
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': authHeader
+                },
+                body: JSON.stringify({ policy })
             })
+            
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({ error: response.statusText }))
+                throw new Error(error.error || 'Failed to delete policy')
+            }
 
             // Reload rules to get the updated list
             await listRules()
@@ -90,6 +169,7 @@ export function useRules() {
     return {
         listRules,
         createRule,
+        updateRule,
         deleteRule,
         loading: computed(() => rulesStore.loading),
         error: computed(() => rulesStore.error),

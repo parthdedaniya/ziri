@@ -1,10 +1,22 @@
-import { readConfig } from '@zs-ai/config'
-
 import { readConfig, getConfigPath } from '@zs-ai/config'
 import { readFileSync, existsSync } from 'fs'
 
 export default defineEventHandler(async (event) => {
   try {
+    // Try to get config from proxy server first (preferred - includes master key)
+    try {
+      const configRuntime = useRuntimeConfig()
+      const proxyUrl = configRuntime.public.proxyUrl || 'http://localhost:3100'
+      const response = await fetch(`${proxyUrl}/api/config`)
+      if (response.ok) {
+        const proxyConfig = await response.json()
+        return proxyConfig
+      }
+    } catch (e) {
+      // Proxy server not available, fall back to config file
+    }
+    
+    // Fall back to reading config file
     const config = readConfig()
     
     // If readConfig returns null (validation failed), try to read raw file
@@ -13,42 +25,48 @@ export default defineEventHandler(async (event) => {
       if (existsSync(configPath)) {
         try {
           const rawConfig = JSON.parse(readFileSync(configPath, 'utf-8'))
-          // Return raw config even if validation failed (might be missing backendUrl)
+          // Return config with server/email settings (local mode)
           return {
-            backendUrl: rawConfig.backendUrl || 'https://api-dev.authzebra.com',
-            orgId: rawConfig.orgId || '',
-            projectId: rawConfig.projectId || '',
-            clientId: rawConfig.clientId || '',
-            clientSecret: rawConfig.clientSecret || '',
-            pdpUrl: rawConfig.pdpUrl || '',
-            refreshInterval: rawConfig.refreshInterval || 300000,
-            refreshFailRetry: rawConfig.refreshFailRetry || 3,
-            refreshFailRetryDelay: rawConfig.refreshFailRetryDelay || 5000,
-            maxStaleTime: rawConfig.maxStaleTime || 3600000,
-            providers: rawConfig.providers || {}
+            mode: rawConfig.mode || 'local',
+            server: rawConfig.server || {
+              host: rawConfig.host || '127.0.0.1',
+              port: rawConfig.port || 3100
+            },
+            publicUrl: rawConfig.publicUrl || '',
+            email: rawConfig.email || {
+              enabled: false,
+              provider: 'manual'
+            },
+            logLevel: rawConfig.logLevel || 'info',
+            masterKey: ''  // Not available from file
           }
         } catch (e) {
-          // File exists but can't parse, return empty config
+          // File exists but can't parse, return default config
         }
       }
       
-      // Return empty config object if file doesn't exist
+      // Return default config object if file doesn't exist
       return {
-        backendUrl: 'https://api-dev.authzebra.com',
-        orgId: '',
-        projectId: '',
-        clientId: '',
-        clientSecret: '',
-        pdpUrl: '',
-        refreshInterval: 300000,
-        refreshFailRetry: 3,
-        refreshFailRetryDelay: 5000,
-        maxStaleTime: 3600000,
-        providers: {}
+        mode: 'local',
+        server: {
+          host: '127.0.0.1',
+          port: 3100
+        },
+        publicUrl: '',
+        email: {
+          enabled: false,
+          provider: 'manual'
+        },
+        logLevel: 'info',
+        masterKey: ''  // Not available
       }
     }
     
-    return config
+    // Return config (master key not available from file)
+    return {
+      ...config,
+      masterKey: ''  // Not available from file, must get from proxy server
+    }
   } catch (error: any) {
     console.error('[API] Error reading config:', error)
     throw createError({

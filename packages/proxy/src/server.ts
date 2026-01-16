@@ -37,6 +37,18 @@ export async function createServer(): Promise<Express> {
   const authRoutes = (await import('./routes/auth.js')).default
   app.use('/api/auth', authRoutes)
   
+  const configRoutes = (await import('./routes/config.js')).default
+  app.use('/api/config', configRoutes)
+  
+  const schemaRoutes = (await import('./routes/schema.js')).default
+  app.use('/api/schema', schemaRoutes)
+  
+  const policiesRoutes = (await import('./routes/policies.js')).default
+  app.use('/api/policies', policiesRoutes)
+  
+  const entitiesRoutes = (await import('./routes/entities.js')).default
+  app.use('/api/entities', entitiesRoutes)
+  
   const userRoutes = (await import('./routes/users.js')).default
   app.use('/api/users', userRoutes)
   
@@ -48,6 +60,9 @@ export async function createServer(): Promise<Express> {
   
   const chatRoutes = (await import('./routes/chat.js')).default
   app.use('/api/chat', chatRoutes)
+  
+  const meRoutes = (await import('./routes/me.js')).default
+  app.use('/api/me', meRoutes)
 
   // Serve UI static files (after API routes)
   const possibleUiPaths = [
@@ -93,29 +108,46 @@ export async function createServer(): Promise<Express> {
 export async function startServer(): Promise<{ port: number; url: string }> {
   const app = await createServer()
   
-  // Find free port
+  const host = config.host || '127.0.0.1'
+  
+  // Find free port (bind to 127.0.0.1 for port checking, but listen on configured host)
   let port: number
   try {
+    // Port finder uses 127.0.0.1 for checking, but we'll listen on the configured host
     port = await findFreePort(config.port)
   } catch (error) {
     console.error('[SERVER] Failed to find free port:', error)
     throw error
   }
   
+  const localUrl = `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`
+  const publicUrl = config.publicUrl || localUrl
+  
   return new Promise((resolve, reject) => {
-    // Try to listen on the found port (use 127.0.0.1 to match port finder)
-    server = app.listen(port, '127.0.0.1', () => {
-      const url = `http://localhost:${port}`
+    // Listen on configured host
+    server = app.listen(port, host, () => {
       console.log('='.repeat(70))
-      console.log('🚀 PROXY SERVER STARTED')
+      console.log('🚀 ZS AI GATEWAY PROXY SERVER')
       console.log('='.repeat(70))
-      console.log(`Server URL: ${url}`)
-      console.log(`API Endpoints: ${url}/api/*`)
-      console.log(`Health Check: ${url}/health`)
+      console.log(`Mode: ${config.mode || 'local'}`)
+      console.log(`Local URL: ${localUrl}`)
+      if (config.publicUrl && config.publicUrl !== localUrl) {
+        console.log(`Public URL: ${publicUrl}`)
+        console.log('')
+        console.log('⚠️  Share this Public URL with users for API access')
+      }
+      console.log(`API Endpoints: ${localUrl}/api/*`)
+      console.log(`Health Check: ${localUrl}/health`)
+      console.log('')
+      if (config.email?.enabled) {
+        console.log(`📧 Email: Enabled (${config.email.provider || 'manual'})`)
+      } else {
+        console.log('📧 Email: Disabled')
+      }
       console.log('='.repeat(70))
       console.log('')
       
-      resolve({ port, url })
+      resolve({ port, url: localUrl })
     })
     
     server.on('error', (error: NodeJS.ErrnoException) => {
@@ -127,17 +159,29 @@ export async function startServer(): Promise<{ port: number; url: string }> {
           if (server) {
             server.close()
           }
-          server = app.listen(newPort, '127.0.0.1', () => {
-            const url = `http://localhost:${newPort}`
+          const newLocalUrl = `http://${host === '0.0.0.0' ? 'localhost' : host}:${newPort}`
+          server = app.listen(newPort, host, () => {
             console.log('='.repeat(70))
-            console.log('🚀 PROXY SERVER STARTED')
+            console.log('🚀 ZS AI GATEWAY PROXY SERVER')
             console.log('='.repeat(70))
-            console.log(`Server URL: ${url}`)
-            console.log(`API Endpoints: ${url}/api/*`)
-            console.log(`Health Check: ${url}/health`)
+            console.log(`Mode: ${config.mode || 'local'}`)
+            console.log(`Local URL: ${newLocalUrl}`)
+            if (config.publicUrl && config.publicUrl !== newLocalUrl) {
+              console.log(`Public URL: ${config.publicUrl}`)
+              console.log('')
+              console.log('⚠️  Share this Public URL with users for API access')
+            }
+            console.log(`API Endpoints: ${newLocalUrl}/api/*`)
+            console.log(`Health Check: ${newLocalUrl}/health`)
+            console.log('')
+            if (config.email?.enabled) {
+              console.log(`📧 Email: Enabled (${config.email.provider || 'manual'})`)
+            } else {
+              console.log('📧 Email: Disabled')
+            }
             console.log('='.repeat(70))
             console.log('')
-            resolve({ port: newPort, url })
+            resolve({ port: newPort, url: newLocalUrl })
           })
         }).catch((findError) => {
           reject(new Error(`Failed to find available port: ${findError.message}`))

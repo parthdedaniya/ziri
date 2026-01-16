@@ -1,34 +1,47 @@
 // Key service - business logic for API key management
+// Uses new user_agent_keys table with encryption
 
 import { getDatabase } from '../db/index.js'
 import { generateApiKey, hashApiKey, extractUserIdFromApiKey } from '../utils/api-key.js'
+import { encrypt, decrypt } from '../utils/encryption.js'
+import { randomBytes } from 'crypto'
 import * as userService from './user-service.js'
-import * as entityService from './entity-service.js'
+import { serviceFactory } from './service-factory.js'
+import type { Entity } from '../types/entity.js'
 
 export interface CreateKeyInput {
   userId: string
-  // Entity attributes (moved from user creation)
-  role?: string
-  department?: string
-  securityClearance?: number
-  trainingCompleted?: boolean
-  yearsOfService?: number
-  // Spend limits
-  dailySpendLimit?: number
-  monthlySpendLimit?: number
+  // No entity attributes - UserKey is created when user is created
 }
 
 export interface ApiKey {
-  id: number
-  userId: string
-  apiKey: string
-  status: string
+  id: string // user_agent_keys.id (TEXT)
+  userId: string // auth_id
+  apiKey: string // Decrypted
   createdAt: string
-  revokedAt?: string
+}
+
+/**
+ * Get UserKey ID for a user (finds UserKey entity by user reference)
+ */
+async function findUserKeyIdForUser(userId: string): Promise<string | null> {
+  const entityStore = serviceFactory.getEntityStore()
+  
+  // Get all UserKey entities and find the one for this user
+  const allEntities = await entityStore.getEntities()
+  const userKeyEntity = allEntities.find(e => 
+    e.uid.type === 'UserKey' && 
+    (e.attrs as any).user && 
+    (e.attrs as any).user.__entity && 
+    (e.attrs as any).user.__entity.id === userId
+  )
+  
+  return userKeyEntity ? userKeyEntity.uid.id : null
 }
 
 /**
  * Create a new API key for a user
+ * Links to existing UserKey entity (created when user was created)
  */
 export async function createKey(input: CreateKeyInput): Promise<{ apiKey: string; userId: string }> {
   const db = getDatabase()
@@ -39,33 +52,27 @@ export async function createKey(input: CreateKeyInput): Promise<{ apiKey: string
     throw new Error('User not found')
   }
   
+  // Find UserKey entity for this user
+  const userKeyId = await findUserKeyIdForUser(input.userId)
+  if (!userKeyId) {
+    throw new Error('UserKey entity not found for user. User may not have been properly created.')
+  }
+  
   // Generate API key
   const apiKey = generateApiKey(input.userId)
   const keyHash = hashApiKey(apiKey)
   
-  // Store in database
-  db.prepare(`
-    INSERT INTO api_keys (user_id, api_key, key_hash, status)
-    VALUES (?, ?, ?, 'active')
-  `).run(input.userId, apiKey, keyHash)
+  // Encrypt API key
+  const encryptedKey = encrypt(apiKey)
   
-  // Create entity in Backend API
-  try {
-    await entityService.createEntityInBackend({
-      userId: input.userId,
-      role: input.role,
-      department: input.department,
-      securityClearance: input.securityClearance,
-      trainingCompleted: input.trainingCompleted,
-      yearsOfService: input.yearsOfService,
-      dailySpendLimit: input.dailySpendLimit,
-      monthlySpendLimit: input.monthlySpendLimit
-    })
-  } catch (error: any) {
-    // If entity creation fails, rollback API key creation
-    db.prepare('DELETE FROM api_keys WHERE key_hash = ?').run(keyHash)
-    throw new Error(`Failed to create entity in Backend API: ${error.message}`)
-  }
+  // Generate key ID
+  const keyId = `key-${randomBytes(8).toString('hex')}`
+  
+  // Store in user_agent_keys table
+  db.prepare(`
+    INSERT INTO user_agent_keys (id, key_value, key_hash, auth_id)
+    VALUES (?, ?, ?, ?)
+  `).run(keyId, encryptedKey, keyHash, input.userId)
   
   return { apiKey, userId: input.userId }
 }
@@ -75,7 +82,7 @@ export async function createKey(input: CreateKeyInput): Promise<{ apiKey: string
  */
 export function listKeys(): ApiKey[] {
   const db = getDatabase()
-  const keys = db.prepare('SELECT * FROM api_keys ORDER BY created_at DESC').all() as any[]
+  const keys = db.prepare('SELECT * FROM user_agent_keys ORDER BY created_at DESC').all() as any[]
   return keys.map(mapDbKeyToKey)
 }
 
@@ -84,7 +91,7 @@ export function listKeys(): ApiKey[] {
  */
 export function getKeyByHash(keyHash: string): ApiKey | null {
   const db = getDatabase()
-  const key = db.prepare('SELECT * FROM api_keys WHERE key_hash = ?').get(keyHash) as any
+  const key = db.prepare('SELECT * FROM user_agent_keys WHERE key_hash = ?').get(keyHash) as any
   return key ? mapDbKeyToKey(key) : null
 }
 
@@ -97,18 +104,39 @@ export function getKeyByApiKey(apiKey: string): ApiKey | null {
 }
 
 /**
+ * Get keyHash for an API key (from database)
+ */
+export function getKeyHashByApiKey(apiKey: string): string | null {
+  const db = getDatabase()
+  const keyHash = hashApiKey(apiKey)
+  // Get keyHash directly from database using the hash
+  const dbKey = db.prepare('SELECT key_hash FROM user_agent_keys WHERE key_hash = ?').get(keyHash) as { key_hash: string } | undefined
+  return dbKey?.key_hash || null
+}
+
+/**
  * Get keys for a specific user
  */
 export function getKeysByUserId(userId: string): ApiKey[] {
   const db = getDatabase()
-  const keys = db.prepare('SELECT * FROM api_keys WHERE user_id = ? ORDER BY created_at DESC').all(userId) as any[]
+  const keys = db.prepare('SELECT * FROM user_agent_keys WHERE auth_id = ? ORDER BY created_at DESC').all(userId) as any[]
   return keys.map(mapDbKeyToKey)
 }
 
 /**
- * Rotate an API key (generate new key for same user)
+ * Get UserKey ID for a user (for chat endpoint authorization)
+ * Exported version of the internal function
  */
-export function rotateKey(userId: string): { apiKey: string; userId: string } {
+export async function getUserKeyIdForUser(userId: string): Promise<string | null> {
+  return await findUserKeyIdForUser(userId)
+}
+
+/**
+ * Rotate an API key (generate new key for same user)
+ * Reuses existing UserKey entity (same user, same spend tracking)
+ * Deletes old keys (no revocation)
+ */
+export async function rotateKey(userId: string): Promise<{ apiKey: string; userId: string }> {
   const db = getDatabase()
   
   // Verify user exists
@@ -117,70 +145,71 @@ export function rotateKey(userId: string): { apiKey: string; userId: string } {
     throw new Error('User not found')
   }
   
-  // Revoke all existing keys for this user
-  db.prepare(`
-    UPDATE api_keys 
-    SET status = 'revoked', revoked_at = CURRENT_TIMESTAMP 
-    WHERE user_id = ? AND status = 'active'
-  `).run(userId)
+  // Find UserKey entity for this user (should exist from user creation)
+  const userKeyId = await findUserKeyIdForUser(userId)
+  if (!userKeyId) {
+    throw new Error('UserKey entity not found for user. User may not have been properly created.')
+  }
+  
+  // Delete all existing keys for this user (instead of revoking)
+  db.prepare('DELETE FROM user_agent_keys WHERE auth_id = ?').run(userId)
   
   // Generate new API key
   const apiKey = generateApiKey(userId)
   const keyHash = hashApiKey(apiKey)
   
-  // Store new key in database
+  // Encrypt API key
+  const encryptedKey = encrypt(apiKey)
+  
+  // Generate key ID
+  const keyId = `key-${randomBytes(8).toString('hex')}`
+  
+  // Store new key in user_agent_keys table
   db.prepare(`
-    INSERT INTO api_keys (user_id, api_key, key_hash, status)
-    VALUES (?, ?, ?, 'active')
-  `).run(userId, apiKey, keyHash)
+    INSERT INTO user_agent_keys (id, key_value, key_hash, auth_id)
+    VALUES (?, ?, ?, ?)
+  `).run(keyId, encryptedKey, keyHash, userId)
   
   return { apiKey, userId }
 }
 
 /**
- * Delete an API key (and all keys for the user)
+ * Delete API key by ID
  */
-export function deleteKey(userId: string): void {
+export function deleteKeyById(keyId: string): void {
   const db = getDatabase()
-  
-  const result = db.prepare('DELETE FROM api_keys WHERE user_id = ?').run(userId)
-  
+  const result = db.prepare('DELETE FROM user_agent_keys WHERE id = ?').run(keyId)
   if (result.changes === 0) {
-    throw new Error('No keys found for user')
+    throw new Error('API key not found')
   }
 }
 
 /**
- * Validate API key (check if active and belongs to userId)
+ * Delete all keys for a user (called when user is deleted)
  */
-export function validateApiKey(apiKey: string, userId: string): boolean {
-  const key = getKeyByApiKey(apiKey)
-  
-  if (!key) {
-    return false
-  }
-  
-  if (key.status !== 'active') {
-    return false
-  }
-  
-  if (key.userId !== userId) {
-    return false
-  }
-  
-  return true
+export function deleteKeysByUserId(userId: string): void {
+  const db = getDatabase()
+  db.prepare('DELETE FROM user_agent_keys WHERE auth_id = ?').run(userId)
 }
 
 /**
- * Map database key to ApiKey interface
+ * Map database key (user_agent_keys table) to ApiKey interface
  */
 function mapDbKeyToKey(dbKey: any): ApiKey {
+  // Decrypt API key
+  let decryptedKey: string
+  try {
+    decryptedKey = decrypt(dbKey.key_value)
+  } catch (error: any) {
+    // If decryption fails, it might be plain text (for migration)
+    console.warn('[KEY SERVICE] Failed to decrypt API key, treating as plain text:', error.message)
+    decryptedKey = dbKey.key_value
+  }
+  
   return {
     id: dbKey.id,
-    userId: dbKey.user_id,
-    apiKey: dbKey.api_key,
-    status: dbKey.status,
-    createdAt: dbKey.created_at,
-    revokedAt: dbKey.revoked_at || undefined
+    userId: dbKey.auth_id,
+    apiKey: decryptedKey,
+    createdAt: dbKey.created_at
   }
 }

@@ -18,24 +18,36 @@ export interface EntityUid {
 }
 
 export interface EntityAttrs {
-    user_id: string
-    name: string
-    email: string
-    role: string
-    department: string
-    security_clearance: number
-    training_completed: boolean
-    years_of_service: CedarDecimal
-    daily_spend_limit: CedarDecimal
-    monthly_spend_limit: CedarDecimal
-    current_daily_spend: CedarDecimal
-    current_monthly_spend: CedarDecimal
-    last_daily_reset: string
-    last_monthly_reset: string
-    allowed_ip_ranges: CedarIp[]
-    status: 'active' | 'revoked'
-    created_at: string
-    team?: string  // Optional field from backend
+    // User entity attributes
+    user_id?: string
+    email?: string
+    department?: string
+    is_agent?: boolean
+    limit_requests_per_minute?: number
+    // UserKey entity attributes
+    current_daily_spend?: CedarDecimal
+    current_monthly_spend?: CedarDecimal
+    last_daily_reset?: string
+    last_monthly_reset?: string
+    status?: 'active' | 'revoked' | 'disabled'
+    user?: {
+        __entity: {
+            type: string
+            id: string
+        }
+    }
+    // Legacy fields (for backward compatibility)
+    name?: string
+    role?: string
+    security_clearance?: number
+    training_completed?: boolean
+    years_of_service?: CedarDecimal
+    daily_spend_limit?: CedarDecimal
+    monthly_spend_limit?: CedarDecimal
+    allowed_ip_ranges?: CedarIp[]
+    created_at?: string
+    team?: string
+    [key: string]: any // Index signature for flexibility
 }
 
 export interface Entity {
@@ -46,29 +58,25 @@ export interface Entity {
 
 export interface Key {
     userId: string
-    name: string
-    email: string
-    role: string
-    department: string
+    userKeyId?: string // UserKey entity ID
     apiKey: string
     currentDailySpend: number
-    dailySpendLimit: number
     currentMonthlySpend: number
-    monthlySpendLimit: number
-    status: 'active' | 'revoked'
+    status: 'active' | 'revoked' | 'disabled'
     createdAt: string
-    lastUsedAt?: string
+    // User info (from User entity, not UserKey)
+    name?: string
+    email?: string
+    department?: string
+    isAgent?: boolean
+    limitRequestsPerMinute?: number
+    // UserKey reset times
+    lastDailyReset?: string
+    lastMonthlyReset?: string
 }
 
 export interface CreateKeyInput {
     userId: string
-    // Entity attributes (moved from user creation)
-    role?: string
-    department?: string
-    securityClearance?: number
-    trainingCompleted?: boolean
-    yearsOfService?: number
-    // Spend limits
-    dailySpendLimit?: number
-    monthlySpendLimit?: number
+    // No entity attributes - UserKey is created when user is created
+    // Key creation just links to existing UserKey entity
 }

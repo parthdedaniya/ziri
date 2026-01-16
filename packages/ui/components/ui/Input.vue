@@ -7,6 +7,9 @@ interface Props {
   error?: string
   disabled?: boolean
   required?: boolean
+  min?: number | string
+  max?: number | string
+  step?: number | string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -22,6 +25,19 @@ const emit = defineEmits<{
 
 const showPassword = ref(false)
 const isFocused = ref(false)
+const internalValue = ref<string>(String(props.modelValue || ''))
+
+// Watch for external changes to modelValue (but not while focused to avoid conflicts)
+watch(() => props.modelValue, (newValue) => {
+  if (!isFocused.value) {
+    if (props.type === 'number') {
+      // For number inputs, convert to string to preserve decimal formatting
+      internalValue.value = newValue === 0 || newValue === '' ? '' : String(newValue)
+    } else {
+      internalValue.value = String(newValue || '')
+    }
+  }
+}, { immediate: true })
 
 const inputType = computed(() => {
   if (props.type === 'password' && showPassword.value) {
@@ -32,8 +48,57 @@ const inputType = computed(() => {
 
 const handleInput = (event: Event) => {
   const target = event.target as HTMLInputElement
-  const value = props.type === 'number' ? parseFloat(target.value) || 0 : target.value
-  emit('update:modelValue', value)
+  const rawValue = target.value
+  
+  // Always keep the raw string value in the input field
+  internalValue.value = rawValue
+  
+  if (props.type === 'number') {
+    // For number inputs, parse and emit the numeric value
+    // But keep the string in the input field to preserve decimals while typing
+    if (rawValue === '' || rawValue === '-' || rawValue === '.') {
+      emit('update:modelValue', 0)
+      return
+    }
+    
+    const parsed = parseFloat(rawValue)
+    if (!isNaN(parsed)) {
+      emit('update:modelValue', parsed)
+    } else {
+      emit('update:modelValue', 0)
+    }
+  } else {
+    emit('update:modelValue', rawValue)
+  }
+}
+
+const handleFocus = () => {
+  isFocused.value = true
+}
+
+const handleBlur = () => {
+  isFocused.value = false
+  
+  // On blur, ensure we have a valid number for number inputs
+  if (props.type === 'number') {
+    const stringValue = internalValue.value
+    
+    if (stringValue === '' || stringValue === '-' || stringValue === '.') {
+      internalValue.value = ''
+      emit('update:modelValue', 0)
+      return
+    }
+    
+    const parsed = parseFloat(stringValue)
+    if (!isNaN(parsed)) {
+      // Update to the parsed value (this will trigger watch, but we're not focused so it's ok)
+      internalValue.value = String(parsed)
+      emit('update:modelValue', parsed)
+    } else {
+      internalValue.value = ''
+      emit('update:modelValue', 0)
+    }
+  }
 }
 </script>
 
@@ -46,13 +111,16 @@ const handleInput = (event: Event) => {
     <div class="relative group">
       <input
         :type="inputType"
-        :value="modelValue"
+        :value="internalValue"
         :placeholder="placeholder"
         :disabled="disabled"
         :required="required"
+        :min="min"
+        :max="max"
+        :step="step"
         @input="handleInput"
-        @focus="isFocused = true"
-        @blur="isFocused = false"
+        @focus="handleFocus"
+        @blur="handleBlur"
         class="input"
         :class="{ 
           'border-red-500 focus:border-red-500': error, 

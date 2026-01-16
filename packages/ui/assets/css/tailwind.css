@@ -388,3 +388,63 @@
 ::-webkit-scrollbar-thumb:hover {
   background-color: rgb(var(--text-muted));
 }
+
+/* Shimmer animation for skeleton loaders */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* Background texture pattern */
+.bg-texture {
+  position: relative;
+}
+
+.bg-texture::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: 
+    radial-gradient(circle, rgba(var(--text-muted), 0.1) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: 0 0, 12px 12px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.dark .bg-texture::before {
+  background-image: 
+    radial-gradient(circle, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+}
+
+/* Glassmorphism effect */
+.glass {
+  background: rgba(var(--surface), 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(var(--border), 0.5);
+}
+
+.dark .glass {
+  background: rgba(var(--surface), 0.6);
+  border: 1px solid rgba(var(--border), 0.3);
+}
+
+/* Login card with subtle glassmorphism */
+.login-card-glass {
+  background: rgba(var(--surface), 0.9);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.dark .login-card-glass {
+  background: rgba(var(--surface), 0.85);
+}

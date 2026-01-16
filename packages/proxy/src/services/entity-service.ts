@@ -13,24 +13,8 @@ function generateOpId(): string {
 // Generate session ID (persists for the lifetime of the service)
 const sessionId = randomBytes(8).toString('hex')
 
-// Cedar utility functions (copied from SDK to avoid dependency)
-function toDecimal(value: number): { __extn: { fn: string; arg: string } } {
-  return {
-    __extn: {
-      fn: 'decimal',
-      arg: value.toFixed(2)
-    }
-  }
-}
-
-function toIp(value: string): { __extn: { fn: string; arg: string } } {
-  return {
-    __extn: {
-      fn: 'ip',
-      arg: value
-    }
-  }
-}
+// Import Cedar utilities for proper decimal formatting
+import { toDecimalOne, toDecimalFour, toIp } from '../utils/cedar.js'
 
 export interface CreateEntityInput {
   userId: string
@@ -93,11 +77,11 @@ export async function createEntityInBackend(input: CreateEntityInput): Promise<v
       department: input.department || '', // From key creation input
       security_clearance: input.securityClearance || 2,
       training_completed: input.trainingCompleted ?? false,
-      years_of_service: toDecimal(input.yearsOfService || 0),
-      daily_spend_limit: toDecimal(input.dailySpendLimit || 50),
-      monthly_spend_limit: toDecimal(input.monthlySpendLimit || 500),
-      current_daily_spend: toDecimal(0),
-      current_monthly_spend: toDecimal(0),
+      years_of_service: toDecimalOne(input.yearsOfService || 0), // 1 decimal place
+      daily_spend_limit: toDecimalFour(input.dailySpendLimit || 50), // 4 decimal places
+      monthly_spend_limit: toDecimalFour(input.monthlySpendLimit || 500), // 4 decimal places
+      current_daily_spend: toDecimalFour(0),
+      current_monthly_spend: toDecimalFour(0),
       last_daily_reset: new Date().toISOString(),
       last_monthly_reset: new Date().toISOString(),
       allowed_ip_ranges: [toIp('0.0.0.0/0')],
@@ -129,8 +113,9 @@ export async function createEntityInBackend(input: CreateEntityInput): Promise<v
 
 /**
  * Delete entity from Backend API
+ * Now uses Key::"keyHash" instead of User::"userId"
  */
-export async function deleteEntityInBackend(userId: string): Promise<void> {
+export async function deleteEntityInBackend(keyHash: string): Promise<void> {
   // Reload config to get latest values
   const config = loadConfig()
   
@@ -141,8 +126,8 @@ export async function deleteEntityInBackend(userId: string): Promise<void> {
   // Get M2M token (from cache or fetch new)
   const token = await getM2MToken(config)
   
-  // Delete entity: DELETE /entity?entityName=User::"userId"
-  const entityName = `User::"${userId}"`
+  // Delete entity: DELETE /entity?entityName=Key::"keyHash"
+  const entityName = `Key::"${keyHash}"`
   const opId = generateOpId()
   
   const response = await fetch(

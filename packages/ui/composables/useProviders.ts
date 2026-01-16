@@ -1,14 +1,18 @@
 // Provider management composable
 
+import { ref } from 'vue'
 import { useAdminAuth } from './useAdminAuth'
 
 export interface Provider {
+  id: string // provider_keys.id (TEXT)
   name: string
   displayName: string
   baseUrl: string
   models: string[]
   defaultModel?: string
   hasCredentials: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 export interface CreateProviderInput {
@@ -45,12 +49,9 @@ export function useProviders() {
       }
       
       const data = await response.json()
-      console.log('[PROVIDERS] Response data:', data)
       // Handle both formats: { data: [...] } and { providers: [...] }
       providers.value = data.data || data.providers || []
-      console.log('[PROVIDERS] Loaded providers:', providers.value.length, providers.value)
     } catch (e: any) {
-      console.error('[PROVIDERS] Error listing providers:', e)
       error.value = e.message || 'Failed to list providers'
       throw e
     } finally {
@@ -92,7 +93,6 @@ export function useProviders() {
       
       return data.data
     } catch (e: any) {
-      console.error('[PROVIDERS] Error adding provider:', e)
       error.value = e.message || 'Failed to add provider'
       throw e
     } finally {
@@ -125,7 +125,6 @@ export function useProviders() {
       // Refresh list
       await listProviders()
     } catch (e: any) {
-      console.error('[PROVIDERS] Error removing provider:', e)
       error.value = e.message || 'Failed to remove provider'
       throw e
     } finally {
@@ -156,11 +155,9 @@ export function useProviders() {
       }
       
       const data = await response.json()
-      console.log('[PROVIDERS] Test response:', data)
       // Handle normalized response format
       return data.data || { status: data.success ? 'success' : 'failed', message: data.message }
     } catch (e: any) {
-      console.error('[PROVIDERS] Error testing provider:', e)
       error.value = e.message || 'Failed to test provider'
       throw e
     } finally {

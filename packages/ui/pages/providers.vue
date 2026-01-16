@@ -24,13 +24,9 @@ const PROVIDER_TEMPLATES: Record<string, { displayName: string; baseUrl: string;
 
 // Auto-load providers when page mounts
 onMounted(async () => {
-  console.log('[PROVIDERS PAGE] onMounted called')
-  
   try {
     await listProviders()
-    console.log('[PROVIDERS PAGE] ✅ Providers loaded')
   } catch (e: any) {
-    console.error('[PROVIDERS PAGE] Error loading providers:', e)
     toast.error(e.message || 'Failed to load providers')
   }
 })

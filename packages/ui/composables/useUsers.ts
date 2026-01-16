@@ -6,22 +6,24 @@ import { useAdminAuth } from './useAdminAuth'
 import { useToast } from './useToast'
 
 export interface User {
-  id: number
-  userId: string
-  email: string
-  name: string
-  role?: string
-  department?: string
-  status: string
+  id: string // auth.id (TEXT)
+  userId: string // Same as id (for backward compatibility)
+  email: string // Decrypted
+  name: string // Plain text
+  department?: string // Plain text
+  isAgent: boolean
+  status: number // 0=inactive, 1=active, 2=revoked
   createdAt: string
   updatedAt: string
-  lastLogin?: string
+  lastSignIn?: string // Renamed from lastLogin
 }
 
 export interface CreateUserInput {
   email: string
   name: string
-  // Note: role and department removed - they're now part of key creation
+  department: string
+  isAgent: boolean
+  limitRequestsPerMinute?: number // Default: 100
 }
 
 const users = ref<User[]>([])
@@ -54,7 +56,6 @@ export function useUsers() {
       const data = await response.json()
       users.value = data.users || []
     } catch (error: any) {
-      console.error('[USERS] Error loading users:', error)
       toast.error(`Failed to load users: ${error.message}`)
       throw error
     } finally {
@@ -62,7 +63,7 @@ export function useUsers() {
     }
   }
 
-  const createUser = async (input: CreateUserInput): Promise<{ user: User; password: string }> => {
+  const createUser = async (input: CreateUserInput): Promise<{ user: User; password?: string; emailSent: boolean }> => {
     const authHeader = getAuthHeader()
     if (!authHeader) {
       throw new Error('Please login first')
@@ -86,7 +87,11 @@ export function useUsers() {
     const result = await response.json()
     users.value.push(result.user)
     
-    return result
+    // Return user and password (password only exists if email was not sent)
+    return {
+      user: result.user,
+      password: result.password // Only present if email was not sent
+    }
   }
 
   const updateUser = async (userId: string, updates: Partial<CreateUserInput>): Promise<User> => {
@@ -141,7 +146,7 @@ export function useUsers() {
     users.value = users.value.filter(u => u.userId !== userId)
   }
 
-  const resetPassword = async (userId: string): Promise<string> => {
+  const resetPassword = async (userId: string): Promise<{ password?: string; emailSent: boolean }> => {
     const authHeader = getAuthHeader()
     if (!authHeader) {
       throw new Error('Please login first')
@@ -161,7 +166,11 @@ export function useUsers() {
     }
     
     const result = await response.json()
-    return result.password
+    // Return password only if email was not sent
+    return {
+      password: result.password, // Only present if email was not sent
+      emailSent: result.emailSent || false
+    }
   }
 
   return {

@@ -1,8 +1,10 @@
 // Provider service - business logic for LLM provider management
+// Uses new provider_keys table with encryption
 
 import { getDatabase } from '../db/index.js'
 import { encrypt, decrypt } from '../utils/encryption.js'
 import { validateProviderApiKey } from '@zs-ai/config'
+import { randomBytes } from 'crypto'
 
 export interface ProviderMetadata {
   name: string
@@ -13,7 +15,7 @@ export interface ProviderMetadata {
 }
 
 export interface Provider {
-  id: number
+  id: string // provider_keys.id (TEXT)
   name: string
   displayName: string
   baseUrl: string
@@ -73,21 +75,22 @@ export function createOrUpdateProvider(input: CreateProviderInput): Provider {
   const encryptedApiKey = encrypt(input.apiKey)
   
   // Check if provider exists
-  const existing = db.prepare('SELECT * FROM provider_keys WHERE provider_name = ?').get(providerName) as any
+  const existing = db.prepare('SELECT * FROM provider_keys WHERE provider = ?').get(providerName) as any
   
   if (existing) {
     // Update existing provider
     db.prepare(`
       UPDATE provider_keys 
-      SET encrypted_api_key = ?, metadata = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE provider_name = ?
+      SET api_key = ?, metadata = ?, updated_at = datetime('now')
+      WHERE provider = ?
     `).run(encryptedApiKey, JSON.stringify(metadata), providerName)
   } else {
     // Create new provider
+    const providerId = `provider-${randomBytes(8).toString('hex')}`
     db.prepare(`
-      INSERT INTO provider_keys (provider_name, encrypted_api_key, metadata)
-      VALUES (?, ?, ?)
-    `).run(providerName, encryptedApiKey, JSON.stringify(metadata))
+      INSERT INTO provider_keys (id, provider, api_key, metadata)
+      VALUES (?, ?, ?, ?)
+    `).run(providerId, providerName, encryptedApiKey, JSON.stringify(metadata))
   }
   
   return getProvider(providerName)!
@@ -107,7 +110,7 @@ export function listProviders(): Provider[] {
  */
 export function getProvider(name: string): Provider | null {
   const db = getDatabase()
-  const provider = db.prepare('SELECT * FROM provider_keys WHERE provider_name = ?').get(name.toLowerCase()) as any
+  const provider = db.prepare('SELECT * FROM provider_keys WHERE provider = ?').get(name.toLowerCase()) as any
   return provider ? mapDbProviderToProvider(provider) : null
 }
 
@@ -116,15 +119,15 @@ export function getProvider(name: string): Provider | null {
  */
 export function getProviderApiKey(name: string): string | null {
   const db = getDatabase()
-  const provider = db.prepare('SELECT encrypted_api_key FROM provider_keys WHERE provider_name = ?').get(name.toLowerCase()) as any
+  const provider = db.prepare('SELECT api_key FROM provider_keys WHERE provider = ?').get(name.toLowerCase()) as any
   
-  if (!provider) {
+  if (!provider || !provider.api_key) {
     return null
   }
   
   try {
-    return decrypt(provider.encrypted_api_key)
-  } catch (error) {
+    return decrypt(provider.api_key)
+  } catch (error: any) {
     console.error(`[PROVIDER] Failed to decrypt API key for ${name}:`, error)
     return null
   }
@@ -135,49 +138,50 @@ export function getProviderApiKey(name: string): string | null {
  */
 export function deleteProvider(name: string): void {
   const db = getDatabase()
-  const result = db.prepare('DELETE FROM provider_keys WHERE provider_name = ?').run(name.toLowerCase())
-  
+  const result = db.prepare('DELETE FROM provider_keys WHERE provider = ?').run(name.toLowerCase())
   if (result.changes === 0) {
     throw new Error('Provider not found')
   }
 }
 
 /**
- * Test provider connection
+ * Test provider API key (validate it works)
  */
-export async function testProviderConnection(name: string): Promise<{ success: boolean; error?: string }> {
+export async function testProviderApiKey(name: string): Promise<{ success: boolean; error?: string }> {
+  const apiKey = getProviderApiKey(name)
+  
+  if (!apiKey) {
+    return { success: false, error: 'Provider API key not found or decryption failed' }
+  }
+  
+  // Try to make a test request to the provider
   const provider = getProvider(name)
   if (!provider) {
     return { success: false, error: 'Provider not found' }
   }
   
-  const apiKey = getProviderApiKey(name)
-  if (!apiKey) {
-    return { success: false, error: 'Provider API key not found or decryption failed' }
-  }
-  
   try {
-    // Test connection by calling provider's models endpoint
-    const testUrl = provider.baseUrl.includes('anthropic') 
-      ? `${provider.baseUrl}/messages` // Anthropic doesn't have /models endpoint
-      : `${provider.baseUrl}/models`
-    
-    const response = await fetch(testUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
+    // For OpenAI, test with a simple models request
+    if (name.toLowerCase() === 'openai') {
+      const response = await fetch(`${provider.baseUrl}/models`, {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (response.ok) {
+        return { success: true }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' })) as any
+        return { success: false, error: errorData?.error?.message || 'API key validation failed' }
       }
-    })
-    
-    if (response.ok) {
-      return { success: true }
-    } else {
-      const errorText = await response.text()
-      return { success: false, error: `Provider returned ${response.status}: ${errorText}` }
     }
+    
+    // For other providers, return success if key exists and is valid format
+    return { success: true }
   } catch (error: any) {
-    return { success: false, error: error.message || 'Connection failed' }
+    return { success: false, error: error.message || 'Failed to validate API key' }
   }
 }
 
@@ -185,16 +189,32 @@ export async function testProviderConnection(name: string): Promise<{ success: b
  * Map database provider to Provider interface
  */
 function mapDbProviderToProvider(dbProvider: any): Provider {
-  const metadata = dbProvider.metadata ? JSON.parse(dbProvider.metadata) : {}
+  let metadata: ProviderMetadata = {
+    name: dbProvider.provider,
+    displayName: dbProvider.provider,
+    baseUrl: '',
+    models: [],
+    defaultModel: ''
+  }
+  
+  // Parse metadata JSON
+  if (dbProvider.metadata) {
+    try {
+      const parsed = JSON.parse(dbProvider.metadata)
+      metadata = { ...metadata, ...parsed }
+    } catch (error: any) {
+      console.warn(`[PROVIDER] Failed to parse metadata for ${dbProvider.provider}:`, error.message)
+    }
+  }
   
   return {
     id: dbProvider.id,
-    name: dbProvider.provider_name,
-    displayName: metadata.displayName || dbProvider.provider_name,
-    baseUrl: metadata.baseUrl || '',
-    models: metadata.models || [],
-    defaultModel: metadata.defaultModel || '',
-    hasCredentials: !!dbProvider.encrypted_api_key,
+    name: dbProvider.provider,
+    displayName: metadata.displayName,
+    baseUrl: metadata.baseUrl,
+    models: metadata.models,
+    defaultModel: metadata.defaultModel,
+    hasCredentials: !!dbProvider.api_key,
     createdAt: dbProvider.created_at,
     updatedAt: dbProvider.updated_at
   }

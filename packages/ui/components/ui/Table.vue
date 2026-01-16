@@ -63,11 +63,11 @@ const handleRowClick = (row: any) => {
         </tr>
       </thead>
       <tbody>
-        <!-- Loading skeleton -->
+        <!-- Loading skeleton with shimmer -->
         <template v-if="loading">
           <tr v-for="i in 5" :key="i" class="border-b border-[rgb(var(--border))]">
             <td v-for="column in columns" :key="column.key" class="px-4 py-3">
-              <UiLoadingSkeleton :lines="1" height="h-4" />
+              <UiLoadingSkeleton :lines="1" height="h-4" :width="`${60 + Math.random() * 40}%`" />
             </td>
           </tr>
         </template>

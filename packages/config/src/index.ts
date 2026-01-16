@@ -6,11 +6,49 @@ import { homedir } from 'os'
 import type { ProviderMetadata } from './providers.js'
 
 export interface ZsAiConfig {
-  backendUrl: string
-  orgId: string
-  projectId: string
-  clientId: string
-  clientSecret: string
+  // Mode configuration
+  mode?: 'local' | 'live'  // Default: 'local'
+  
+  // Server configuration
+  server?: {
+    host?: string  // Default: '127.0.0.1'
+    port?: number  // Default: 3100
+  }
+  publicUrl?: string  // Public URL for sharing (ngrok, Tailscale, etc.)
+  
+  // Email configuration
+  email?: {
+    enabled?: boolean
+    provider?: 'smtp' | 'sendgrid' | 'manual'
+    smtp?: {
+      host: string
+      port: number
+      secure?: boolean
+      auth: {
+        user: string
+        pass: string
+      }
+    }
+    sendgrid?: {
+      apiKey: string
+    }
+    from?: string
+  }
+  
+  // Backend API configuration (for live mode - commented out for now)
+  // backendUrl: string
+  // orgId: string
+  // projectId: string
+  // clientId: string
+  // clientSecret: string
+  // pdpUrl?: string
+  
+  // Legacy fields (kept for backward compatibility, will be ignored in local mode)
+  backendUrl?: string
+  orgId?: string
+  projectId?: string
+  clientId?: string
+  clientSecret?: string
   pdpUrl?: string
   refreshInterval?: number
   refreshFailRetry?: number
@@ -49,10 +87,17 @@ export function readConfig(): ZsAiConfig | null {
     const content = readFileSync(configPath, 'utf-8')
     const config = JSON.parse(content) as Partial<ZsAiConfig>
     
-    // Validate required fields
-    if (!config.backendUrl || !config.orgId || !config.projectId || !config.clientId || !config.clientSecret) {
-      return null
+    // In local mode, we don't need Backend API credentials
+    // Only validate if mode is 'live' or not specified (backward compatibility)
+    const mode = config.mode || 'local'
+    
+    if (mode === 'live') {
+      // Live mode requires Backend API credentials
+      if (!config.backendUrl || !config.orgId || !config.projectId || !config.clientId || !config.clientSecret) {
+        return null
+      }
     }
+    // Local mode doesn't require Backend API credentials - just return the config
     
     return config as ZsAiConfig
   } catch (error) {

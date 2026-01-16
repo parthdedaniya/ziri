@@ -8,26 +8,28 @@ import type { Key } from '~/types/entity'
 const route = useRoute()
 const router = useRouter()
 const configStore = useConfigStore()
-const { getKey, revokeKey, currentKey, loading } = useKeys()
+const { getKey, getKeyByUserId, revokeKey, currentKey, loading } = useKeys()
 const toast = useToast()
 
-const userId = route.params.id as string
+const routeId = route.params.id as string
+// The route param could be either userKeyId or userId - try both
+const userId = routeId
 
 // Demo key data
 const demoKey = ref<Key>({
-  userId: userId,
+  userId: routeId,
   name: 'Alice Smith',
   email: 'alice@company.com',
-  role: 'engineer',
   department: 'Engineering',
+  isAgent: false,
+  limitRequestsPerMinute: 100,
   apiKey: 'sk-abc123def456ghi789jkl012mno345pqr678stu901vwx234',
   currentDailySpend: 12.34,
-  dailySpendLimit: 50,
   currentMonthlySpend: 156.78,
-  monthlySpendLimit: 500,
+  lastDailyReset: '2026-01-08T00:00:00Z',
+  lastMonthlyReset: '2026-01-01T00:00:00Z',
   status: 'active',
-  createdAt: '2026-01-01T10:00:00Z',
-  lastUsedAt: '2026-01-08T11:30:00Z'
+  createdAt: '2026-01-01T10:00:00Z'
 })
 
 const key = computed(() => currentKey.value || demoKey.value)
@@ -59,8 +61,11 @@ const monthlySpendData = computed(() => {
 
 const handleRevoke = async () => {
   try {
-    await revokeKey(userId)
-    demoKey.value.status = 'revoked'
+    const keyToRevoke = currentKey.value || demoKey.value
+    if (keyToRevoke.userId) {
+      await revokeKey(keyToRevoke.userId)
+      demoKey.value.status = 'revoked'
+    }
   } catch (e) {
     // Error handled by composable
   }
@@ -71,26 +76,20 @@ const goBack = () => {
 }
 
 onMounted(async () => {
-  console.log('[KEY DETAIL PAGE] onMounted called for userId:', userId)
-  console.log('[KEY DETAIL PAGE] Config state:', {
-    projectId: configStore.projectId,
-    isConfigured: configStore.isConfigured
-  })
-  
-  // Wait a tick to ensure config is loaded
   await nextTick()
-  console.log('[KEY DETAIL PAGE] After nextTick, isConfigured:', configStore.isConfigured)
   
   if (configStore.isConfigured) {
-    console.log('[KEY DETAIL PAGE] ✅ Config is set, loading key...')
     try {
-      await getKey(userId)
-      console.log('[KEY DETAIL PAGE] ✅ Key loaded')
+      // Try getKey first (if routeId is userKeyId), then fallback to getKeyByUserId (if routeId is userId)
+      try {
+        await getKey(routeId)
+      } catch {
+        // If getKey fails, try getKeyByUserId
+        await getKeyByUserId(routeId)
+      }
     } catch (e) {
-      console.error('[KEY DETAIL PAGE] Error loading key:', e)
+      // Error handled by composable
     }
-  } else {
-    console.log('[KEY DETAIL PAGE] ❌ Config not set, using demo data')
   }
 })
 </script>
@@ -130,26 +129,23 @@ onMounted(async () => {
               <code class="px-2 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/30 font-mono text-sm text-indigo-600 dark:text-indigo-400 font-semibold">{{ key.userId }}</code>
             </div>
             <div>
-              <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider mb-1">Role</p>
-              <p class="text-sm text-[rgb(var(--text))] capitalize">{{ key.role.replace('_', ' ') }}</p>
+              <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider mb-1">Is Agent</p>
+              <p class="text-sm text-[rgb(var(--text))]">{{ key.isAgent ? 'Yes' : 'No' }}</p>
             </div>
           </div>
           
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider mb-1">Name</p>
-              <p class="text-sm text-[rgb(var(--text))]">{{ key.name }}</p>
-            </div>
+            <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider mb-1">Email</p>
+            <p class="text-sm text-[rgb(var(--text))]">{{ key.email }}</p>
+          </div>
             <div>
               <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider mb-1">Department</p>
               <p class="text-sm text-[rgb(var(--text))]">{{ key.department }}</p>
             </div>
           </div>
           
-          <div>
-            <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider mb-1">Email</p>
-            <p class="text-sm text-[rgb(var(--text))]">{{ key.email }}</p>
-          </div>
+          
           
           <div class="pt-4 border-t-2 border-[rgb(var(--border))]">
             <div class="flex items-center justify-between mb-2">
@@ -167,19 +163,19 @@ onMounted(async () => {
               <p class="text-sm text-[rgb(var(--text))]">{{ formatDate(key.createdAt) }}</p>
             </div>
             <div>
-              <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider mb-1">Last Used</p>
-              <p class="text-sm text-[rgb(var(--text))]">{{ formatDate(key.lastUsedAt || '') }}</p>
+              <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider mb-1">Last Daily Reset</p>
+              <p class="text-sm text-[rgb(var(--text))]">{{ formatDate(key.lastDailyReset || '') }}</p>
             </div>
           </div>
           
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider mb-1">Daily Limit</p>
-              <p class="text-sm font-medium text-[rgb(var(--text))]">{{ formatCurrency(key.dailySpendLimit) }}</p>
+              <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider mb-1">Rate Limit</p>
+              <p class="text-sm font-medium text-[rgb(var(--text))]">{{ key.limitRequestsPerMinute || 0 }} req/min</p>
             </div>
             <div>
-              <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider mb-1">Monthly Limit</p>
-              <p class="text-sm font-medium text-[rgb(var(--text))]">{{ formatCurrency(key.monthlySpendLimit) }}</p>
+              <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider mb-1">Last Monthly Reset</p>
+              <p class="text-sm text-[rgb(var(--text))]">{{ formatDate(key.lastMonthlyReset || '') }}</p>
             </div>
           </div>
         </div>
@@ -210,12 +206,12 @@ onMounted(async () => {
           <div class="mb-4">
             <div class="flex justify-between text-sm mb-2">
               <span class="font-semibold text-[rgb(var(--text))]">Today: {{ formatCurrency(key.currentDailySpend) }}</span>
-              <span class="text-[rgb(var(--text-muted))]">Limit: {{ formatCurrency(key.dailySpendLimit) }}</span>
+              <span class="text-[rgb(var(--text-muted))]">Reset: {{ formatDate(key.lastDailyReset || '') }}</span>
             </div>
             <div class="progress-bar h-3">
               <div 
                 class="progress-bar-fill bg-gradient-to-r from-indigo-500 to-purple-500" 
-                :style="{ width: `${formatPercent(key.currentDailySpend, key.dailySpendLimit)}%` }"
+                :style="{ width: `${Math.min(100, (key.currentDailySpend / 100) * 100)}%` }"
               />
             </div>
           </div>
@@ -233,12 +229,12 @@ onMounted(async () => {
           <div class="mb-4">
             <div class="flex justify-between text-sm mb-2">
               <span class="font-semibold text-[rgb(var(--text))]">This month: {{ formatCurrency(key.currentMonthlySpend) }}</span>
-              <span class="text-[rgb(var(--text-muted))]">Limit: {{ formatCurrency(key.monthlySpendLimit) }}</span>
+              <span class="text-[rgb(var(--text-muted))]">Reset: {{ formatDate(key.lastMonthlyReset || '') }}</span>
             </div>
             <div class="progress-bar h-3">
               <div 
                 class="progress-bar-fill bg-gradient-to-r from-green-500 to-emerald-500" 
-                :style="{ width: `${formatPercent(key.currentMonthlySpend, key.monthlySpendLimit)}%` }"
+                :style="{ width: `${Math.min(100, (key.currentMonthlySpend / 1000) * 100)}%` }"
               />
             </div>
           </div>

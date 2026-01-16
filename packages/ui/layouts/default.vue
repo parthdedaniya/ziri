@@ -1,50 +1,98 @@
 <script setup lang="ts">
-const route = useRoute()
+import { useAdminAuth } from '~/composables/useAdminAuth'
+import { useUserAuth } from '~/composables/useUserAuth'
+import { useAdminAuthStore } from '~/stores/admin-auth'
+import { useUserAuthStore } from '~/stores/user-auth'
 
-// Dashboard (independent, always at top)
-const dashboardItem = { name: 'Dashboard', path: '/', icon: 'dashboard' }
+const route = useRoute()
+const adminAuth = useAdminAuth()
+const userAuth = useUserAuth()
+
+const handleLogout = async () => {
+  // Logout from both stores (whichever is active)
+  if (adminAuth.isAuthenticated.value) {
+    await adminAuth.logout()
+  }
+  if (userAuth.isAuthenticated.value) {
+    await userAuth.logout()
+  }
+}
+
+// Get user role for navigation
+const adminAuthStore = useAdminAuthStore()
+const userAuthStore = useUserAuthStore()
+
+// NOTE: Auth loading happens in middleware, this is just for layout's reactive state
+// Don't reload here to avoid race conditions
+
+const userRole = computed(() => {
+  return userAuthStore.user?.role || adminAuthStore.user?.role || null
+})
+
+const isAdmin = computed(() => userRole.value === 'admin')
+
+// Dashboard (independent, always at top) - Admin only
+const dashboardItem = { name: 'Dashboard', path: '/', icon: 'dashboard', adminOnly: true }
 
 // Navigation sections (same as Sidebar)
-const navSections = [
-  {
-    title: 'Analytics & Monitoring',
-    icon: 'chart',
-    items: [
-      { name: 'Analytics', path: '/analytics', icon: 'analytics' },
-      { name: 'Logs', path: '/logs', icon: 'logs' }
-    ]
-  },
-  {
-    title: 'Authorization',
-    icon: 'lock',
-    items: [
-      { name: 'Schema', path: '/schema', icon: 'schema' },
-      { name: 'Rules', path: '/rules', icon: 'rules' }
-    ]
-  },
-  {
-    title: 'Access Management',
-    icon: 'key',
-    items: [
-      { name: 'Users', path: '/users', icon: 'users' },
-      { name: 'API Keys', path: '/keys', icon: 'keys' }
-    ]
-  },
-  {
-    title: 'LLM Providers',
-    icon: 'providers',
-    items: [
-      { name: 'Providers', path: '/providers', icon: 'providers' }
-    ]
-  },
-  {
-    title: 'Settings',
-    icon: 'settings',
-    items: [
-      { name: 'Configuration', path: '/config', icon: 'config' }
-    ]
+const navSections = computed(() => {
+  const sections = []
+  
+  // Admin-only sections
+  if (isAdmin.value) {
+    sections.push(
+      {
+        title: 'Analytics & Monitoring',
+        icon: 'chart',
+        items: [
+          { name: 'Analytics', path: '/analytics', icon: 'analytics' },
+          { name: 'Logs', path: '/logs', icon: 'logs' }
+        ]
+      },
+      {
+        title: 'Authorization',
+        icon: 'lock',
+        items: [
+          { name: 'Schema', path: '/schema', icon: 'schema' },
+          { name: 'Rules', path: '/rules', icon: 'rules' }
+        ]
+      },
+      {
+        title: 'Access Management',
+        icon: 'key',
+        items: [
+          { name: 'Users', path: '/users', icon: 'users' },
+          { name: 'API Keys', path: '/keys', icon: 'keys' }
+        ]
+      },
+      {
+        title: 'LLM Providers',
+        icon: 'providers',
+        items: [
+          { name: 'Providers', path: '/providers', icon: 'providers' }
+        ]
+      },
+      {
+        title: 'Settings',
+        icon: 'settings',
+        items: [
+          { name: 'Configuration', path: '/config', icon: 'config' }
+        ]
+      }
+    )
   }
-]
+  
+  // User sections (accessible by both admin and user)
+  sections.push({
+    title: 'My Account',
+    icon: 'user',
+    items: [
+      { name: 'My Profile', path: '/me', icon: 'user' }
+    ]
+  })
+  
+  return sections
+})
 
 // Icon helper (same as Sidebar)
 const getIcon = (iconName: string) => {
@@ -84,13 +132,15 @@ const pageTitle = computed(() => {
     '/rules': 'Rules',
     '/users': 'Users',
     '/keys': 'API Keys',
-    '/providers': 'LLM Providers'
+    '/providers': 'LLM Providers',
+    '/me': 'My Profile'
   }
   
   // Check for key detail page
   if (route.path.startsWith('/keys/') && route.params.id) {
     return `Key: ${route.params.id}`
   }
+  
   
   // Check for providers page
   if (route.path === '/providers') {
@@ -102,58 +152,90 @@ const pageTitle = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-screen bg-[rgb(var(--surface-elevated))]">
-    <!-- Desktop Sidebar -->
-    <LayoutSidebar />
+  <div class="flex h-screen bg-[rgb(var(--surface-elevated))] bg-texture">
+    <!-- Desktop Sidebar - Wrap in ClientOnly to prevent SSR/hydration mismatch -->
+    <ClientOnly>
+      <LayoutSidebar />
+      <template #fallback>
+        <!-- Loading skeleton for sidebar during SSR -->
+        <aside class="hidden md:flex flex-shrink-0 flex-col border-r-2 border-[rgb(var(--border))] bg-[rgb(var(--surface))] w-64 h-screen">
+          <div class="h-14 px-4 py-2 border-b-2 border-[rgb(var(--border))] flex items-center">
+            <div class="w-8 h-8 rounded-lg bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+          </div>
+          <nav class="flex-1 p-4 space-y-4 overflow-y-auto">
+            <div class="space-y-2">
+              <div class="h-10 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse"></div>
+              <div class="h-10 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse"></div>
+              <div class="h-10 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse"></div>
+            </div>
+          </nav>
+        </aside>
+      </template>
+    </ClientOnly>
     
-    <!-- Mobile Sidebar (always collapsed) -->
-    <aside 
-      class="md:hidden flex-shrink-0 flex flex-col border-r-2 border-[rgb(var(--border))] bg-[rgb(var(--surface))] w-16 h-screen"
-    >
-      <div class="h-14 px-2 py-2 border-b-2 border-[rgb(var(--border))] flex items-center justify-center">
-        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
-          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
-        </div>
-      </div>
-      <nav class="flex-1 p-2 space-y-4 overflow-y-auto flex flex-col">
-        <!-- Dashboard (independent, always at top) -->
-        <div class="mb-2">
-          <NuxtLink
-            :to="dashboardItem.path"
-            class="nav-item justify-center"
-            :class="{ 'active': isActive(dashboardItem.path) }"
-            :title="dashboardItem.name"
-          >
-            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="getIcon(dashboardItem.icon)" />
+    <!-- Mobile Sidebar (always collapsed) - Wrap in ClientOnly -->
+    <ClientOnly>
+      <aside 
+        class="md:hidden flex-shrink-0 flex flex-col border-r-2 border-[rgb(var(--border))] bg-[rgb(var(--surface))] w-16 h-screen"
+      >
+        <div class="h-14 px-2 py-2 border-b-2 border-[rgb(var(--border))] flex items-center justify-center">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
-          </NuxtLink>
+          </div>
         </div>
-
-        <!-- Separator -->
-        <div class="h-px bg-[rgb(var(--border))] mx-2" />
-
-        <!-- Sections -->
-        <div class="flex-1 space-y-4">
-          <div v-for="section in navSections" :key="section.title" class="space-y-1">
+        <nav class="flex-1 p-2 space-y-4 overflow-y-auto flex flex-col">
+          <!-- Dashboard (independent, always at top) - Admin only -->
+          <div v-if="isAdmin" class="mb-2">
             <NuxtLink
-              v-for="item in section.items"
-              :key="item.path"
-              :to="item.path"
+              :to="dashboardItem.path"
               class="nav-item justify-center"
-              :class="{ 'active': isActive(item.path) }"
-              :title="item.name"
+              :class="{ 'active': isActive(dashboardItem.path) }"
+              :title="dashboardItem.name"
             >
               <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="getIcon(item.icon)" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="getIcon(dashboardItem.icon)" />
               </svg>
             </NuxtLink>
           </div>
-        </div>
-      </nav>
-    </aside>
+
+          <!-- Separator -->
+          <div v-if="isAdmin && navSections.length > 0" class="h-px bg-[rgb(var(--border))] mx-2" />
+
+          <!-- Sections -->
+          <div class="flex-1 space-y-4">
+            <div v-for="section in navSections" :key="section.title" class="space-y-1">
+              <NuxtLink
+                v-for="item in section.items"
+                :key="item.path"
+                :to="item.path"
+                class="nav-item justify-center"
+                :class="{ 'active': isActive(item.path) }"
+                :title="item.name"
+              >
+                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="getIcon(item.icon)" />
+                </svg>
+              </NuxtLink>
+            </div>
+          </div>
+        </nav>
+      </aside>
+      <template #fallback>
+        <!-- Loading skeleton for mobile sidebar during SSR -->
+        <aside class="md:hidden flex-shrink-0 flex flex-col border-r-2 border-[rgb(var(--border))] bg-[rgb(var(--surface))] w-16 h-screen">
+          <div class="h-14 px-2 py-2 border-b-2 border-[rgb(var(--border))] flex items-center justify-center">
+            <div class="w-8 h-8 rounded-lg bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+          </div>
+          <nav class="flex-1 p-2 space-y-4">
+            <div class="h-10 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse"></div>
+            <div class="h-10 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse"></div>
+            <div class="h-10 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse"></div>
+          </nav>
+        </aside>
+      </template>
+    </ClientOnly>
     
     <div class="flex-1 flex flex-col overflow-hidden">
       <!-- Header -->
@@ -166,6 +248,16 @@ const pageTitle = computed(() => {
         
         <div class="flex items-center gap-2">
           <slot name="actions" />
+          <UiButton
+            variant="ghost"
+            size="sm"
+            @click="handleLogout"
+            title="Logout"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+          </UiButton>
           <LayoutThemeToggle />
         </div>
       </header>

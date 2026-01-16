@@ -1,36 +1,49 @@
-import { readConfig, writeConfig } from '@zs-ai/config'
+// Proxy config update API to proxy server
+
+import { getAuthHeader } from '../utils/auth'
 
 export default defineEventHandler(async (event) => {
+  const config = useRuntimeConfig()
+  const proxyUrl = config.public.proxyUrl || 'http://localhost:3100'
+  const authHeader = getAuthHeader(event)
+  const body = await readBody(event)
+  
+  if (!authHeader) {
+    throw createError({
+      statusCode: 401,
+      statusMessage: 'Authentication required'
+    })
+  }
+  
+  // Always use Authorization header (admin JWT token)
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': authHeader.startsWith('Bearer ') ? authHeader : `Bearer ${authHeader}`
+  }
+  
   try {
-    const body = await readBody(event)
-    
-    // Read existing config
-    const existing = readConfig() || {}
-    
-    // Merge with new config, always include backendUrl
-    const merged = {
-      ...existing,
-      ...body,
-      backendUrl: 'https://api-dev.authzebra.com' // Always include fixed backend URL
-    }
-    
-    // Write config
-    writeConfig(merged)
-    
-    console.log('[API] Config saved:', {
-      hasOrgId: !!merged.orgId,
-      hasProjectId: !!merged.projectId,
-      hasClientId: !!merged.clientId,
-      hasClientSecret: !!merged.clientSecret,
-      hasBackendUrl: !!merged.backendUrl
+    const response = await fetch(`${proxyUrl}/api/config`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body)
     })
     
-    return { success: true, config: merged }
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: response.statusText }))
+      throw createError({
+        statusCode: response.status,
+        statusMessage: error.error || response.statusText
+      })
+    }
+    
+    return await response.json()
   } catch (error: any) {
-    console.error('[API] Error writing config:', error)
+    if (error.statusCode) {
+      throw error
+    }
     throw createError({
       statusCode: 500,
-      statusMessage: `Failed to write config: ${error.message}`
+      statusMessage: `Failed to proxy request: ${error.message}`
     })
   }
 })

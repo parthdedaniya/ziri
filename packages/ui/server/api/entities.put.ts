@@ -1,0 +1,49 @@
+// Proxy update entity API to proxy server
+
+import { getAuthHeader } from '../utils/auth'
+
+export default defineEventHandler(async (event) => {
+  const config = useRuntimeConfig()
+  const proxyUrl = config.public.proxyUrl || 'http://localhost:3100'
+  const authHeader = getAuthHeader(event)
+  const body = await readBody(event)
+  
+  if (!authHeader) {
+    throw createError({
+      statusCode: 401,
+      statusMessage: 'Authentication required'
+    })
+  }
+  
+  // Always use Authorization header (admin JWT token)
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': authHeader.startsWith('Bearer ') ? authHeader : `Bearer ${authHeader}`
+  }
+  
+  try {
+    const response = await fetch(`${proxyUrl}/api/entities`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(body)
+    })
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: response.statusText }))
+      throw createError({
+        statusCode: response.status,
+        statusMessage: error.error || response.statusText
+      })
+    }
+    
+    return await response.json()
+  } catch (error: any) {
+    if (error.statusCode) {
+      throw error
+    }
+    throw createError({
+      statusCode: 500,
+      statusMessage: `Failed to proxy request: ${error.message}`
+    })
+  }
+})

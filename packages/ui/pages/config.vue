@@ -1,55 +1,94 @@
 <script setup lang="ts">
 import { useConfigStore } from '~/stores/config'
-import { useAuth } from '~/composables/useAuth'
+import { useToast } from '~/composables/useToast'
 import { useSchema } from '~/composables/useSchema'
 import { useRules } from '~/composables/useRules'
 import { useKeys } from '~/composables/useKeys'
-import { useToast } from '~/composables/useToast'
 
 const configStore = useConfigStore()
-const { testConnection } = useAuth()
+const toast = useToast()
 const { getSchema } = useSchema()
 const { listRules } = useRules()
 const { listKeys } = useKeys()
-const toast = useToast()
 
-const isTesting = ref(false)
 const isSaving = ref(false)
 const showMasterKey = ref(false)
 
 // Local form state
 const form = reactive({
-  projectId: '',
-  orgId: '',
-  clientId: '',
-  clientSecret: '',
-  pdpUrl: '',
-  proxyUrl: '',
-  port: 3100,
+  mode: 'local' as 'local' | 'live',
+  server: {
+    host: '127.0.0.1',
+    port: 3100
+  },
+  publicUrl: '',
+  email: {
+    enabled: false,
+    provider: 'manual' as 'smtp' | 'sendgrid' | 'manual',
+    smtp: {
+      host: '',
+      port: 587,
+      secure: false,
+      auth: {
+        user: '',
+        pass: ''
+      }
+    },
+    sendgrid: {
+      apiKey: ''
+    },
+    from: ''
+  },
   logLevel: 'info' as 'debug' | 'info' | 'warn' | 'error'
 })
 
 onMounted(async () => {
-  form.projectId = configStore.projectId
-  form.orgId = configStore.orgId
-  form.clientId = configStore.clientId
-  form.clientSecret = configStore.clientSecret
-  form.pdpUrl = configStore.pdpUrl
-  form.proxyUrl = configStore.proxyUrl || window.location.origin
-  form.port = configStore.port
-  form.logLevel = configStore.logLevel
-  
-  // Load master key if available
+  // Load current config
   try {
     const response = await fetch('/api/config')
     if (response.ok) {
       const config = await response.json()
+      form.mode = config.mode || 'local'
+      form.server = config.server || { host: '127.0.0.1', port: configStore.port || 3100 }
+      form.publicUrl = config.publicUrl || ''
+      form.email = config.email || {
+        enabled: false,
+        provider: 'manual',
+        smtp: { host: '', port: 587, secure: false, auth: { user: '', pass: '' } },
+        sendgrid: { apiKey: '' },
+        from: ''
+      }
+      form.logLevel = config.logLevel || 'info'
       if (config.masterKey) {
         configStore.masterKey = config.masterKey
       }
+    } else {
+      // Fallback to store values
+      form.mode = 'local'
+      form.server = configStore.server || { host: '127.0.0.1', port: configStore.port || 3100 }
+      form.publicUrl = configStore.publicUrl || ''
+      form.email = configStore.email || {
+        enabled: false,
+        provider: 'manual',
+        smtp: { host: '', port: 587, secure: false, auth: { user: '', pass: '' } },
+        sendgrid: { apiKey: '' },
+        from: ''
+      }
+      form.logLevel = configStore.logLevel || 'info'
     }
   } catch (e) {
-    // Ignore
+    // Fallback to store values
+    form.mode = 'local'
+    form.server = configStore.server || { host: '127.0.0.1', port: configStore.port || 3100 }
+    form.publicUrl = configStore.publicUrl || ''
+    form.email = configStore.email || {
+      enabled: false,
+      provider: 'manual',
+      smtp: { host: '', port: 587, secure: false, auth: { user: '', pass: '' } },
+      sendgrid: { apiKey: '' },
+      from: ''
+    }
+    form.logLevel = configStore.logLevel || 'info'
   }
 })
 
@@ -57,40 +96,11 @@ const saveConfig = async () => {
   isSaving.value = true
   try {
     await configStore.updateConfig(form)
-    // Wait for next tick and a small delay to ensure reactive state is updated and localStorage is written
     await nextTick()
     await new Promise(resolve => setTimeout(resolve, 100))
     
-    // Verify the config was saved correctly
-    console.log('[CONFIG PAGE] After save, isConfigured:', configStore.isConfigured)
-    console.log('[CONFIG PAGE] Config values:', {
-      projectId: configStore.projectId,
-      orgId: configStore.orgId,
-      hasClientId: !!configStore.clientId,
-      hasClientSecret: !!configStore.clientSecret
-    })
-    
     toast.success('Configuration saved successfully')
-    
-    // Auto-load data after saving config (if connection is valid)
-    if (configStore.isConfigured) {
-      try {
-        // Test connection first
-        const connectionResult = await testConnection()
-        if (connectionResult.success) {
-          // Load all data in parallel
-          await Promise.allSettled([
-            getSchema().catch(() => {}),
-            listRules().catch(() => {}),
-            listKeys().catch(() => {})
-          ])
-          toast.info('Data loaded successfully')
-        }
-      } catch (e) {
-        // Connection test failed, but config is saved
-        console.warn('Could not load data after saving config:', e)
-      }
-    }
+    toast.info('Restart the proxy server for server settings to take effect')
   } catch (e: any) {
     toast.error('Failed to save configuration')
   } finally {
@@ -98,47 +108,19 @@ const saveConfig = async () => {
   }
 }
 
-const handleTestConnection = async () => {
-  isTesting.value = true
-  try {
-    await configStore.updateConfig(form)
-    await nextTick()
-    const result = await testConnection()
-    if (result.success) {
-      toast.success('Connection successful! Token obtained.')
-      
-      // Auto-load data after successful connection test
-      try {
-        await Promise.allSettled([
-          getSchema().catch(() => {}),
-          listRules().catch(() => {}),
-          listKeys().catch(() => {})
-        ])
-        toast.info('Data loaded successfully')
-      } catch (e) {
-        console.warn('Could not load data:', e)
-      }
-    } else {
-      toast.error(`Connection failed: ${result.error}`)
-    }
-  } catch (e: any) {
-    toast.error(`Connection failed: ${e.message}`)
-  } finally {
-    isTesting.value = false
-  }
-}
-
 const resetToDefaults = async () => {
-  await configStore.resetToDefaults()
-  await nextTick()
-  form.projectId = configStore.projectId
-  form.orgId = configStore.orgId
-  form.clientId = configStore.clientId
-  form.clientSecret = configStore.clientSecret
-  form.pdpUrl = configStore.pdpUrl
-  form.proxyUrl = configStore.proxyUrl || window.location.origin
-  form.port = configStore.port
-  form.logLevel = configStore.logLevel
+  form.mode = 'local'
+  form.server = { host: '127.0.0.1', port: 3100 }
+  form.publicUrl = ''
+  form.email = {
+    enabled: false,
+    provider: 'manual',
+    smtp: { host: '', port: 587, secure: false, auth: { user: '', pass: '' } },
+    sendgrid: { apiKey: '' },
+    from: ''
+  }
+  form.logLevel = 'info'
+  await configStore.updateConfig(form)
   toast.info('Configuration reset to defaults')
 }
 
@@ -152,71 +134,155 @@ const copyMasterKey = () => {
 
 <template>
   <form @submit.prevent="saveConfig" class="max-w-2xl space-y-6">
-    <!-- Cedar Backend Configuration -->
+    <!-- Mode Display (Read-only for now) -->
     <section class="card">
       <div class="flex items-center gap-3 mb-5">
-        <div class="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
-          <svg class="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+        <div class="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+          <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
           </svg>
         </div>
-        <h3 class="text-sm font-bold text-[rgb(var(--text))]">Cedar Backend</h3>
+        <h3 class="text-sm font-bold text-[rgb(var(--text))]">Operation Mode</h3>
       </div>
-      <div class="space-y-4">
-        <div class="grid grid-cols-2 gap-4">
-          <UiInput v-model="form.projectId" label="Project ID" placeholder="my-project-id" />
-          <UiInput v-model="form.orgId" label="Organization ID" placeholder="my-org-id" />
-        </div>
-        <div class="grid grid-cols-2 gap-4">
-          <UiInput v-model="form.clientId" label="Client ID" placeholder="client-id" />
-          <UiInput v-model="form.clientSecret" label="Client Secret" type="password" placeholder="••••••••" />
-        </div>
-        <div>
-          <UiInput v-model="form.pdpUrl" label="PDP URL" type="url" placeholder="http://localhost:8180" />
-          <p class="text-xs text-[rgb(var(--text-secondary))] mt-1.5">
-            Policy Decision Point URL for authorization
-          </p>
-        </div>
+      <div class="space-y-3">
         <div class="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-          <p class="text-xs font-semibold text-blue-900 dark:text-blue-100 mb-1">Backend URL</p>
-          <p class="text-xs text-blue-700 dark:text-blue-300">
-            Fixed to: <code class="font-mono">https://api-dev.authzebra.com</code>
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-xs font-semibold text-blue-900 dark:text-blue-100 mb-1">Current Mode</p>
+              <p class="text-sm font-bold text-blue-700 dark:text-blue-300 uppercase">
+                {{ form.mode }}
+              </p>
+            </div>
+            <div class="px-3 py-1 rounded-lg bg-blue-100 dark:bg-blue-800">
+              <span class="text-xs font-bold text-blue-900 dark:text-blue-100">
+                {{ form.mode === 'local' ? '🔒 Local' : '🌐 Live' }}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="text-xs text-[rgb(var(--text-secondary))] space-y-1">
+          <p><strong>Local Mode:</strong> All data stored in local SQLite. Authorization via Cedar-WASM.</p>
+          <p><strong>Live Mode:</strong> Data stored in Backend API. Authorization via external PDP.</p>
+          <p class="text-[rgb(var(--text-muted))] italic mt-2">
+            ⚠️ Mode switching requires restarting the proxy server.
           </p>
         </div>
       </div>
     </section>
 
-    <!-- Proxy Settings -->
+    <!-- Server Settings -->
     <section class="card">
       <div class="flex items-center gap-3 mb-5">
         <div class="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
           <svg class="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
           </svg>
         </div>
-        <h3 class="text-sm font-bold text-[rgb(var(--text))]">Proxy Settings</h3>
+        <h3 class="text-sm font-bold text-[rgb(var(--text))]">Server Settings</h3>
       </div>
       <div class="space-y-4">
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <UiInput v-model="form.server.host" label="Host" placeholder="127.0.0.1" />
+            <p class="text-xs text-[rgb(var(--text-secondary))] mt-1.5">
+              Use <code class="font-mono">0.0.0.0</code> for network access
+            </p>
+          </div>
+          <div>
+            <UiInput v-model.number="form.server.port" label="Port" type="number" />
+            <p class="text-xs text-[rgb(var(--text-secondary))] mt-1.5">
+              Auto-increments if port is in use
+            </p>
+          </div>
+        </div>
         <div>
-          <UiInput v-model="form.proxyUrl" label="Proxy URL" type="url" placeholder="http://localhost:3100" />
+          <UiInput v-model="form.publicUrl" label="Public URL" type="url" placeholder="https://your-ngrok-url.ngrok.io" />
           <p class="text-xs text-[rgb(var(--text-secondary))] mt-1.5">
-            Optional: Proxy server URL (defaults to current origin)
+            Optional: Public URL for sharing with users (ngrok, Tailscale, etc.)
           </p>
         </div>
-        <div class="grid grid-cols-2 gap-4">
-          <UiInput v-model.number="form.port" label="Port" type="number" />
+        <div>
+          <label class="block text-xs font-semibold text-[rgb(var(--text-secondary))] mb-1.5">Log Level</label>
+          <select v-model="form.logLevel" class="input">
+            <option value="debug">Debug</option>
+            <option value="info">Info</option>
+            <option value="warn">Warn</option>
+            <option value="error">Error</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <!-- Email Settings -->
+    <section class="card">
+      <div class="flex items-center gap-3 mb-5">
+        <div class="p-2 rounded-lg bg-green-100 dark:bg-green-900/30">
+          <svg class="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+        </div>
+        <h3 class="text-sm font-bold text-[rgb(var(--text))]">Email Settings</h3>
+      </div>
+      <div class="space-y-4">
+        <div class="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="emailEnabled"
+            v-model="form.email.enabled"
+            class="w-4 h-4 rounded border-[rgb(var(--border))]"
+          />
+          <label for="emailEnabled" class="text-sm font-semibold text-[rgb(var(--text))]">
+            Enable Email Service
+          </label>
+        </div>
+        
+        <div v-if="form.email.enabled" class="space-y-4 pl-6 border-l-2 border-[rgb(var(--border))]">
           <div>
-            <label class="block text-xs font-semibold text-[rgb(var(--text-secondary))] mb-1.5">Log Level</label>
-            <select 
-              v-model="form.logLevel"
-              class="input"
-            >
-              <option value="debug">Debug</option>
-              <option value="info">Info</option>
-              <option value="warn">Warn</option>
-              <option value="error">Error</option>
+            <label class="block text-xs font-semibold text-[rgb(var(--text-secondary))] mb-1.5">Provider</label>
+            <select v-model="form.email.provider" class="input">
+              <option value="manual">Manual (Log to Console)</option>
+              <option value="smtp">SMTP</option>
+              <option value="sendgrid">SendGrid</option>
             </select>
+          </div>
+
+          <!-- SMTP Settings -->
+          <div v-if="form.email.provider === 'smtp'" class="space-y-3">
+            <div class="grid grid-cols-2 gap-4">
+              <UiInput v-model="form.email.smtp.host" label="SMTP Host" placeholder="smtp.gmail.com" />
+              <UiInput v-model.number="form.email.smtp.port" label="SMTP Port" type="number" />
+            </div>
+            <div class="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="smtpSecure"
+                v-model="form.email.smtp.secure"
+                class="w-4 h-4 rounded border-[rgb(var(--border))]"
+              />
+              <label for="smtpSecure" class="text-sm text-[rgb(var(--text-secondary))]">
+                Use TLS/SSL (for port 465 only)
+              </label>
+            </div>
+            <p class="text-xs text-[rgb(var(--text-secondary))]">
+              <strong>Note:</strong> Port 587 uses STARTTLS (leave unchecked). Port 465 uses SSL/TLS (check this box).
+            </p>
+            <div class="grid grid-cols-2 gap-4">
+              <UiInput v-model="form.email.smtp.auth.user" label="SMTP Username" />
+              <UiInput v-model="form.email.smtp.auth.pass" label="SMTP Password" type="password" />
+            </div>
+          </div>
+
+          <!-- SendGrid Settings -->
+          <div v-if="form.email.provider === 'sendgrid'" class="space-y-3">
+            <UiInput v-model="form.email.sendgrid.apiKey" label="SendGrid API Key" type="password" />
+          </div>
+
+          <!-- From Address (for all providers) -->
+          <div>
+            <UiInput v-model="form.email.from" label="From Address" type="email" placeholder="noreply@example.com" />
+            <p class="text-xs text-[rgb(var(--text-secondary))] mt-1.5">
+              Email address to send from (required for SendGrid)
+            </p>
           </div>
         </div>
       </div>
@@ -267,9 +333,6 @@ const copyMasterKey = () => {
     <div class="flex gap-3">
       <UiButton type="submit" :loading="isSaving">
         Save Configuration
-      </UiButton>
-      <UiButton type="button" variant="outline" :loading="isTesting" @click="handleTestConnection">
-        Test Connection
       </UiButton>
       <UiButton type="button" variant="ghost" @click="resetToDefaults">
         Reset

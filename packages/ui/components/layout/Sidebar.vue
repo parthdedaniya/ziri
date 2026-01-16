@@ -1,8 +1,27 @@
 <script setup lang="ts">
+import { useAdminAuthStore } from '~/stores/admin-auth'
+import { useUserAuthStore } from '~/stores/user-auth'
+
 const route = useRoute()
 
 // Sidebar collapsed state with persistence
 const isCollapsed = useState('sidebar-collapsed', () => false)
+
+// Get user role
+const adminAuthStore = useAdminAuthStore()
+const userAuthStore = useUserAuthStore()
+
+if (process.client) {
+  adminAuthStore.loadFromStorage()
+  userAuthStore.loadFromStorage()
+}
+
+const userRole = computed(() => {
+  return userAuthStore.user?.role || adminAuthStore.user?.role || null
+})
+
+const isAdmin = computed(() => userRole.value === 'admin')
+const isUser = computed(() => userRole.value === 'user' || userRole.value === undefined)
 
 const toggleSidebar = () => {
   isCollapsed.value = !isCollapsed.value
@@ -44,50 +63,74 @@ const hideTooltip = () => {
   tooltipState.value.visible = false
 }
 
-// Dashboard (independent, always at top)
-const dashboardItem = { name: 'Dashboard', path: '/', icon: 'dashboard' }
+// Dashboard (independent, always at top) - Admin only
+const dashboardItem = { name: 'Dashboard', path: '/', icon: 'dashboard', adminOnly: true }
 
 // Navigation sections
-const navSections = [
-  {
-    title: 'Analytics & Monitoring',
-    icon: 'chart',
-    items: [
-      { name: 'Analytics', path: '/analytics', icon: 'analytics' },
-      { name: 'Logs', path: '/logs', icon: 'logs' }
-    ]
-  },
-  {
-    title: 'Authorization',
-    icon: 'lock',
-    items: [
-      { name: 'Schema', path: '/schema', icon: 'schema' },
-      { name: 'Rules', path: '/rules', icon: 'rules' }
-    ]
-  },
-  {
-    title: 'Access Management',
-    icon: 'key',
-    items: [
-      { name: 'Users', path: '/users', icon: 'users' },
-      { name: 'API Keys', path: '/keys', icon: 'keys' }
-    ]
-  },
-  {
-    title: 'LLM Providers',
-    icon: 'providers',
-    items: [
-      { name: 'Providers', path: '/providers', icon: 'providers' }
-    ]
-  },
-  {
-    title: 'Settings',
-    icon: 'settings',
-    items: [
-      { name: 'Configuration', path: '/config', icon: 'config' }
-    ]
+const navSections = computed(() => {
+  const sections = []
+  
+  // Admin-only sections
+  if (isAdmin.value) {
+    sections.push(
+      {
+        title: 'Analytics & Monitoring',
+        icon: 'chart',
+        adminOnly: true,
+        items: [
+          { name: 'Analytics', path: '/analytics', icon: 'analytics', adminOnly: true },
+          { name: 'Logs', path: '/logs', icon: 'logs', adminOnly: true }
+        ]
+      },
+      {
+        title: 'Authorization',
+        icon: 'lock',
+        adminOnly: true,
+        items: [
+          { name: 'Schema', path: '/schema', icon: 'schema', adminOnly: true },
+          { name: 'Rules', path: '/rules', icon: 'rules', adminOnly: true }
+        ]
+      },
+      {
+        title: 'Access Management',
+        icon: 'key',
+        adminOnly: true,
+        items: [
+          { name: 'Users', path: '/users', icon: 'users', adminOnly: true },
+          { name: 'API Keys', path: '/keys', icon: 'keys', adminOnly: true }
+        ]
+      },
+      {
+        title: 'LLM Providers',
+        icon: 'providers',
+        adminOnly: true,
+        items: [
+          { name: 'Providers', path: '/providers', icon: 'providers', adminOnly: true }
+        ]
+      },
+      {
+        title: 'Settings',
+        icon: 'settings',
+        adminOnly: true,
+        items: [
+          { name: 'Configuration', path: '/config', icon: 'config', adminOnly: true }
+        ]
+      }
+    )
   }
-]
+  
+  // User sections (accessible by both admin and user)
+  sections.push({
+    title: 'My Account',
+    icon: 'user',
+    adminOnly: false,
+    items: [
+      { name: 'My Profile', path: '/me', icon: 'user', adminOnly: false }
+    ]
+  })
+  
+  return sections
+})
 
 const isActive = (path: string) => {
   if (path === '/') {
@@ -147,8 +190,8 @@ const getIcon = (iconName: string) => {
     
     <!-- Navigation -->
     <nav class="flex-1 p-2 overflow-y-auto overflow-x-hidden flex flex-col min-w-0" style="scrollbar-width: none; -ms-overflow-style: none;">
-      <!-- Dashboard (independent, always at top) -->
-      <div class="mb-4 min-w-0">
+      <!-- Dashboard (independent, always at top) - Admin only -->
+      <div v-if="isAdmin" class="mb-4 min-w-0">
         <NuxtLink
           :to="dashboardItem.path"
           class="nav-item group relative min-w-0 w-full"

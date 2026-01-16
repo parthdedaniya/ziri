@@ -7,6 +7,7 @@ import type { SchemaApiResponse } from '~/types/api'
 export const useSchemaStore = defineStore('schema', {
     state: () => ({
         schema: null as CedarSchema | null,
+        schemaCedarText: null as string | null,
         version: '',
         lastSyncedAt: null as Date | null,
         loading: false,

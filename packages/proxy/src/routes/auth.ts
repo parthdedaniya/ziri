@@ -1,82 +1,164 @@
 // Authentication routes
+// Uses new auth table with encryption
 
 import { Router, type Request, type Response } from 'express'
 import { getDatabase } from '../db/index.js'
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken, hashRefreshToken, type TokenPayload } from '../utils/jwt.js'
 import { getMasterKey } from '../utils/master-key.js'
+import { decrypt, hash as hashEmail } from '../utils/encryption.js'
 import bcrypt from 'bcrypt'
 
-const router = Router()
+const router: Router = Router()
 
 /**
  * POST /api/auth/admin/login
- * Admin login with username "admin" and master key as password
+ * Admin login - looks up users in auth table
+ * Also supports master key fallback for initial setup
  */
 router.post('/admin/login', async (req: Request, res: Response) => {
   try {
-    const { username, password } = req.body
+    const { username, password, email } = req.body
     
-    if (!username || !password) {
+    // Accept either username or email
+    const identifier = username || email
+    
+    if (!identifier || !password) {
       res.status(400).json({
-        error: 'username and password are required',
+        error: 'username/email and password are required',
         code: 'MISSING_CREDENTIALS'
       })
       return
     }
     
-    // Check if username is "admin"
-    if (username !== 'admin') {
-      res.status(401).json({
-        error: 'Invalid username or password',
-        code: 'INVALID_CREDENTIALS'
-      })
-      return
-    }
-    
-    // Verify password matches master key
-    const masterKey = getMasterKey()
-    if (!masterKey || password !== masterKey) {
-      res.status(401).json({
-        error: 'Invalid username or password',
-        code: 'INVALID_CREDENTIALS'
-      })
-      return
-    }
-    
-    // Generate admin token
-    const tokenPayload: TokenPayload = {
-      userId: 'admin',
-      email: 'admin@zs-ai.local',
-      role: 'admin',
-      name: 'Administrator'
-    }
-    
-    const accessToken = generateAccessToken(tokenPayload)
-    const refreshToken = generateRefreshToken(tokenPayload)
-    
-    // Store refresh token hash in database (using admin as userId)
     const db = getDatabase()
-    const tokenHash = hashRefreshToken(refreshToken)
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days (sliding window)
-    const absoluteExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days (absolute)
-    const deviceId = req.body.deviceId || null // Optional device ID
     
-    db.prepare(`
-      INSERT INTO refresh_tokens (user_id, token_hash, expires_at, absolute_expires_at, device_id)
-      VALUES (?, ?, ?, ?, ?)
-    `).run('admin', tokenHash, expiresAt.toISOString(), absoluteExpiresAt.toISOString(), deviceId)
+    // First, try to find admin user in auth table by email_hash or id
+    // For admin, we check if id='admin' (created on first run)
+    let user = db.prepare('SELECT * FROM auth WHERE id = ?').get(identifier) as any
     
-    res.json({
-      accessToken,
-      refreshToken,
-      expiresIn: 3600, // 1 hour in seconds
-      tokenType: 'Bearer',
-      user: {
-        userId: 'admin',
-        email: 'admin@zs-ai.local',
-        role: 'admin',
-        name: 'Administrator'
+    // If not found by id, try by email_hash
+    if (!user) {
+      const emailHash = hashEmail(identifier)
+      user = db.prepare('SELECT * FROM auth WHERE email_hash = ?').get(emailHash) as any
+    }
+    
+    // Check if user is admin (id='admin' or we can check role in future)
+    // For now, admin is identified by id='admin'
+    if (user && user.id === 'admin') {
+      // Found admin user - verify password
+      if (user.status !== 1) { // 1 = active
+        res.status(403).json({
+          error: 'Admin account is not active',
+          code: 'ACCOUNT_INACTIVE'
+        })
+        return
       }
+      
+      const passwordMatch = await bcrypt.compare(password, user.password)
+      
+      if (!passwordMatch) {
+        res.status(401).json({
+          error: 'Invalid username/email or password',
+          code: 'INVALID_CREDENTIALS'
+        })
+        return
+      }
+      
+      // Decrypt email
+      let decryptedEmail: string
+      try {
+        decryptedEmail = decrypt(user.email)
+      } catch (error: any) {
+        decryptedEmail = user.email // Fallback to plain text
+      }
+      
+      // Generate admin token with actual user data
+      const tokenPayload: TokenPayload = {
+        userId: user.id,
+        email: decryptedEmail,
+        role: 'admin',
+        name: user.name || 'Administrator'
+      }
+      
+      const accessToken = generateAccessToken(tokenPayload)
+      const refreshToken = generateRefreshToken(tokenPayload)
+      
+      // Store refresh token hash in database
+      const tokenHash = hashRefreshToken(refreshToken)
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days (sliding window)
+      const absoluteExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days (absolute)
+      const deviceId = req.body.deviceId || null // Optional device ID
+      
+      db.prepare(`
+        INSERT INTO refresh_tokens (auth_id, token_hash, expires_at, absolute_expires_at, device_id)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(user.id, tokenHash, expiresAt.toISOString(), absoluteExpiresAt.toISOString(), deviceId)
+      
+      // Update last login
+      db.prepare('UPDATE auth SET last_sign_in = datetime(\'now\') WHERE id = ?').run(user.id)
+      
+      res.json({
+        accessToken,
+        refreshToken,
+        expiresIn: 3600, // 1 hour in seconds
+        tokenType: 'Bearer',
+        user: {
+          userId: user.id,
+          email: decryptedEmail,
+          role: 'admin',
+          name: user.name || 'Administrator'
+        }
+      })
+      return
+    }
+    
+    // Fallback: Check if using master key (for initial setup when no admin users exist)
+    // Only allow this if username is "admin" (backward compatibility)
+    if (identifier === 'admin') {
+      const masterKey = getMasterKey()
+      if (masterKey && password === masterKey) {
+        // Generate admin token (legacy mode - no user in database)
+        const tokenPayload: TokenPayload = {
+          userId: 'admin',
+          email: 'admin@zs-ai.local',
+          role: 'admin',
+          name: 'Administrator'
+        }
+        
+        const accessToken = generateAccessToken(tokenPayload)
+        const refreshToken = generateRefreshToken(tokenPayload)
+        
+        // Store refresh token hash in database
+        const tokenHash = hashRefreshToken(refreshToken)
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days (sliding window)
+        const absoluteExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days (absolute)
+        const deviceId = req.body.deviceId || null // Optional device ID
+        
+        db.prepare(`
+          INSERT INTO refresh_tokens (auth_id, token_hash, expires_at, absolute_expires_at, device_id)
+          VALUES (?, ?, ?, ?, ?)
+        `).run('admin', tokenHash, expiresAt.toISOString(), absoluteExpiresAt.toISOString(), deviceId)
+        
+        res.json({
+          accessToken,
+          refreshToken,
+          expiresIn: 3600, // 1 hour in seconds
+          tokenType: 'Bearer',
+          user: {
+            userId: 'admin',
+            email: 'admin@zs-ai.local',
+            role: 'admin',
+            name: 'Administrator'
+          }
+        })
+        return
+      }
+    }
+    
+    // No matching admin user or master key
+    res.status(401).json({
+      error: 'Invalid username/email or password',
+      code: 'INVALID_CREDENTIALS'
     })
   } catch (error: any) {
     console.error('[AUTH] Admin login error:', error)
@@ -105,8 +187,8 @@ router.post('/login', async (req: Request, res: Response) => {
     
     const db = getDatabase()
     
-    // Find user by userId
-    const user = db.prepare('SELECT * FROM users WHERE user_id = ?').get(userId) as any
+    // Find user by id (auth.id)
+    const user = db.prepare('SELECT * FROM auth WHERE id = ?').get(userId) as any
     
     if (!user) {
       res.status(401).json({
@@ -117,7 +199,7 @@ router.post('/login', async (req: Request, res: Response) => {
     }
     
     // Check password
-    const passwordMatch = await bcrypt.compare(password, user.password_hash)
+    const passwordMatch = await bcrypt.compare(password, user.password)
     
     if (!passwordMatch) {
       res.status(401).json({
@@ -127,8 +209,8 @@ router.post('/login', async (req: Request, res: Response) => {
       return
     }
     
-    // Check if user is active
-    if (user.status !== 'active') {
+    // Check if user is active (status = 1)
+    if (user.status !== 1) {
       res.status(403).json({
         error: 'User account is not active',
         code: 'USER_INACTIVE'
@@ -136,12 +218,20 @@ router.post('/login', async (req: Request, res: Response) => {
       return
     }
     
+    // Decrypt email
+    let decryptedEmail: string
+    try {
+      decryptedEmail = decrypt(user.email)
+    } catch (error: any) {
+      decryptedEmail = user.email // Fallback to plain text
+    }
+    
     // Generate tokens
     const tokenPayload: TokenPayload = {
-      userId: user.user_id,
-      email: user.email,
-      role: user.role,
-      name: user.name
+      userId: user.id,
+      email: decryptedEmail,
+      role: 'user', // Regular users have role 'user'
+      name: user.name || ''
     }
     
     const accessToken = generateAccessToken(tokenPayload)
@@ -154,18 +244,24 @@ router.post('/login', async (req: Request, res: Response) => {
     const deviceId = req.body.deviceId || null // Optional device ID
     
     db.prepare(`
-      INSERT INTO refresh_tokens (user_id, token_hash, expires_at, absolute_expires_at, device_id)
+      INSERT INTO refresh_tokens (auth_id, token_hash, expires_at, absolute_expires_at, device_id)
       VALUES (?, ?, ?, ?, ?)
-    `).run(user.user_id, tokenHash, expiresAt.toISOString(), absoluteExpiresAt.toISOString(), deviceId)
+    `).run(user.id, tokenHash, expiresAt.toISOString(), absoluteExpiresAt.toISOString(), deviceId)
     
     // Update last login
-    db.prepare('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = ?').run(user.user_id)
+    db.prepare('UPDATE auth SET last_sign_in = datetime(\'now\') WHERE id = ?').run(user.id)
     
     res.json({
       accessToken,
       refreshToken,
       expiresIn: 3600, // 1 hour in seconds
-      tokenType: 'Bearer'
+      tokenType: 'Bearer',
+      user: {
+        userId: user.id,
+        email: decryptedEmail,
+        role: 'user',
+        name: user.name || ''
+      }
     })
   } catch (error: any) {
     console.error('[AUTH] Login error:', error)
@@ -213,8 +309,8 @@ router.post('/refresh', async (req: Request, res: Response) => {
       SELECT * FROM refresh_tokens 
       WHERE token_hash = ? 
         AND revoked_at IS NULL 
-        AND expires_at > CURRENT_TIMESTAMP
-        AND (absolute_expires_at IS NULL OR absolute_expires_at > CURRENT_TIMESTAMP)
+        AND expires_at > datetime('now')
+        AND (absolute_expires_at IS NULL OR absolute_expires_at > datetime('now'))
     `).get(tokenHash) as any
     
     if (!storedToken) {
@@ -232,8 +328,8 @@ router.post('/refresh', async (req: Request, res: Response) => {
       // Revoke ALL refresh tokens for this user (security measure)
       db.prepare(`
         UPDATE refresh_tokens 
-        SET revoked_at = CURRENT_TIMESTAMP 
-        WHERE user_id = ? AND revoked_at IS NULL
+        SET revoked_at = datetime('now') 
+        WHERE auth_id = ? AND revoked_at IS NULL
       `).run(payload.userId)
       
       res.status(401).json({
@@ -244,9 +340,9 @@ router.post('/refresh', async (req: Request, res: Response) => {
     }
     
     // Get user to ensure still active
-    const user = db.prepare('SELECT * FROM users WHERE user_id = ?').get(payload.userId) as any
+    const user = db.prepare('SELECT * FROM auth WHERE id = ?').get(payload.userId) as any
     
-    if (!user || user.status !== 'active') {
+    if (!user || user.status !== 1) { // 1 = active
       res.status(403).json({
         error: 'User account is not active',
         code: 'USER_INACTIVE'
@@ -254,19 +350,27 @@ router.post('/refresh', async (req: Request, res: Response) => {
       return
     }
     
+    // Decrypt email
+    let decryptedEmail: string
+    try {
+      decryptedEmail = decrypt(user.email)
+    } catch (error: any) {
+      decryptedEmail = user.email // Fallback to plain text
+    }
+    
     // Mark old token as used
     db.prepare(`
       UPDATE refresh_tokens 
-      SET used_at = CURRENT_TIMESTAMP 
+      SET used_at = datetime('now') 
       WHERE token_hash = ?
     `).run(tokenHash)
     
     // Generate new tokens
     const tokenPayload: TokenPayload = {
-      userId: user.user_id,
-      email: user.email,
-      role: user.role,
-      name: user.name
+      userId: user.id,
+      email: decryptedEmail,
+      role: user.id === 'admin' ? 'admin' : 'user',
+      name: user.name || ''
     }
     
     const newAccessToken = generateAccessToken(tokenPayload)
@@ -281,10 +385,10 @@ router.post('/refresh', async (req: Request, res: Response) => {
       : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
     
     db.prepare(`
-      INSERT INTO refresh_tokens (user_id, token_hash, expires_at, absolute_expires_at, device_id)
+      INSERT INTO refresh_tokens (auth_id, token_hash, expires_at, absolute_expires_at, device_id)
       VALUES (?, ?, ?, ?, ?)
     `).run(
-      user.user_id, 
+      user.id, 
       newTokenHash, 
       newExpiresAt.toISOString(), 
       newAbsoluteExpiresAt.toISOString(),
@@ -321,7 +425,7 @@ router.post('/logout', async (req: Request, res: Response) => {
       // Revoke refresh token
       db.prepare(`
         UPDATE refresh_tokens 
-        SET revoked_at = CURRENT_TIMESTAMP 
+        SET revoked_at = datetime('now') 
         WHERE token_hash = ?
       `).run(tokenHash)
     }

@@ -8,6 +8,9 @@ import { getConfigDir } from '@zs-ai/config'
 const CONFIG_DIR = getConfigDir()
 const MASTER_KEY_FILE = join(CONFIG_DIR, 'master-key.txt')
 
+// Store the generated master key in memory (regenerated on each restart)
+let currentMasterKey: string | null = null
+
 /**
  * Generate a new master key (cryptographically secure)
  */
@@ -18,27 +21,18 @@ export function generateMasterKey(): string {
 }
 
 /**
- * Get master key from file or environment variable
+ * Get master key from environment variable or in-memory storage
+ * Master key is regenerated on each restart (no file persistence)
  */
 export function getMasterKey(): string | null {
-  // Check environment variable first
+  // Check environment variable first (optional override)
   const envKey = process.env.ZS_AI_MASTER_KEY
   if (envKey) {
     return envKey
   }
 
-  // Check file
-  if (existsSync(MASTER_KEY_FILE)) {
-    try {
-      const key = readFileSync(MASTER_KEY_FILE, 'utf-8').trim()
-      return key
-    } catch (error) {
-      console.error('[MASTER KEY] Error reading master key file:', error)
-      return null
-    }
-  }
-
-  return null
+  // Return the in-memory master key (set by initializeMasterKey)
+  return currentMasterKey
 }
 
 /**
@@ -56,31 +50,31 @@ export function saveMasterKey(key: string): void {
 }
 
 /**
- * Initialize master key (generate if doesn't exist)
+ * Initialize master key (always generate new on each restart)
  */
 export function initializeMasterKey(): string {
-  const existing = getMasterKey()
-  
-  if (existing) {
-    console.log('[MASTER KEY] Using existing master key')
-    console.log(`[MASTER KEY] Location: ${MASTER_KEY_FILE}`)
-    console.log('[MASTER KEY] To view the key, open the file above or set ZS_AI_MASTER_KEY env var')
-    return existing
+  // Check environment variable first (optional override for persistent key)
+  const envKey = process.env.ZS_AI_MASTER_KEY
+  if (envKey) {
+    currentMasterKey = envKey
+    console.log('[MASTER KEY] Using master key from ZS_AI_MASTER_KEY environment variable')
+    return envKey
   }
 
-  // Generate new master key
+  // Always generate new master key on each restart
   const newKey = generateMasterKey()
-  saveMasterKey(newKey)
+  currentMasterKey = newKey // Store in memory for getMasterKey() to access
   
   console.log('='.repeat(70))
-  console.log('🔑 MASTER KEY GENERATED')
+  console.log('🔑 MASTER KEY GENERATED (New on each restart)')
   console.log('='.repeat(70))
   console.log(`Master Key: ${newKey}`)
-  console.log(`Location: ${MASTER_KEY_FILE}`)
   console.log('')
-  console.log('⚠️  IMPORTANT: Save this master key now - it won\'t be shown again!')
-  console.log('⚠️  This key is required for all admin operations.')
-  console.log('⚠️  Store it securely - you can also set ZS_AI_MASTER_KEY env var.')
+  console.log('⚠️  This master key is valid for this session only.')
+  console.log('⚠️  Admin can login with:')
+  console.log('    - Username: admin or admin@zs-ai.local')
+  console.log('    - Password: (the master key shown above)')
+  console.log('⚠️  Or set ZS_AI_MASTER_KEY env var for persistent key.')
   console.log('='.repeat(70))
   console.log('')
   

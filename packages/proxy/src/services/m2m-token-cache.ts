@@ -50,13 +50,17 @@ export async function getM2MToken(config: ProxyConfig): Promise<string> {
   }
   
   // Otherwise, fetch new token
-  const authProvider = new M2MAuthProvider({
-    backendUrl: config.backendUrl,
-    orgId: config.orgId,
-    projectId: config.projectId,
-    clientId: config.clientId,
-    clientSecret: config.clientSecret
-  })
+        if (!config.backendUrl || !config.orgId || !config.projectId || !config.clientId || !config.clientSecret) {
+          throw new Error('Backend API credentials not configured')
+        }
+        
+        const authProvider = new M2MAuthProvider({
+          backendUrl: config.backendUrl,
+          orgId: config.orgId,
+          projectId: config.projectId,
+          clientId: config.clientId,
+          clientSecret: config.clientSecret
+        })
   
   const token = await authProvider.getToken()
   

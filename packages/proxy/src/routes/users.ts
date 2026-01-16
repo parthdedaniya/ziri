@@ -4,7 +4,7 @@ import { Router, type Request, type Response } from 'express'
 import { requireAdmin } from '../middleware/auth.js'
 import * as userService from '../services/user-service.js'
 
-const router = Router()
+const router: Router = Router()
 
 // All routes require admin authentication
 router.use(requireAdmin)
@@ -59,23 +59,36 @@ router.get('/:userId', (req: Request, res: Response) => {
  */
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { email, name } = req.body
+    const { email, name, department, isAgent, limitRequestsPerMinute } = req.body
     
-    if (!email || !name) {
+    if (!email || !name || !department) {
       res.status(400).json({
-        error: 'email and name are required',
+        error: 'email, name, and department are required',
         code: 'MISSING_FIELDS'
       })
       return
     }
     
-    const result = await userService.createUser({ email, name })
-    
-    res.status(201).json({
-      user: result.user,
-      password: result.password, // Show password once
-      message: 'User created successfully. Save the password - it won\'t be shown again!'
+    const result = await userService.createUser({ 
+      email, 
+      name, 
+      department,
+      isAgent: isAgent ?? false,
+      limitRequestsPerMinute: limitRequestsPerMinute || 100
     })
+    
+    if (result.emailSent) {
+      res.status(201).json({
+        user: result.user,
+        message: 'User created successfully. Credentials have been sent to the user\'s email address.'
+      })
+    } else {
+      res.status(201).json({
+        user: result.user,
+        password: result.password, // Show password if email not sent
+        message: 'User created successfully. Save the password - it won\'t be shown again! Email was not sent (email service not configured or failed).'
+      })
+    }
   } catch (error: any) {
     console.error('[USERS] Create error:', error)
     
@@ -167,12 +180,21 @@ router.delete('/:userId', async (req: Request, res: Response) => {
 router.post('/:userId/reset-password', async (req: Request, res: Response) => {
   try {
     const { userId } = req.params
-    const newPassword = await userService.resetUserPassword(userId)
+    const result = await userService.resetUserPassword(userId)
     
-    res.json({
-      password: newPassword, // Show password once
-      message: 'Password reset successfully. Save the password - it won\'t be shown again!'
-    })
+    if (result.emailSent) {
+      res.json({
+        password: undefined, // Don't send password if email was sent
+        emailSent: true,
+        message: 'Password reset successfully. The new password has been sent to the user\'s email address.'
+      })
+    } else {
+      res.json({
+        password: result.password, // Show password if email not sent
+        emailSent: false,
+        message: 'Password reset successfully. Save the password - it won\'t be shown again! Email was not sent (email service not configured or failed).'
+      })
+    }
   } catch (error: any) {
     console.error('[USERS] Reset password error:', error)
     

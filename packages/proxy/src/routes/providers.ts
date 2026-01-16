@@ -4,7 +4,7 @@ import { Router, type Request, type Response } from 'express'
 import { requireAdmin } from '../middleware/auth.js'
 import * as providerService from '../services/provider-service.js'
 
-const router = Router()
+const router: Router = Router()
 
 // All routes require admin authentication
 router.use(requireAdmin)
@@ -125,7 +125,7 @@ router.delete('/:name', (req: Request, res: Response) => {
 router.post('/:name/test', async (req: Request, res: Response) => {
   try {
     const { name } = req.params
-    const result = await providerService.testProviderConnection(name)
+    const result = await providerService.testProviderApiKey(name)
     
     if (result.success) {
       res.json({ success: true, message: 'Provider connection successful' })

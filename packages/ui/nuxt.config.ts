@@ -1,4 +1,7 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
+import wasm from 'vite-plugin-wasm'
+import topLevelAwait from 'vite-plugin-top-level-await'
+
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
@@ -35,9 +38,35 @@ export default defineNuxtConfig({
   },
 
   // Generate static output for CLI to serve
+  // NOTE: Only prerender dashboard if needed, but don't force it
   nitro: {
     prerender: {
       routes: ['/']
+    },
+    experimental: {
+      wasm: true
+    }
+  },
+  
+  vite: {
+    plugins: [wasm(), topLevelAwait()],
+		assetsInclude: ["**/*.wasm"],
+    optimizeDeps: {
+      exclude: ['@cedar-policy/cedar-wasm']
+    },
+    ssr: {
+      noExternal: []
+    }
+  },
+  
+  // Prevent SSR hydration mismatches by ensuring client-side routing
+  ssr: true,
+  
+  // Router options to prevent default route issues
+  router: {
+    options: {
+      // Don't use hash mode
+      hashMode: false
     }
   }
 })

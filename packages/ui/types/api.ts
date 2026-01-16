@@ -26,7 +26,9 @@ export interface PoliciesResponse {
 
 export interface SchemaApiResponse {
     data: {
-        schema: CedarSchema
+        schema: CedarSchema | string  // Can be JSON object or Cedar text string
+        schemaJson?: CedarSchema  // JSON format (if available)
         version: string
+        format?: 'json' | 'cedar'  // Format indicator
     }
 }

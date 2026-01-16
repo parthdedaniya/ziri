@@ -7,6 +7,29 @@ export interface AdminUser {
   name: string
 }
 
+// Cookie helper functions
+const getCookie = (name: string): string | null => {
+  if (typeof document === 'undefined') return null
+  const value = `; ${document.cookie}`
+  const parts = value.split(`; ${name}=`)
+  if (parts.length === 2) return parts.pop()?.split(';').shift() || null
+  return null
+}
+
+const setCookie = (name: string, value: string, days: number = 30) => {
+  if (typeof document === 'undefined') return
+  const expires = new Date()
+  expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000)
+  document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/;SameSite=Lax`
+}
+
+const removeCookie = (name: string) => {
+  if (typeof document === 'undefined') return
+  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/;`
+}
+
+const COOKIE_NAME = 'admin-auth'
+
 export const useAdminAuthStore = defineStore('adminAuth', {
   state: () => ({
     accessToken: null as string | null,
@@ -33,14 +56,15 @@ export const useAdminAuthStore = defineStore('adminAuth', {
       this.user = user
       this.error = null
       
-      // Persist to localStorage
+      // Persist to cookie (30 days expiry)
       if (process.client) {
-        localStorage.setItem('admin-auth', JSON.stringify({
+        const authData = {
           accessToken,
           refreshToken,
           tokenExpiry: this.tokenExpiry.toISOString(),
           user
-        }))
+        }
+        setCookie(COOKIE_NAME, JSON.stringify(authData), 30)
       }
     },
 
@@ -51,9 +75,9 @@ export const useAdminAuthStore = defineStore('adminAuth', {
       this.user = null
       this.error = null
       
-      // Clear from localStorage
+      // Clear cookie
       if (process.client) {
-        localStorage.removeItem('admin-auth')
+        removeCookie(COOKIE_NAME)
       }
     },
 
@@ -61,7 +85,7 @@ export const useAdminAuthStore = defineStore('adminAuth', {
       if (!process.client) return
       
       try {
-        const stored = localStorage.getItem('admin-auth')
+        const stored = getCookie(COOKIE_NAME)
         if (stored) {
           const data = JSON.parse(stored)
           const expiry = new Date(data.tokenExpiry)
@@ -78,7 +102,6 @@ export const useAdminAuthStore = defineStore('adminAuth', {
           }
         }
       } catch (error) {
-        console.error('[ADMIN AUTH] Error loading from storage:', error)
         this.clearAuth()
       }
     },

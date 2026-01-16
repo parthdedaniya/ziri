@@ -4,6 +4,27 @@ import { defaultConfig } from '~/types/config'
 
 const STORAGE_KEY = 'llm-gateway-config'
 
+// Cookie helper functions
+const getCookie = (name: string): string | null => {
+  if (typeof document === 'undefined') return null
+  const value = `; ${document.cookie}`
+  const parts = value.split(`; ${name}=`)
+  if (parts.length === 2) return parts.pop()?.split(';').shift() || null
+  return null
+}
+
+const setCookie = (name: string, value: string, days: number = 365) => {
+  if (typeof document === 'undefined') return
+  const expires = new Date()
+  expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000)
+  document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/;SameSite=Lax`
+}
+
+const removeCookie = (name: string) => {
+  if (typeof document === 'undefined') return
+  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/;`
+}
+
 export const useConfigStore = defineStore('config', {
     state: () => ({
         ...defaultConfig
@@ -11,15 +32,15 @@ export const useConfigStore = defineStore('config', {
 
     getters: {
         isConfigured: (state) => {
-            return !!(state.projectId && state.orgId && state.clientId && state.clientSecret)
+            // In local mode, we don't need Backend API credentials
+            // Configuration is considered valid if server settings exist
+            return !!(state.server?.port || state.port)
         }
     },
 
     actions: {
         async loadFromStorage() {
-            console.log('[CONFIG STORE] loadFromStorage called')
             if (!import.meta.client) {
-                console.log('[CONFIG STORE] Not on client, skipping')
                 return
             }
 
@@ -28,168 +49,142 @@ export const useConfigStore = defineStore('config', {
                 const response = await fetch('/api/config')
                 if (response.ok) {
                     const config = await response.json()
-                    console.log('[CONFIG STORE] Loaded from config file:', {
-                        projectId: config.projectId,
-                        orgId: config.orgId,
-                        hasClientId: !!config.clientId,
-                        hasClientSecret: !!config.clientSecret
-                    })
                     // Map config file format to UI config format
-                    const uiConfig = {
+                    const uiConfig: GatewayConfig = {
+                        mode: config.mode || 'local',
+                        server: config.server || {
+                            host: config.host || '127.0.0.1',
+                            port: config.port || config.server?.port || 3100
+                        },
+                        publicUrl: config.publicUrl || '',
+                        email: config.email || {
+                            enabled: false,
+                            provider: 'manual'
+                        },
+                        // Legacy fields (for backward compatibility)
                         projectId: config.projectId || '',
                         orgId: config.orgId || '',
                         clientId: config.clientId || '',
                         clientSecret: config.clientSecret || '',
                         pdpUrl: config.pdpUrl || '',
                         proxyUrl: config.proxyUrl || '',
-                        port: config.port || 3100,
+                        port: config.port || config.server?.port || 3100,
                         logLevel: config.logLevel || 'info',
                         masterKey: config.masterKey || ''
                     }
                     this.$patch(uiConfig)
-                    // Also sync to localStorage as backup
-                    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.$state))
-                    console.log('[CONFIG STORE] Config loaded from file and synced to localStorage')
+                    // Also sync to cookie as backup
+                    setCookie(STORAGE_KEY, JSON.stringify(this.$state), 365)
                     return
-                } else if (response.status === 404) {
-                    console.log('[CONFIG STORE] Config file not found, trying localStorage')
-                } else {
-                    console.warn('[CONFIG STORE] Failed to load from config file, trying localStorage')
                 }
             } catch (error) {
                 // API endpoint not available (UI running standalone or not via CLI)
-                console.log('[CONFIG STORE] Config API not available, using localStorage:', error)
             }
 
-            // Fallback to localStorage
-            const stored = localStorage.getItem(STORAGE_KEY)
-            console.log('[CONFIG STORE] localStorage value:', stored ? 'exists' : 'null')
+            // Fallback to cookie
+            const stored = getCookie(STORAGE_KEY)
             if (stored) {
                 try {
                     const parsed = JSON.parse(stored)
-                    console.log('[CONFIG STORE] Parsed config:', {
-                        projectId: parsed.projectId,
-                        orgId: parsed.orgId,
-                        hasClientId: !!parsed.clientId,
-                        hasClientSecret: !!parsed.clientSecret,
-                        clientIdLength: parsed.clientId?.length || 0,
-                        clientSecretLength: parsed.clientSecret?.length || 0
-                    })
                     // Use $patch for reactivity - patch all properties
                     this.$patch({
+                        mode: parsed.mode || 'local',
+                        server: parsed.server || {
+                            host: parsed.host || '127.0.0.1',
+                            port: parsed.port || parsed.server?.port || 3100
+                        },
+                        publicUrl: parsed.publicUrl || '',
+                        email: parsed.email || {
+                            enabled: false,
+                            provider: 'manual'
+                        },
+                        // Legacy fields
                         projectId: parsed.projectId || '',
                         orgId: parsed.orgId || '',
                         clientId: parsed.clientId || '',
                         clientSecret: parsed.clientSecret || '',
                         pdpUrl: parsed.pdpUrl || '',
                         proxyUrl: parsed.proxyUrl || '',
-                        port: parsed.port || 3100,
+                        port: parsed.port || parsed.server?.port || 3100,
                         logLevel: parsed.logLevel || 'info',
                         masterKey: parsed.masterKey || ''
                     })
-                    console.log('[CONFIG STORE] After $patch:', {
-                        projectId: this.projectId,
-                        orgId: this.orgId,
-                        hasClientId: !!this.clientId,
-                        hasClientSecret: !!this.clientSecret,
-                        clientIdLength: this.clientId?.length || 0,
-                        clientSecretLength: this.clientSecret?.length || 0,
-                        isConfigured: this.isConfigured
-                    })
                 } catch (e) {
-                    console.error('[CONFIG STORE] Failed to parse stored config:', e)
+                    // Failed to parse stored config
                 }
-            } else {
-                console.log('[CONFIG STORE] No stored config found in localStorage')
             }
         },
 
         async saveToStorage() {
             if (!import.meta.client) return
 
+            // Save server and email settings (include mode)
             const configToSave = {
-                projectId: this.projectId,
-                orgId: this.orgId,
-                clientId: this.clientId,
-                clientSecret: this.clientSecret,
-                pdpUrl: this.pdpUrl,
-                proxyUrl: this.proxyUrl,
-                port: this.port,
-                logLevel: this.logLevel
+                mode: this.mode || 'local',  // Use stored mode or default to local
+                server: this.server || {
+                    host: '127.0.0.1',
+                    port: this.port || 3100
+                },
+                publicUrl: this.publicUrl || '',
+                email: this.email || {
+                    enabled: false,
+                    provider: 'manual'
+                },
+                logLevel: this.logLevel || 'info'
             }
 
-            // Always save to localStorage as backup - save the full state
+            // Always save to cookie as backup - save the full state
             const stateToSave = {
-                projectId: this.projectId,
-                orgId: this.orgId,
-                clientId: this.clientId,
-                clientSecret: this.clientSecret,
-                pdpUrl: this.pdpUrl,
-                proxyUrl: this.proxyUrl,
-                port: this.port,
-                logLevel: this.logLevel,
+                server: this.server || {
+                    host: '127.0.0.1',
+                    port: this.port || 3100
+                },
+                publicUrl: this.publicUrl || '',
+                email: this.email || {
+                    enabled: false,
+                    provider: 'manual'
+                },
+                proxyUrl: this.proxyUrl || '',
+                port: this.port || this.server?.port || 3100,
+                logLevel: this.logLevel || 'info',
                 masterKey: this.masterKey
             }
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave))
-            console.log('[CONFIG STORE] Saved to localStorage:', {
-                projectId: this.projectId,
-                orgId: this.orgId,
-                hasClientId: !!this.clientId,
-                hasClientSecret: !!this.clientSecret,
-                isConfigured: this.isConfigured
-            })
+            setCookie(STORAGE_KEY, JSON.stringify(stateToSave), 365)
 
             // Try to save to config file via API (when served via CLI)
+            // Get auth header from admin auth store
             try {
+                const { useAdminAuthStore } = await import('~/stores/admin-auth')
+                const adminAuthStore = useAdminAuthStore()
+                const authHeader = adminAuthStore.accessToken ? `Bearer ${adminAuthStore.accessToken}` : null
+                
+                if (!authHeader) {
+                    return
+                }
+
                 const response = await fetch('/api/config', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Authorization': authHeader
                     },
-                    body: JSON.stringify({
-                        backendUrl: 'https://api-dev.authzebra.com', // Always include fixed backend URL
-                        orgId: configToSave.orgId,
-                        projectId: configToSave.projectId,
-                        clientId: configToSave.clientId,
-                        clientSecret: configToSave.clientSecret,
-                        pdpUrl: configToSave.pdpUrl,
-                        proxyUrl: configToSave.proxyUrl,
-                        port: configToSave.port,
-                        logLevel: configToSave.logLevel
-                    })
+                    body: JSON.stringify(configToSave)
                 })
 
-                if (response.ok) {
-                    console.log('[CONFIG STORE] Saved to config file via API')
-                } else {
-                    console.warn('[CONFIG STORE] Failed to save to config file, but saved to localStorage')
+                if (!response.ok) {
+                    await response.json().catch(() => ({ error: response.statusText }))
                 }
             } catch (error) {
                 // API endpoint not available (UI running standalone)
-                console.log('[CONFIG STORE] Config API not available, only saved to localStorage:', error)
             }
         },
 
         async updateConfig(config: Partial<GatewayConfig>) {
             // Use $patch for proper reactivity
             this.$patch(config)
-            console.log('[CONFIG STORE] After $patch in updateConfig:', {
-                projectId: this.projectId,
-                orgId: this.orgId,
-                hasClientId: !!this.clientId,
-                hasClientSecret: !!this.clientSecret,
-                isConfigured: this.isConfigured
-            })
             await this.saveToStorage()
             // Wait a bit to ensure state is persisted
             await new Promise(resolve => setTimeout(resolve, 50))
-            console.log('[CONFIG STORE] After saveToStorage:', {
-                projectId: this.projectId,
-                orgId: this.orgId,
-                hasClientId: !!this.clientId,
-                hasClientSecret: !!this.clientSecret,
-                isConfigured: this.isConfigured
-            })
         },
 
         async resetToDefaults() {

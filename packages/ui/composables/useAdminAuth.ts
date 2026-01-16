@@ -48,7 +48,6 @@ export function useAdminAuth() {
       
       return true
     } catch (error: any) {
-      console.error('[ADMIN AUTH] Login error:', error)
       adminAuthStore.setError(error.message || 'Login failed')
       toast.error(error.message || 'Login failed')
       return false
@@ -57,9 +56,14 @@ export function useAdminAuth() {
     }
   }
 
-  const logout = () => {
+  const logout = async () => {
     adminAuthStore.clearAuth()
     toast.info('Logged out successfully')
+    
+    // Redirect to login page
+    if (process.client) {
+      await navigateTo('/login')
+    }
   }
 
   const getAuthHeader = (): string | null => {
@@ -97,20 +101,18 @@ export function useAdminAuth() {
       adminAuthStore.accessToken = data.accessToken
       adminAuthStore.tokenExpiry = new Date(Date.now() + (data.expiresIn - 60) * 1000)
       
-      // Update localStorage
-      if (process.client && adminAuthStore.user) {
-        const stored = localStorage.getItem('admin-auth')
-        if (stored) {
-          const storedData = JSON.parse(stored)
-          storedData.accessToken = data.accessToken
-          storedData.tokenExpiry = adminAuthStore.tokenExpiry.toISOString()
-          localStorage.setItem('admin-auth', JSON.stringify(storedData))
-        }
+      // Update cookie (reuse setTokens to persist)
+      if (process.client && adminAuthStore.user && adminAuthStore.refreshToken) {
+        adminAuthStore.setTokens(
+          data.accessToken,
+          adminAuthStore.refreshToken,
+          data.expiresIn,
+          adminAuthStore.user
+        )
       }
       
       return true
     } catch (error: any) {
-      console.error('[ADMIN AUTH] Refresh error:', error)
       adminAuthStore.clearAuth()
       return false
     }

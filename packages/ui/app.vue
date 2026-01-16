@@ -2,30 +2,15 @@
 import { useConfigStore } from '~/stores/config'
 import { useAdminAuthStore } from '~/stores/admin-auth'
 
-console.log('[APP.VUE] App.vue setup running, client:', import.meta.client)
-
 const configStore = useConfigStore()
 const adminAuthStore = useAdminAuthStore()
 
-console.log('[APP.VUE] Config store initial state:', {
-    projectId: configStore.projectId,
-    isConfigured: configStore.isConfigured
-})
-
-// Load auth and config immediately on client side (before pages mount)
+// NOTE: Auth loading happens in middleware (single source of truth)
+// This is just for app.vue's own reactive state, but don't rely on it for auth checks
 if (import.meta.client) {
-  console.log('[APP.VUE] Loading auth and config from storage...')
-  adminAuthStore.loadFromStorage()
   configStore.loadFromStorage()
-  console.log('[APP.VUE] After load - Auth:', adminAuthStore.isAuthenticated, 'Config:', configStore.isConfigured)
+  await nextTick()
 }
-
-onMounted(() => {
-  console.log('[APP.VUE] onMounted - Auth:', adminAuthStore.isAuthenticated, 'Config:', {
-    projectId: configStore.projectId,
-    isConfigured: configStore.isConfigured
-  })
-})
 </script>
 
 <template>

@@ -1,22 +1,24 @@
 // Chat completions route (end-user)
+// NOTE: This endpoint uses API key authentication ONLY (no JWT required)
+// API key is passed via X-API-Key header
 
 import { Router, type Request, type Response } from 'express'
-import { requireAuth, type AuthenticatedRequest } from '../middleware/jwt-auth.js'
 import { extractUserIdFromApiKey, validateApiKeyFormat } from '../utils/api-key.js'
 import * as keyService from '../services/key-service.js'
-import * as pdpService from '../services/pdp-service.js'
+import { serviceFactory } from '../services/service-factory.js'
 import * as llmService from '../services/llm-service.js'
+import { getDatabase } from '../db/index.js'
 
-const router = Router()
-
-// Require JWT authentication
-router.use(requireAuth)
+const router: Router = Router()
 
 /**
  * POST /api/chat/completions
  * Make LLM chat completion request
+ * 
+ * Authentication: API key only (via X-API-Key header)
+ * No JWT token required - API key is the only authentication mechanism
  */
-router.post('/completions', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/completions', async (req: Request, res: Response) => {
   try {
     // Get API key from header
     const apiKey = req.headers['x-api-key'] as string
@@ -39,8 +41,8 @@ router.post('/completions', async (req: AuthenticatedRequest, res: Response) => 
     }
     
     // Extract userId from API key
-    const apiKeyUserId = extractUserIdFromApiKey(apiKey)
-    if (!apiKeyUserId) {
+    const userId = extractUserIdFromApiKey(apiKey)
+    if (!userId) {
       res.status(401).json({
         error: 'Invalid API key format',
         code: 'INVALID_API_KEY_FORMAT'
@@ -48,32 +50,27 @@ router.post('/completions', async (req: AuthenticatedRequest, res: Response) => 
       return
     }
     
-    // Get userId from JWT token
-    const tokenUserId = req.userId
+    // Validate API key exists and get userKeyId
+    const { hashApiKey } = await import('../utils/api-key.js')
+    const keyHash = hashApiKey(apiKey)
+    const db = getDatabase()
     
-    if (!tokenUserId) {
-      res.status(401).json({
-        error: 'Invalid token',
-        code: 'INVALID_TOKEN'
-      })
-      return
-    }
-    
-    // Ensure userIds match
-    if (apiKeyUserId !== tokenUserId) {
-      res.status(401).json({
-        error: 'API key userId does not match token userId',
-        code: 'USER_ID_MISMATCH'
-      })
-      return
-    }
-    
-    // Validate API key exists and is active
-    const isValid = keyService.validateApiKey(apiKey, tokenUserId)
-    if (!isValid) {
+    // Get key from user_agent_keys table
+    const dbKey = db.prepare('SELECT auth_id, key_hash FROM user_agent_keys WHERE key_hash = ?').get(keyHash) as { auth_id: string; key_hash: string } | undefined
+    if (!dbKey || dbKey.auth_id !== userId) {
       res.status(403).json({
-        error: 'API key not found or has been revoked',
+        error: 'API key not found or invalid',
         code: 'API_KEY_INVALID'
+      })
+      return
+    }
+    
+    // Get userKeyId from UserKey entity (find by user reference)
+    const userKeyId = await keyService.getUserKeyIdForUser(userId)
+    if (!userKeyId) {
+      res.status(403).json({
+        error: 'UserKey entity not found for user',
+        code: 'USER_KEY_NOT_FOUND'
       })
       return
     }
@@ -91,7 +88,8 @@ router.post('/completions', async (req: AuthenticatedRequest, res: Response) => 
     
     // Authorize request using PDP
     // Format principal, action, and resource as Cedar entity UIDs based on schema
-    const principal = `User::"${tokenUserId}"`
+    // Principal is now UserKey::"userKeyId" (not Key::"keyHash")
+    const principal = `UserKey::"${userKeyId}"`
     const action = 'Action::"completion"' // Based on schema: "completion" action
     const resource = `Resource::"${model}"` // Format: Resource::"modelName"
     
@@ -103,30 +101,33 @@ router.post('/completions', async (req: AuthenticatedRequest, res: Response) => 
       }
     })
     
-    // Build context according to RequestContext schema
+    // Build context according to RequestContext schema (order: day_of_week, hour, ip_address, is_emergency, model_name, request_time)
     const now = new Date()
-    const hour = now.getUTCHours()
     const dayOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][now.getUTCDay()]
+    const hour = now.getUTCHours()
+    const ipAddress = req.ip || '127.0.0.1'
     
     const context = {
-      ip_address: toIp(req.ip || '127.0.0.1'),
-      request_time: now.toISOString(),
-      hour: hour,
+      day_of_week: dayOfWeek,
+      hour,
+      ip_address: toIp(ipAddress),
+      is_emergency: otherParams.isEmergency || false,
       model_name: model,
-      is_emergency: false, // Default to false, can be overridden in request
-      day_of_week: dayOfWeek
+      request_time: now.toISOString()
     }
     
-    console.log('[CHAT] PDP authorization request:', {
+    console.log('[CHAT] Authorization request:', {
       principal,
       action,
       resource,
       context,
-      userId: tokenUserId,
+      userId,
       model
     })
     
-    const authResult = await pdpService.authorizeRequest({
+    // Authorize via IAuthorizationService (local or live based on mode)
+    const authService = serviceFactory.getAuthorizationService()
+    const authResult = await authService.authorize({
       principal,
       action,
       resource,
@@ -142,6 +143,13 @@ router.post('/completions', async (req: AuthenticatedRequest, res: Response) => 
       })
       return
     }
+    
+    console.log('[CHAT] Authorization passed, making LLM request:', {
+      userId,
+      provider,
+      model,
+      messageCount: messages?.length || 0
+    })
     
     // Make LLM request
     const llmResponse = await llmService.chatCompletions({

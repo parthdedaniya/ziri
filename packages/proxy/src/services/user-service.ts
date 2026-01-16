@@ -1,30 +1,34 @@
 // User service - business logic for user management
+// Uses new auth table with encryption
 
 import { getDatabase } from '../db/index.js'
 import { generatePassword, hashPassword } from '../utils/password.js'
+import { encrypt, decrypt, hash as hashEmail } from '../utils/encryption.js'
 import { randomBytes } from 'crypto'
 
 export interface CreateUserInput {
   email: string
   name: string
-  // Note: role and department removed - they're now part of key creation
+  department: string
+  isAgent: boolean
+  limitRequestsPerMinute?: number // Default: 100
 }
 
 export interface User {
-  id: number
-  userId: string
-  email: string
-  name: string
-  role?: string
-  department?: string
-  status: string
+  id: string // auth.id (TEXT)
+  userId: string // Same as id (for backward compatibility)
+  email: string // Decrypted
+  name: string // Plain text
+  department?: string // Plain text
+  isAgent: boolean
+  status: number // 0=inactive, 1=active, 2=revoked
   createdAt: string
   updatedAt: string
-  lastLogin?: string
+  lastSignIn?: string
 }
 
 /**
- * Generate a unique userId
+ * Generate a unique userId (auth.id)
  */
 function generateUserId(): string {
   // Format: user-{random}
@@ -33,13 +37,23 @@ function generateUserId(): string {
 }
 
 /**
+ * Generate a unique UserKey ID
+ */
+function generateUserKeyId(): string {
+  // Format: uk-{random}
+  const random = randomBytes(8).toString('hex')
+  return `uk-${random}`
+}
+
+/**
  * Create a new user
  */
-export async function createUser(input: CreateUserInput): Promise<{ user: User; password: string }> {
+export async function createUser(input: CreateUserInput): Promise<{ user: User; password?: string; emailSent: boolean }> {
   const db = getDatabase()
   
-  // Check if email already exists
-  const existing = db.prepare('SELECT * FROM users WHERE email = ?').get(input.email) as any
+  // Check if email already exists (using email_hash for fast lookup)
+  const emailHash = hashEmail(input.email)
+  const existing = db.prepare('SELECT * FROM auth WHERE email_hash = ?').get(emailHash) as any
   if (existing) {
     throw new Error('User with this email already exists')
   }
@@ -49,23 +63,149 @@ export async function createUser(input: CreateUserInput): Promise<{ user: User; 
   const password = generatePassword(16)
   const passwordHash = await hashPassword(password)
   
-  // Insert user (only email and name - role/department moved to key creation)
+  // Encrypt email
+  const encryptedEmail = encrypt(input.email)
+  
+  // Insert user into auth table
   const result = db.prepare(`
-    INSERT INTO users (user_id, email, name, password_hash, status)
-    VALUES (?, ?, ?, ?, 'active')
+    INSERT INTO auth (id, email, email_hash, name, password, dept, is_agent, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     userId,
-    input.email,
-    input.name,
-    passwordHash
+    encryptedEmail,
+    emailHash,
+    input.name, // Plain text
+    passwordHash,
+    input.department || null, // Plain text
+    input.isAgent ? 1 : 0,
+    1 // status: 1 = active
   )
   
   // Get created user
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(result.lastInsertRowid) as any
+  const dbUser = db.prepare('SELECT * FROM auth WHERE id = ?').get(userId) as any
+  const user = mapDbUserToUser(dbUser)
+  
+  // Create User and UserKey entities
+  const { serviceFactory } = await import('./service-factory.js')
+  const entityStore = serviceFactory.getEntityStore()
+  const { toDecimalFour } = await import('../utils/cedar.js')
+  
+  const creationTime = new Date().toISOString()
+  const limitRequestsPerMinute = input.limitRequestsPerMinute || 100
+  
+  // 1. Create User entity
+  const userEntity = {
+    uid: { type: 'User', id: userId },
+    attrs: {
+      user_id: userId,
+      email: input.email, // Plain email for entity (not encrypted)
+      department: input.department,
+      is_agent: input.isAgent,
+      limit_requests_per_minute: limitRequestsPerMinute
+    },
+    parents: []
+  }
+  
+  try {
+    await entityStore.createEntity(userEntity, 1)
+  } catch (error: any) {
+    // Rollback user creation if entity creation fails
+    db.prepare('DELETE FROM auth WHERE id = ?').run(userId)
+    throw new Error(`Failed to create User entity: ${error.message}`)
+  }
+  
+  // 2. Create UserKey entity
+  const userKeyId = generateUserKeyId()
+  const userKeyEntity = {
+    uid: { type: 'UserKey', id: userKeyId },
+    attrs: {
+      current_daily_spend: toDecimalFour(0),
+      current_monthly_spend: toDecimalFour(0),
+      last_daily_reset: creationTime,
+      last_monthly_reset: creationTime,
+      status: 'active' as const,
+      user: {
+        __entity: {
+          type: 'User',
+          id: userId
+        }
+      }
+    },
+    parents: []
+  }
+  
+  try {
+    await entityStore.createEntity(userKeyEntity, 1)
+  } catch (error: any) {
+    // Rollback User entity and user creation if UserKey creation fails
+    try {
+      await entityStore.deleteEntity(`User::"${userId}"`)
+    } catch (deleteError) {
+      console.warn('[USER SERVICE] Failed to rollback User entity:', deleteError)
+    }
+    db.prepare('DELETE FROM auth WHERE id = ?').run(userId)
+    throw new Error(`Failed to create UserKey entity: ${error.message}`)
+  }
+  
+  // 3. Create API key automatically (linked to UserKey entity)
+  try {
+    const { generateApiKey, hashApiKey } = await import('../utils/api-key.js')
+    const apiKey = generateApiKey(userId)
+    const keyHash = hashApiKey(apiKey)
+    
+    // Encrypt API key
+    const encryptedKey = encrypt(apiKey)
+    
+    // Store API key in user_agent_keys table
+    const keyId = `key-${randomBytes(8).toString('hex')}`
+    db.prepare(`
+      INSERT INTO user_agent_keys (id, key_value, key_hash, auth_id)
+      VALUES (?, ?, ?, ?)
+    `).run(keyId, encryptedKey, keyHash, userId)
+    
+    console.log(`[USER SERVICE] API key created automatically for user ${userId}`)
+  } catch (error: any) {
+    // API key creation failure shouldn't block user creation, but log it
+    console.warn(`[USER SERVICE] Failed to create API key for user ${userId}:`, error.message)
+    // Note: User and UserKey entities are already created, so we continue
+  }
+  
+  // Attempt to send credentials email (if configured)
+  // Import here to avoid circular dependency
+  const { sendEmail, generateUserCredentialsEmail } = await import('./email-service.js')
+  const { loadConfig } = await import('../config.js')
+  
+  const config = loadConfig()
+  const gatewayUrl = config.publicUrl || `http://${config.host || 'localhost'}:${config.port}`
+  
+  let emailSent = false
+  try {
+    const emailContent = generateUserCredentialsEmail({
+      name: user.name,
+      userId: user.userId,
+      password,
+      gatewayUrl
+    })
+    
+    emailSent = await sendEmail({
+      to: user.email, // Use decrypted email
+      subject: 'Your ZS AI Gateway Credentials',
+      html: emailContent.html,
+      text: emailContent.text
+    })
+    
+    if (emailSent) {
+      console.log(`[USER SERVICE] Credentials email sent to ${user.email}`)
+    }
+  } catch (error: any) {
+    console.warn(`[USER SERVICE] Failed to send email to ${user.email}:`, error.message)
+    // Continue anyway - email failure shouldn't block user creation
+  }
   
   return {
-    user: mapDbUserToUser(user),
-    password // Return plain password (shown once)
+    user,
+    password: emailSent ? undefined : password, // Only return password if email not sent
+    emailSent
   }
 }
 
@@ -74,16 +214,26 @@ export async function createUser(input: CreateUserInput): Promise<{ user: User; 
  */
 export function listUsers(): User[] {
   const db = getDatabase()
-  const users = db.prepare('SELECT * FROM users ORDER BY created_at DESC').all() as any[]
+  const users = db.prepare('SELECT * FROM auth ORDER BY created_at DESC').all() as any[]
   return users.map(mapDbUserToUser)
 }
 
 /**
- * Get user by userId
+ * Get user by userId (auth.id)
  */
 export function getUserById(userId: string): User | null {
   const db = getDatabase()
-  const user = db.prepare('SELECT * FROM users WHERE user_id = ?').get(userId) as any
+  const user = db.prepare('SELECT * FROM auth WHERE id = ?').get(userId) as any
+  return user ? mapDbUserToUser(user) : null
+}
+
+/**
+ * Get user by email (using email_hash for fast lookup)
+ */
+export function getUserByEmail(email: string): User | null {
+  const db = getDatabase()
+  const emailHash = hashEmail(email)
+  const user = db.prepare('SELECT * FROM auth WHERE email_hash = ?').get(emailHash) as any
   return user ? mapDbUserToUser(user) : null
 }
 
@@ -104,31 +254,43 @@ export async function updateUser(userId: string, updates: Partial<CreateUserInpu
   const values: any[] = []
   
   if (updates.email !== undefined) {
-    // Check if email already exists (for another user)
-    const emailExists = db.prepare('SELECT * FROM users WHERE email = ? AND user_id != ?').get(updates.email, userId)
+    // Check if email already exists (for another user) using email_hash
+    const newEmailHash = hashEmail(updates.email)
+    const emailExists = db.prepare('SELECT * FROM auth WHERE email_hash = ? AND id != ?').get(newEmailHash, userId)
     if (emailExists) {
       throw new Error('Email already in use by another user')
     }
+    // Encrypt new email
+    const encryptedEmail = encrypt(updates.email)
     fields.push('email = ?')
-    values.push(updates.email)
+    fields.push('email_hash = ?')
+    values.push(encryptedEmail)
+    values.push(newEmailHash)
   }
   
   if (updates.name !== undefined) {
     fields.push('name = ?')
-    values.push(updates.name)
+    values.push(updates.name) // Plain text
   }
   
-  // Note: role and department removed - they're now part of key creation
-  // Keep columns in DB for backward compatibility, but don't allow updates
+  if (updates.department !== undefined) {
+    fields.push('dept = ?')
+    values.push(updates.department || null) // Plain text
+  }
+  
+  if (updates.isAgent !== undefined) {
+    fields.push('is_agent = ?')
+    values.push(updates.isAgent ? 1 : 0)
+  }
   
   if (fields.length === 0) {
     return existing
   }
   
-  fields.push('updated_at = CURRENT_TIMESTAMP')
+  fields.push('updated_at = datetime(\'now\')')
   values.push(userId)
   
-  db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE user_id = ?`).run(...values)
+  db.prepare(`UPDATE auth SET ${fields.join(', ')} WHERE id = ?`).run(...values)
   
   return getUserById(userId)!
 }
@@ -145,36 +307,53 @@ export async function deleteUser(userId: string): Promise<void> {
     throw new Error('User not found')
   }
   
-  // 1. Delete all entities from Backend API (for each key)
-  const keys = db.prepare('SELECT * FROM api_keys WHERE user_id = ?').all(userId) as any[]
-  
   // Import here to avoid circular dependency
-  const { deleteEntityInBackend } = await import('./entity-service.js')
+  const { serviceFactory } = await import('./service-factory.js')
+  const entityStore = serviceFactory.getEntityStore()
   
-  for (const key of keys) {
-    try {
-      // Delete entity: DELETE /entity?entityName=User::"userId"
-      await deleteEntityInBackend(userId)
-    } catch (error: any) {
-      // Log but continue - entity might not exist in Backend API
-      console.warn(`[USER SERVICE] Failed to delete entity for user ${userId}:`, error.message)
+  // 1. Delete UserKey entity (find by user reference)
+  try {
+    // Get all UserKey entities and find the one for this user
+    const allEntities = await entityStore.getEntities()
+    const userKeyEntities = allEntities.filter(e => 
+      e.uid.type === 'UserKey' && 
+      (e.attrs as any).user && 
+      (e.attrs as any).user.__entity && 
+      (e.attrs as any).user.__entity.id === userId
+    )
+    
+    for (const userKeyEntity of userKeyEntities) {
+      try {
+        await entityStore.deleteEntity(`UserKey::"${userKeyEntity.uid.id}"`)
+      } catch (error: any) {
+        console.warn(`[USER SERVICE] Failed to delete UserKey entity ${userKeyEntity.uid.id}:`, error.message)
+      }
     }
+  } catch (error: any) {
+    console.warn('[USER SERVICE] Failed to delete UserKey entities:', error.message)
   }
   
-  // 2. Delete all API keys (foreign key will handle this, but explicit is better)
-  db.prepare('DELETE FROM api_keys WHERE user_id = ?').run(userId)
+  // 2. Delete User entity
+  try {
+    await entityStore.deleteEntity(`User::"${userId}"`)
+  } catch (error: any) {
+    console.warn(`[USER SERVICE] Failed to delete User entity:`, error.message)
+  }
   
-  // 3. Delete all refresh tokens
-  db.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').run(userId)
+  // 3. Delete all API keys (foreign key will handle this, but explicit is better)
+  db.prepare('DELETE FROM user_agent_keys WHERE auth_id = ?').run(userId)
   
-  // 4. Delete the user
-  db.prepare('DELETE FROM users WHERE user_id = ?').run(userId)
+  // 4. Delete all refresh tokens (foreign key will handle this)
+  db.prepare('DELETE FROM refresh_tokens WHERE auth_id = ?').run(userId)
+  
+  // 5. Delete the user from auth table
+  db.prepare('DELETE FROM auth WHERE id = ?').run(userId)
 }
 
 /**
  * Reset user password
  */
-export async function resetUserPassword(userId: string): Promise<string> {
+export async function resetUserPassword(userId: string): Promise<{ password: string; emailSent: boolean }> {
   const db = getDatabase()
   
   const user = getUserById(userId)
@@ -187,25 +366,74 @@ export async function resetUserPassword(userId: string): Promise<string> {
   const passwordHash = await hashPassword(newPassword)
   
   // Update password
-  db.prepare('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(passwordHash, userId)
+  db.prepare('UPDATE auth SET password = ?, updated_at = datetime(\'now\') WHERE id = ?').run(passwordHash, userId)
   
-  return newPassword // Return plain password (shown once)
+  // Attempt to send password reset email (if configured)
+  const { sendEmail, generatePasswordResetEmail } = await import('./email-service.js')
+  const { loadConfig } = await import('../config.js')
+  
+  const config = loadConfig()
+  const gatewayUrl = config.publicUrl || `http://${config.host || 'localhost'}:${config.port}`
+  
+  let emailSent = false
+  try {
+    const emailContent = generatePasswordResetEmail({
+      name: user.name,
+      userId: user.userId,
+      password: newPassword,
+      gatewayUrl
+    })
+    
+    emailSent = await sendEmail({
+      to: user.email, // Use decrypted email
+      subject: 'Your ZS AI Gateway Password Has Been Reset',
+      html: emailContent.html,
+      text: emailContent.text
+    })
+    
+    if (emailSent) {
+      console.log(`[USER SERVICE] Password reset email sent to ${user.email}`)
+    }
+  } catch (error: any) {
+    console.warn(`[USER SERVICE] Failed to send password reset email to ${user.email}:`, error.message)
+    // Continue anyway - email failure shouldn't block password reset
+  }
+  
+  return {
+    password: newPassword, // Return plain password (shown once if email not sent)
+    emailSent
+  }
 }
 
 /**
- * Map database user to User interface
+ * Map database user (auth table) to User interface
  */
 function mapDbUserToUser(dbUser: any): User {
+  // Decrypt email
+  let decryptedEmail: string
+  try {
+    decryptedEmail = decrypt(dbUser.email)
+  } catch (error: any) {
+    // If decryption fails, it might be plain text (for migration)
+    console.warn('[USER SERVICE] Failed to decrypt email, treating as plain text:', error.message)
+    decryptedEmail = dbUser.email
+  }
+  
+  // Map status INTEGER to number
+  const status = typeof dbUser.status === 'number' ? dbUser.status : 
+                 dbUser.status === 'active' ? 1 : 
+                 dbUser.status === 'inactive' ? 0 : 2
+  
   return {
     id: dbUser.id,
-    userId: dbUser.user_id,
-    email: dbUser.email,
-    name: dbUser.name,
-    role: dbUser.role || undefined,
-    department: dbUser.department || undefined,
-    status: dbUser.status,
+    userId: dbUser.id, // Same as id
+    email: decryptedEmail,
+    name: dbUser.name || '', // Plain text
+    department: dbUser.dept || undefined, // Plain text
+    isAgent: dbUser.is_agent === 1,
+    status,
     createdAt: dbUser.created_at,
     updatedAt: dbUser.updated_at,
-    lastLogin: dbUser.last_login || undefined
+    lastSignIn: dbUser.last_sign_in || undefined
   }
 }
