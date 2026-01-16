@@ -2,17 +2,6 @@
 
 A production-grade LLM Gateway management interface with Cedar-based authorization. This monorepo contains a local proxy server, management UI, SDKs, and authentication for managing API keys, policies, and schema.
 
-## 📋 Table of Contents
-
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Usage](#usage)
-- [Testing](#testing)
-- [Project Structure](#project-structure)
-- [Documentation](#documentation)
-- [License](#license)
 
 ## ✨ Features
 
@@ -21,7 +10,7 @@ A production-grade LLM Gateway management interface with Cedar-based authorizati
 - **Management UI**: Web-based interface with role-based access (admin and user roles)
 - **Dual Mode Support**: 
   - **Local Mode**: SQLite storage + Cedar-WASM authorization (default, no external dependencies)
-  - **Live Mode**: Backend API storage + external PDP authorization
+  - **Live Mode (comming soon)**: Backend API storage + external PDP authorization
 - **Email Service**: Optional email notifications for user credentials and password resets
 - **User SDK**: Client library for end-users to make authorized LLM calls using API keys
 
