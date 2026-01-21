@@ -10,13 +10,28 @@ const router: Router = Router()
  * GET /api/entities
  * Get all entities (or filter by UID)
  * Optionally include API keys if includeApiKeys=true
+ * Supports search, limit, offset, and entityType parameters
  */
 router.get('/', requireAdmin, async (req: Request, res: Response) => {
   try {
     const uid = req.query.uid as string | undefined
     const includeApiKeys = req.query.includeApiKeys === 'true'
+    const {
+      search,
+      limit,
+      offset,
+      entityType
+    } = req.query
+    
     const entityStore = serviceFactory.getEntityStore()
-    const entities = await entityStore.getEntities(uid)
+    const result = await entityStore.getEntities(uid, {
+      search: search as string | undefined,
+      limit: limit ? parseInt(limit as string, 10) : undefined,
+      offset: offset ? parseInt(offset as string, 10) : undefined,
+      entityType: entityType as string | undefined
+    })
+    
+    const entities = result.data
     
     // If API keys requested, fetch them from database and attach to entities
     if (includeApiKeys) {
@@ -58,11 +73,13 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
       }))
       
       res.json({
-        data: entitiesWithKeys
+        data: entitiesWithKeys,
+        total: result.total
       })
     } else {
       res.json({
-        data: entities
+        data: entities,
+        total: result.total
       })
     }
   } catch (error: any) {

@@ -20,8 +20,14 @@ const sessionId = randomBytes(8).toString('hex')
 export class LiveEntityStore implements IEntityStore {
   /**
    * Get all entities (or filter by UID)
+   * Note: Live mode doesn't support search/pagination - returns all entities
    */
-  async getEntities(uid?: string): Promise<Entity[]> {
+  async getEntities(uid?: string, params?: {
+    search?: string
+    limit?: number
+    offset?: number
+    entityType?: string
+  }): Promise<{ data: Entity[]; total: number }> {
     const config = loadConfig()
     
     if (!config.orgId || !config.projectId || !config.clientId || !config.clientSecret) {
@@ -32,8 +38,13 @@ export class LiveEntityStore implements IEntityStore {
     const opId = generateOpId()
     
     let url = `${config.backendUrl}/api/v2025-01/projects/${config.projectId}/entities`
+    const queryParams = new URLSearchParams()
     if (uid) {
-      url += `?uid=${encodeURIComponent(uid)}`
+      queryParams.set('uid', uid)
+    }
+    // Note: Backend API may not support search/pagination - fetch all and filter client-side if needed
+    if (queryParams.toString()) {
+      url += `?${queryParams.toString()}`
     }
     
     const response = await fetch(url, {
@@ -52,7 +63,44 @@ export class LiveEntityStore implements IEntityStore {
     }
     
     const result = await response.json() as { data: Entity[] }
-    return result.data || []
+    let entities = result.data || []
+    
+    // Apply client-side filtering if params provided (since backend API may not support it)
+    if (params?.entityType) {
+      entities = entities.filter(e => e.uid.type === params.entityType)
+    }
+    
+    if (params?.search) {
+      const searchLower = params.search.toLowerCase()
+      entities = entities.filter(entity => {
+        const attrs = entity.attrs as any
+        if (entity.uid.type === 'UserKey' && attrs.user?.__entity?.id) {
+          if (attrs.user.__entity.id.toLowerCase().includes(searchLower)) return true
+        }
+        if (entity.uid.type === 'User') {
+          if (
+            (attrs.name && attrs.name.toLowerCase().includes(searchLower)) ||
+            (attrs.email && attrs.email.toLowerCase().includes(searchLower)) ||
+            (attrs.user_id && attrs.user_id.toLowerCase().includes(searchLower)) ||
+            entity.uid.id.toLowerCase().includes(searchLower)
+          ) {
+            return true
+          }
+        }
+        return entity.uid.id.toLowerCase().includes(searchLower)
+      })
+    }
+    
+    const total = entities.length
+    
+    // Apply pagination
+    if (params?.limit || params?.offset) {
+      const limit = params.limit || 100
+      const offset = params.offset || 0
+      entities = entities.slice(offset, offset + limit)
+    }
+    
+    return { data: entities, total }
   }
   
   /**

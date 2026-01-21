@@ -11,9 +11,14 @@ A production-grade LLM Gateway management interface with Cedar-based authorizati
 - **Management UI**: Web-based interface with role-based access (admin and user roles)
 - **Dual Mode Support**: 
   - **Local Mode**: SQLite storage + Cedar-WASM authorization (default, no external dependencies)
-  - **Live Mode (comming soon)**: Backend API storage + external PDP authorization
+  - **Live Mode (coming soon)**: Backend API storage + external PDP authorization
 - **Email Service**: Optional email notifications for user credentials and password resets
 - **User SDK**: Client library for end-users to make authorized LLM calls using API keys
+- **Server-Side Search & Pagination**: All list pages support efficient server-side search and pagination with debounced inputs
+- **Rate Limiting**: Per-user and per-API-key rate limiting with persistent state
+- **Queue Management**: Per-user concurrent request limiting with persistent queueing
+- **Precise Cost Tracking**: Full-precision cost storage with accurate daily/monthly spend calculation
+- **Comprehensive Audit Logging**: All authorization decisions logged with full context and searchable history
 
 ## 📦 Prerequisites
 
@@ -198,11 +203,30 @@ const response = await sdk.chatCompletions({
 
 Use the UI for:
 - **Users**: Create, delete, reset passwords (API keys auto-created)
+  - Server-side search across name, email, userId
+  - Pagination with total count
 - **Keys**: View, rotate (old key deleted, new one created)
+  - Server-side search across userId, name, email, API key
+  - Client-side status filtering (active/revoked/disabled)
+  - Pagination with total count
 - **Providers**: Add/update LLM provider API keys (encrypted storage)
+  - Server-side search across name, displayName, baseUrl
+  - Pagination with total count
 - **Rules**: Create and manage Cedar authorization policies
+  - Server-side search across description and policy content
+  - Filter by effect (permit/forbid)
+  - Pagination with total count
 - **Schema**: View and update Cedar schema
+- **Logs**: View comprehensive audit logs
+  - Server-side search across auth_id, model, request_id
+  - Filter by decision, provider, model, date range
+  - Pagination with total count (default: 10 items per page)
 - **Config**: Configure email service, public URL, etc.
+
+**Search Features:**
+- All search inputs use 300ms debounce to reduce API calls
+- Search bars remain visible even when no results are found
+- Server-side filtering searches entire database, not just loaded rows
 
 ## 🧪 Testing
 
@@ -286,7 +310,9 @@ For testing, use the UI to create users, manage keys, and make test LLM requests
 
 ## 📚 Documentation
 
-- **[NEW_DATABASE_SCHEMA.md](./NEW_DATABASE_SCHEMA.md)** - Complete database schema documentation with encryption details
+- **[PROJECT_DOCUMENTATION.md](./PROJECT_DOCUMENTATION.md)** - Complete project documentation including architecture, API endpoints, and features
+- **[QUICKSTART.md](./QUICKSTART.md)** - Quick start guide for getting up and running
+- **[NEW_DATABASE_SCHEMA.md](./NEW_DATABASE_SCHEMA.md)** - Complete database schema documentation with encryption details (if exists)
 
 ## 🔧 Configuration
 

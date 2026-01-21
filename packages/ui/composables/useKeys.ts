@@ -55,7 +55,11 @@ export function useKeys() {
         }
     }
 
-    const listKeys = async () => {
+    const listKeys = async (params?: {
+        search?: string
+        limit?: number
+        offset?: number
+    }) => {
         keysStore.loading = true
         try {
             const { getAuthHeader } = useAdminAuth()
@@ -64,9 +68,19 @@ export function useKeys() {
                 throw new Error('Please login first')
             }
             
+            // Build query string
+            const queryParams = new URLSearchParams()
+            queryParams.set('includeApiKeys', 'true')
+            queryParams.set('entityType', 'UserKey') // Filter to UserKey entities only
+            if (params?.search) queryParams.set('search', params.search)
+            if (params?.limit) queryParams.set('limit', params.limit.toString())
+            if (params?.offset) queryParams.set('offset', params.offset.toString())
+            
+            const url = `/api/entities?${queryParams.toString()}`
+            
             // Call proxy server endpoint (local mode) with auth header
             // Include API keys in the response
-            const response = await fetch('/api/entities?includeApiKeys=true', {
+            const response = await fetch(url, {
                 headers: {
                     'Authorization': authHeader
                 }
@@ -80,10 +94,19 @@ export function useKeys() {
             const data: EntitiesResponse = await response.json()
             // Filter to only UserKey entities (not Key entities anymore)
             const userKeyEntities = data.data.filter(e => e.uid.type === 'UserKey')
+            
+            // Get all entities to find User entities for mapping
+            const allEntitiesResponse = await fetch('/api/entities', {
+                headers: {
+                    'Authorization': authHeader
+                }
+            })
+            const allEntitiesData: EntitiesResponse = await allEntitiesResponse.json()
+            
             // Map entities to keys (need all entities to find User entities)
-            const keys = userKeyEntities.map(e => mapEntityToKey(e, data.data))
+            const keys = userKeyEntities.map(e => mapEntityToKey(e, allEntitiesData.data))
             keysStore.keys = keys
-            return keys
+            return { keys, total: data.total || 0 }
         } catch (e: any) {
             keysStore.error = e.message
             toast.error('Failed to load keys')

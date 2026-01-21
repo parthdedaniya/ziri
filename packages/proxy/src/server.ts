@@ -202,7 +202,17 @@ export async function startServer(): Promise<{ port: number; url: string }> {
   })
 }
 
-export function stopServer(): Promise<void> {
+export async function stopServer(): Promise<void> {
+  // Close all queues gracefully
+  try {
+    const { queueManagerService } = await import('./services/queue-manager-service.js')
+    console.log('[SERVER] Closing queues...')
+    await queueManagerService.closeAll()
+    console.log('[SERVER] Queues closed')
+  } catch (error: any) {
+    console.warn('[SERVER] Error closing queues:', error.message)
+  }
+  
   return new Promise((resolve) => {
     if (server) {
       server.close(() => {

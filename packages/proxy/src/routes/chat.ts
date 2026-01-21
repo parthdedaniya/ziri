@@ -11,6 +11,8 @@ import { getDatabase } from '../db/index.js'
 import { auditLogService } from '../services/audit-log-service.js'
 import { costTrackingService } from '../services/cost-tracking-service.js'
 import { spendResetService } from '../services/spend-reset-service.js'
+import { rateLimiterService } from '../services/rate-limiter-service.js'
+import { queueManagerService } from '../services/queue-manager-service.js'
 
 const router: Router = Router()
 
@@ -52,6 +54,8 @@ router.post('/completions', async (req: Request, res: Response) => {
   const requestStartTime = Date.now()
   let requestId: string | null = null
   let auditLogId: number | null = null
+  let userKeyId: string | null = null
+  let slotAcquired = false
   
   try {
     // 1. Generate request ID
@@ -108,8 +112,8 @@ router.post('/completions', async (req: Request, res: Response) => {
     const apiKeyId = dbKey.id
     
     // Get userKeyId from UserKey entity (find by user reference)
-    const userKeyId = await keyService.getUserKeyIdForUser(userId)
-    if (!userKeyId) {
+    const foundUserKeyId = await keyService.getUserKeyIdForUser(userId)
+    if (!foundUserKeyId) {
       res.status(403).json({
         error: 'UserKey entity not found for user',
         code: 'USER_KEY_NOT_FOUND',
@@ -117,10 +121,12 @@ router.post('/completions', async (req: Request, res: Response) => {
       })
       return
     }
+    userKeyId = foundUserKeyId
     
     // Load UserKey entity
     const entityStore = serviceFactory.getEntityStore()
-    const allEntities = await entityStore.getEntities()
+    const allEntitiesResult = await entityStore.getEntities()
+    const allEntities = allEntitiesResult.data
     const userKeyEntity = allEntities.find(e => 
       e.uid.type === 'UserKey' && 
       e.uid.id === userKeyId
@@ -147,7 +153,84 @@ router.post('/completions', async (req: Request, res: Response) => {
       return
     }
     
-    // 4. CHECK SPEND RESET (BEFORE Cedar auth)
+    // 3.1. Load User entity to get rate limit config
+    const userEntity = allEntities.find(e => 
+      e.uid.type === 'User' && 
+      e.uid.id === userId
+    )
+    
+    if (!userEntity) {
+      res.status(403).json({
+        error: 'User entity not found',
+        code: 'USER_ENTITY_NOT_FOUND',
+        requestId
+      })
+      return
+    }
+    
+    // 3.2. CHECK RATE LIMIT (from User entity)
+    const limitRequestsPerMinute = (userEntity.attrs as any).limit_requests_per_minute ?? null
+    // Treat 0 as unlimited (null)
+    const effectiveLimit = limitRequestsPerMinute === 0 ? null : limitRequestsPerMinute
+    
+    console.log(`[CHAT] Rate limit check: userId=${userId}, apiKeyId=${apiKeyId}, limitRequestsPerMinute=${limitRequestsPerMinute}, effectiveLimit=${effectiveLimit}`)
+    
+    const rateLimitResult = await rateLimiterService.checkRateLimit(
+      'api_key',
+      apiKeyId,
+      { requestsPerMinute: effectiveLimit }
+    )
+    
+    console.log(`[CHAT] Rate limit result: allowed=${rateLimitResult.allowed}, remaining=${rateLimitResult.remaining}, limit=${rateLimitResult.limit}`)
+    
+    // Set rate limit headers
+    res.set('X-RateLimit-Limit', String(rateLimitResult.limit))
+    res.set('X-RateLimit-Remaining', String(rateLimitResult.remaining))
+    res.set('X-RateLimit-Reset', String(Math.floor(rateLimitResult.resetAt.getTime() / 1000)))
+    
+    if (!rateLimitResult.allowed) {
+      res.set('Retry-After', String(rateLimitResult.retryAfterSeconds))
+      res.status(429).json({
+        error: 'Rate limit exceeded',
+        code: 'RATE_LIMIT_EXCEEDED',
+        requestId,
+        retryAfter: rateLimitResult.retryAfterSeconds,
+        resetAt: rateLimitResult.resetAt.toISOString(),
+      })
+      return
+    }
+    
+    // 3.3. ACQUIRE QUEUE SLOT (will queue if at capacity)
+    try {
+      await queueManagerService.acquireSlot(
+        userKeyId,
+        requestId,
+        {
+          requestId,
+          userKeyId,
+          authId: userId,
+          apiKeyId,
+          provider,
+          model,
+          requestBody: req.body,
+          estimatedCost: 0, // Cost estimation deferred
+        }
+      )
+    } catch (error: any) {
+      if (error.message.includes('Queue full')) {
+        return res.status(503).json({
+          error: 'Server busy - queue full',
+          code: 'QUEUE_FULL',
+          requestId,
+        })
+      }
+      throw error
+    }
+    
+    // Ensure slot is released on error
+    slotAcquired = true
+    
+      // 4. CHECK SPEND RESET (BEFORE Cedar auth)
     const spendResetResult = await spendResetService.checkAndResetSpend(userKeyEntity as any)
     const activeEntity = spendResetResult.updatedEntity || userKeyEntity
     
@@ -227,6 +310,10 @@ router.post('/completions', async (req: Request, res: Response) => {
     
     // 8. If denied, return 403
     if (authResult.decision !== 'Allow') {
+      if (slotAcquired) {
+        queueManagerService.releaseSlot(userKeyId, requestId)
+        slotAcquired = false
+      }
       res.status(403).json({
         error: `Authorization denied: ${decisionReason || 'Authorization denied'}`,
         code: 'AUTHORIZATION_DENIED',
@@ -238,12 +325,22 @@ router.post('/completions', async (req: Request, res: Response) => {
     
     // 9. Make LLM request
     const llmRequestStartTime = Date.now()
-    const llmResponse = await llmService.chatCompletions({
-      provider,
-      model,
-      messages,
-      ...otherParams
-    })
+    let llmResponse: any
+    try {
+      llmResponse = await llmService.chatCompletions({
+        provider,
+        model,
+        messages,
+        ...otherParams
+      })
+    } catch (llmError: any) {
+      // Release slot on LLM error
+      if (slotAcquired) {
+        queueManagerService.releaseSlot(userKeyId, requestId)
+        slotAcquired = false
+      }
+      throw llmError
+    }
     const llmResponseTime = Date.now()
     
     // 10. Extract token usage from provider response
@@ -281,7 +378,13 @@ router.post('/completions', async (req: Request, res: Response) => {
       usage.cachedTokens
     )
     
-    // 14. Return response with metadata
+    // 14. Release queue slot
+    if (slotAcquired) {
+      queueManagerService.releaseSlot(userKeyId, requestId)
+      slotAcquired = false
+    }
+    
+    // 15. Return response with metadata
     res.json({
       ...llmResponse,
       _meta: {
@@ -292,9 +395,26 @@ router.post('/completions', async (req: Request, res: Response) => {
           cachedTokens: usage.cachedTokens,
           totalCost: costCalc.totalCost,
         },
+        timing: {
+          totalMs: Date.now() - requestStartTime,
+          authMs: authDurationMs,
+          llmMs: llmResponseTime - llmRequestStartTime,
+        },
       },
     })
   } catch (error: any) {
+    // Release slot if still acquired
+    if (requestId && slotAcquired) {
+      try {
+        const userKeyId = await keyService.getUserKeyIdForUser(extractUserIdFromApiKey(req.headers['x-api-key'] as string) || '')
+        if (userKeyId) {
+          queueManagerService.releaseSlot(userKeyId, requestId)
+        }
+      } catch {
+        // Ignore errors during cleanup
+      }
+    }
+    
     console.error('[CHAT] Completion error:', error)
     
     // Log error in audit log if we have a requestId

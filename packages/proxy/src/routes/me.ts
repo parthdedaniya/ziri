@@ -74,7 +74,8 @@ router.get('/keys', async (req: AuthenticatedRequest, res: Response) => {
     
     // Get UserKey entity for this user
     const entityStore = serviceFactory.getEntityStore()
-    const allEntities = await entityStore.getEntities()
+    const allEntitiesResult = await entityStore.getEntities()
+    const allEntities = allEntitiesResult.data
     
     // Find UserKey entity where user.__entity.id matches userId
     const userKeyEntity = allEntities.find(e =>
@@ -136,7 +137,8 @@ router.get('/usage', async (req: AuthenticatedRequest, res: Response) => {
     
     // Get UserKey entity for this user
     const entityStore = serviceFactory.getEntityStore()
-    const allEntities = await entityStore.getEntities()
+    const allEntitiesResult = await entityStore.getEntities()
+    const allEntities = allEntitiesResult.data
     
     // Find UserKey entity where user.__entity.id matches userId
     const userKeyEntity = allEntities.find(e =>

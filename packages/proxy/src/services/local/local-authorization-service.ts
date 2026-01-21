@@ -64,7 +64,8 @@ export class LocalAuthorizationService implements IAuthorizationService {
       // Load schema, policies, and entities
       const schemaData = await localSchemaStore.getSchema()
       const policies = await localPolicyStore.getPolicies()
-      const entities = await localEntityStore.getEntities()
+      const entitiesResult = await localEntityStore.getEntities()
+      const entities = entitiesResult.data
       
       console.log('[LOCAL AUTH] Evaluating authorization:', {
         principal: request.principal,

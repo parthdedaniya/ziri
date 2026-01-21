@@ -23,11 +23,12 @@ router.get('/', async (req: Request, res: Response) => {
       decision,
       startDate,
       endDate,
-      limit = '100',
+      search,
+      limit = '10',
       offset = '0'
     } = req.query
 
-    const logs = await auditLogService.query({
+    const result = await auditLogService.query({
       authId: authId as string,
       apiKeyId: apiKeyId as string,
       provider: provider as string,
@@ -35,13 +36,15 @@ router.get('/', async (req: Request, res: Response) => {
       decision: decision as 'permit' | 'forbid',
       startDate: startDate as string,
       endDate: endDate as string,
+      search: search as string,
       limit: parseInt(limit as string, 10),
       offset: parseInt(offset as string, 10),
     })
 
     res.json({
-      data: logs,
-      count: logs.length
+      data: result.data,
+      count: result.data.length,
+      total: result.total
     })
   } catch (error: any) {
     console.error('[AUDIT] Query error:', error)

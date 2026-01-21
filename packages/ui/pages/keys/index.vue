@@ -24,7 +24,7 @@ onMounted(async () => {
   if (configStore.isConfigured) {
     try {
       await Promise.allSettled([
-        listKeys().catch(() => {}),
+        fetchKeys(),
         loadUsers().catch(() => {})
       ])
     } catch (e) {
@@ -53,6 +53,7 @@ const filterStatus = ref<'' | 'active' | 'revoked' | 'disabled'>('')
 // Pagination
 const currentPage = ref(1)
 const itemsPerPage = ref(20)
+const totalKeys = ref(0)
 
 // Form state - only userId needed (UserKey is created with user)
 const newKey = reactive<{
@@ -76,22 +77,46 @@ const selectedUser = computed(() => {
   return users.value.find(u => u.userId === newKey.userId)
 })
 
+// Debounced search query
+const debouncedSearchQuery = useDebounce(searchQuery, 300)
+
+// Fetch keys with server-side search and pagination
+const fetchKeys = async () => {
+  try {
+    const result = await listKeys({
+      search: debouncedSearchQuery.value || undefined,
+      limit: itemsPerPage.value,
+      offset: (currentPage.value - 1) * itemsPerPage.value
+    })
+    totalKeys.value = result.total || 0
+  } catch (e) {
+    // Error already handled in composable
+  }
+}
+
+// Client-side filter by status (since status filtering isn't implemented server-side yet)
 const displayKeys = computed(() => {
+  if (filterStatus.value === '') {
+    return keys.value
+  }
+  
   return keys.value.filter(key => {
-    const matchesSearch = searchQuery.value === '' || 
-      key.userId.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      key.name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      key.email.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      key.apiKey.toLowerCase().includes(searchQuery.value.toLowerCase())
-    
-    const matchesFilter = filterStatus.value === '' || 
+    return (
       (filterStatus.value === 'active' && (key.status === 'active' || key.status === 1)) ||
       (filterStatus.value === 'revoked' && (key.status === 'revoked' || key.status === 2)) ||
       (filterStatus.value === 'disabled' && key.status === 'disabled') ||
       (typeof key.status === 'string' && key.status === filterStatus.value)
-    
-    return matchesSearch && matchesFilter
+    )
   })
+})
+
+// Watch for filter changes
+watch([debouncedSearchQuery, currentPage, itemsPerPage], () => {
+  fetchKeys()
+})
+
+watch([filterStatus], () => {
+  // Status filter is client-side, no need to refetch
 })
 
 const columns = [
@@ -280,7 +305,7 @@ const handleCreateKey = async () => {
     newKey.userId = ''
     
     // Reload keys to show new one
-    await listKeys()
+    await fetchKeys()
   } catch (e) {
     // Error handled by composable
   } finally {
@@ -376,6 +401,7 @@ const { getAuthHeader } = useAdminAuth()
       :paginated="true"
       :current-page="currentPage"
       :items-per-page="itemsPerPage"
+      :total-items="totalKeys"
       clickable 
       @row-click="viewKeyDetail" 
       :empty-message="searchQuery || filterStatus ? 'No keys match your search criteria.' : 'No API keys found. Create your first key to get started.'"

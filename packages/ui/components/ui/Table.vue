@@ -16,6 +16,7 @@ interface Props {
   paginated?: boolean
   itemsPerPage?: number
   currentPage?: number
+  totalItems?: number // For server-side pagination (total count from API)
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -35,9 +36,23 @@ const emit = defineEmits<{
 
 const paginatedData = computed(() => {
   if (!props.paginated) return props.data
+  // If totalItems is provided, we're doing server-side pagination, so return data as-is
+  if (props.totalItems !== undefined) {
+    return props.data
+  }
+  // Otherwise, do client-side pagination
   const start = (props.currentPage - 1) * props.itemsPerPage
   const end = start + props.itemsPerPage
   return props.data.slice(start, end)
+})
+
+const totalItemsForPagination = computed(() => {
+  // Use totalItems if provided (server-side), otherwise use data.length (client-side)
+  // Default to 0 if neither is available
+  if (props.totalItems !== undefined) {
+    return props.totalItems
+  }
+  return props.data?.length || 0
 })
 
 const handleRowClick = (row: any) => {
@@ -109,10 +124,10 @@ const handleRowClick = (row: any) => {
     </table>
     
     <!-- Pagination -->
-    <div v-if="paginated && data.length > 0" class="px-4 py-3 border-t-2 border-[rgb(var(--border))]">
+    <div v-if="paginated && (totalItemsForPagination > 0 || data.length > 0)" class="px-4 py-3 border-t-2 border-[rgb(var(--border))]">
       <UiPagination
         :current-page="currentPage"
-        :total-items="data.length"
+        :total-items="totalItemsForPagination"
         :items-per-page="itemsPerPage"
         @update:current-page="(page) => emit('update:currentPage', page)"
         @update:items-per-page="(items) => emit('update:itemsPerPage', items)"

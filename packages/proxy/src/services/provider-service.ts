@@ -97,12 +97,61 @@ export function createOrUpdateProvider(input: CreateProviderInput): Provider {
 }
 
 /**
- * List all providers
+ * List all providers with optional search, limit, and offset
  */
-export function listProviders(): Provider[] {
+export function listProviders(params?: {
+  search?: string
+  limit?: number
+  offset?: number
+}): { data: Provider[]; total: number } {
   const db = getDatabase()
-  const providers = db.prepare('SELECT * FROM provider_keys ORDER BY created_at DESC').all() as any[]
-  return providers.map(mapDbProviderToProvider)
+  
+  // Build WHERE clause
+  let whereClause = 'WHERE 1=1'
+  const args: any[] = []
+  
+  if (params?.search) {
+    const searchPattern = `%${params.search}%`
+    // Search across provider name, displayName (in metadata), and baseUrl (in metadata)
+    // Since metadata is JSON, we'll search provider name first, then filter by metadata
+    whereClause += ' AND provider LIKE ?'
+    args.push(searchPattern)
+  }
+  
+  // Get total count (before metadata filtering)
+  const countSql = `SELECT COUNT(*) as total FROM provider_keys ${whereClause}`
+  const countResult = db.prepare(countSql).get(...args) as { total: number }
+  let total = countResult.total
+  
+  // Get paginated data
+  const limit = params?.limit || 100
+  const offset = params?.offset || 0
+  const dataSql = `SELECT * FROM provider_keys ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+  const providers = db.prepare(dataSql).all(...args, limit, offset) as any[]
+  
+  // Map providers
+  let mappedProviders = providers.map(mapDbProviderToProvider)
+  
+  // If search provided, also filter by metadata fields (displayName, baseUrl)
+  if (params?.search) {
+    const searchLower = params.search.toLowerCase()
+    mappedProviders = mappedProviders.filter(provider => 
+      provider.name.toLowerCase().includes(searchLower) ||
+      provider.displayName.toLowerCase().includes(searchLower) ||
+      provider.baseUrl.toLowerCase().includes(searchLower)
+    )
+    // Recalculate total based on filtered results
+    const allProviders = db.prepare('SELECT * FROM provider_keys').all() as any[]
+    const allMapped = allProviders.map(mapDbProviderToProvider)
+    const filtered = allMapped.filter(provider => 
+      provider.name.toLowerCase().includes(searchLower) ||
+      provider.displayName.toLowerCase().includes(searchLower) ||
+      provider.baseUrl.toLowerCase().includes(searchLower)
+    )
+    return { data: mappedProviders, total: filtered.length }
+  }
+  
+  return { data: mappedProviders, total }
 }
 
 /**

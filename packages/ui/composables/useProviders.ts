@@ -27,7 +27,11 @@ const error = ref<string | null>(null)
 export function useProviders() {
   const { getAuthHeader } = useAdminAuth()
   
-  const listProviders = async () => {
+  const listProviders = async (params?: {
+    search?: string
+    limit?: number
+    offset?: number
+  }) => {
     loading.value = true
     error.value = null
     
@@ -37,7 +41,15 @@ export function useProviders() {
         throw new Error('Please login first')
       }
       
-      const response = await fetch('/api/providers', {
+      // Build query string
+      const queryParams = new URLSearchParams()
+      if (params?.search) queryParams.set('search', params.search)
+      if (params?.limit) queryParams.set('limit', params.limit.toString())
+      if (params?.offset) queryParams.set('offset', params.offset.toString())
+      
+      const url = `/api/providers${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+      
+      const response = await fetch(url, {
         headers: {
           'Authorization': authHeader
         }
@@ -51,6 +63,7 @@ export function useProviders() {
       const data = await response.json()
       // Handle both formats: { data: [...] } and { providers: [...] }
       providers.value = data.data || data.providers || []
+      return { providers: data.data || data.providers || [], total: data.total || 0 }
     } catch (e: any) {
       error.value = e.message || 'Failed to list providers'
       throw e

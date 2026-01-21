@@ -10,7 +10,12 @@ export function useRules() {
     const toast = useToast()
     const { getAuthHeader } = useAdminAuth()
 
-    const listRules = async () => {
+    const listRules = async (params?: {
+        search?: string
+        limit?: number
+        offset?: number
+        effect?: 'permit' | 'forbid'
+    }) => {
         rulesStore.loading = true
         rulesStore.error = null
         try {
@@ -19,8 +24,17 @@ export function useRules() {
                 throw new Error('Please login first')
             }
             
+            // Build query string
+            const queryParams = new URLSearchParams()
+            if (params?.search) queryParams.set('search', params.search)
+            if (params?.limit) queryParams.set('limit', params.limit.toString())
+            if (params?.offset) queryParams.set('offset', params.offset.toString())
+            if (params?.effect) queryParams.set('effect', params.effect)
+            
+            const url = `/api/policies${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+            
             // Call proxy server endpoint (local mode) with auth header
-            const response = await fetch('/api/policies', {
+            const response = await fetch(url, {
                 headers: {
                     'Authorization': authHeader
                 }
@@ -41,7 +55,7 @@ export function useRules() {
             }))
 
             rulesStore.rules = rules
-            return rules
+            return { rules, total: (data as any).total || rules.length }
         } catch (e: any) {
             rulesStore.error = e.message
             toast.error('Failed to load rules')

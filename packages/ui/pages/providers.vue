@@ -2,6 +2,7 @@
 import { useProviders } from '~/composables/useProviders'
 import { useConfigStore } from '~/stores/config'
 import { useToast } from '~/composables/useToast'
+import { useDebounce } from '~/composables/useDebounce'
 import type { Provider, CreateProviderInput } from '~/composables/useProviders'
 
 const configStore = useConfigStore()
@@ -51,30 +52,33 @@ const newProvider = reactive<CreateProviderInput & { providerType: string }>({
 
 // Filter/search
 const searchQuery = ref('')
+const totalProviders = ref(0)
 
-const displayProviders = computed(() => {
-  let filtered = providers.value
-  
-  if (searchQuery.value) {
-    const query = searchQuery.value.toLowerCase()
-    filtered = filtered.filter(p => 
-      p.name.toLowerCase().includes(query) ||
-      p.displayName.toLowerCase().includes(query) ||
-      p.baseUrl.toLowerCase().includes(query)
-    )
+// Debounced search query
+const debouncedSearchQuery = useDebounce(searchQuery, 300)
+
+// Fetch providers with server-side search and pagination
+const fetchProviders = async () => {
+  try {
+    const result = await listProviders({
+      search: debouncedSearchQuery.value || undefined,
+      limit: itemsPerPage.value,
+      offset: (currentPage.value - 1) * itemsPerPage.value
+    })
+    totalProviders.value = result.total || 0
+  } catch (e) {
+    // Error already handled in composable
   }
-  
-  return filtered
+}
+
+// Watch for filter changes
+watch([debouncedSearchQuery, currentPage, itemsPerPage], () => {
+  fetchProviders()
 })
 
 const paginatedProviders = computed(() => {
-  const start = (currentPage.value - 1) * itemsPerPage.value
-  const end = start + itemsPerPage.value
-  return displayProviders.value.slice(start, end)
-})
-
-const totalPages = computed(() => {
-  return Math.ceil(displayProviders.value.length / itemsPerPage.value)
+  // Server-side pagination - return providers as-is
+  return providers.value
 })
 
 const handleAddProvider = async () => {
@@ -149,8 +153,8 @@ const columns = [
 
 <template>
   <div class="space-y-4">
-    <!-- Toolbar -->
-    <div class="flex items-center justify-between gap-4" v-if="displayProviders.length > 0">
+    <!-- Toolbar - Always show if there's data OR if there's a search query -->
+    <div class="flex items-center justify-between gap-4" v-if="providers.length > 0 || searchQuery">
       <div class="flex-1 flex items-center gap-3">
         <div class="relative flex-1 max-w-md">
           <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[rgb(var(--text-muted))]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -162,8 +166,28 @@ const columns = [
             placeholder="Search providers..."
             class="input pl-10"
           />
+          <button
+            v-if="searchQuery"
+            @click="searchQuery = ''"
+            class="absolute right-3 top-1/2 -translate-y-1/2 text-[rgb(var(--text-muted))] hover:text-[rgb(var(--text))]"
+            title="Clear search"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
       </div>
+      <UiButton @click="handleOpenCreateModal">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        Add Provider
+      </UiButton>
+    </div>
+
+    <!-- Empty state toolbar (when no providers at all) -->
+    <div class="flex items-center justify-end gap-4" v-if="providers.length === 0 && !loading && !searchQuery">
       <UiButton @click="handleOpenCreateModal">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -180,7 +204,7 @@ const columns = [
       :paginated="true"
       :current-page="currentPage"
       :items-per-page="itemsPerPage"
-      empty-message="No providers configured. Add your first LLM provider to get started."
+      :empty-message="searchQuery ? 'No providers match your search criteria.' : 'No providers configured. Add your first LLM provider to get started.'"
       @update:current-page="currentPage = $event"
       @update:items-per-page="itemsPerPage = $event"
     >
@@ -267,20 +291,6 @@ const columns = [
       </template>
     </UiTable>
 
-    <!-- Pagination -->
-    <div v-if="totalPages > 1" class="flex items-center justify-between">
-      <div class="text-sm text-[rgb(var(--text-muted))]">
-        Showing {{ (currentPage - 1) * itemsPerPage + 1 }} to {{ Math.min(currentPage * itemsPerPage, displayProviders.length) }} of {{ displayProviders.length }} providers
-      </div>
-      <UiPagination
-        :current-page="currentPage"
-        :total-pages="totalPages"
-        :items-per-page="itemsPerPage"
-        :total-items="displayProviders.length"
-        @update:current-page="currentPage = $event"
-        @update:items-per-page="itemsPerPage = $event"
-      />
-    </div>
 
     <!-- Create Provider Modal -->
     <UiModal v-model="showCreateModal" title="Add Provider">

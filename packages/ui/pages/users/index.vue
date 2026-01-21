@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useUsers, type User, type CreateUserInput } from '~/composables/useUsers'
 import { useToast } from '~/composables/useToast'
+import { useDebounce } from '~/composables/useDebounce'
 import { formatDate } from '~/utils/formatters'
 
 const { users, loading, loadUsers, createUser, updateUser, deleteUser, resetPassword } = useUsers()
@@ -34,26 +35,32 @@ const newUser = reactive<CreateUserInput>({
 const searchQuery = ref('')
 const currentPage = ref(1)
 const itemsPerPage = ref(20)
+const totalUsers = ref(0)
 
-const displayUsers = computed(() => {
-  return users.value.filter(user => {
-    const matchesSearch = searchQuery.value === '' || 
-      user.userId.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      user.name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchQuery.value.toLowerCase())
-    
-    return matchesSearch
-  })
-})
+// Debounced search query
+const debouncedSearchQuery = useDebounce(searchQuery, 300)
 
-// Pagination is now handled by UiTable component
-
-onMounted(async () => {
+// Fetch users with server-side search and pagination
+const fetchUsers = async () => {
   try {
-    await loadUsers()
+    const result = await loadUsers({
+      search: debouncedSearchQuery.value || undefined,
+      limit: itemsPerPage.value,
+      offset: (currentPage.value - 1) * itemsPerPage.value
+    })
+    totalUsers.value = result.total || 0
   } catch (e) {
     // Error already handled in composable
   }
+}
+
+// Watch for filter changes
+watch([debouncedSearchQuery, currentPage, itemsPerPage], () => {
+  fetchUsers()
+})
+
+onMounted(async () => {
+  await fetchUsers()
 })
 
 const handleCreateUser = async () => {
@@ -211,11 +218,12 @@ const copyPassword = () => {
         { key: 'createdAt', header: 'Created' },
         { key: 'actions', header: '', class: 'w-32' }
       ]"
-      :data="displayUsers"
+      :data="users"
       :loading="loading"
       :paginated="true"
       :current-page="currentPage"
       :items-per-page="itemsPerPage"
+      :total-items="totalUsers"
       :empty-message="searchQuery ? 'No users match your search criteria.' : 'No users found. Create your first user to get started.'"
       @update:current-page="currentPage = $event"
       @update:items-per-page="itemsPerPage = $event"

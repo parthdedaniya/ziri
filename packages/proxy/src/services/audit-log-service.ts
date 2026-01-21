@@ -113,45 +113,61 @@ export class AuditLogService {
     decision?: 'permit' | 'forbid'
     startDate?: string
     endDate?: string
+    search?: string // Generic search across multiple fields
     limit?: number
     offset?: number
-  }): Promise<any[]> {
-    let sql = 'SELECT * FROM audit_logs WHERE 1=1'
+  }): Promise<{ data: any[]; total: number }> {
+    // Build WHERE clause for both count and data queries
+    let whereClause = 'WHERE 1=1'
     const args: any[] = []
 
     if (params.authId) {
-      sql += ' AND auth_id = ?'
+      whereClause += ' AND auth_id = ?'
       args.push(params.authId)
     }
     if (params.apiKeyId) {
-      sql += ' AND api_key_id = ?'
+      whereClause += ' AND api_key_id = ?'
       args.push(params.apiKeyId)
     }
     if (params.provider) {
-      sql += ' AND provider = ?'
+      whereClause += ' AND provider = ?'
       args.push(params.provider)
     }
     if (params.model) {
-      sql += ' AND model = ?'
+      whereClause += ' AND model = ?'
       args.push(params.model)
     }
     if (params.decision) {
-      sql += ' AND decision = ?'
+      whereClause += ' AND decision = ?'
       args.push(params.decision)
     }
     if (params.startDate) {
-      sql += ' AND request_timestamp >= ?'
+      whereClause += ' AND request_timestamp >= ?'
       args.push(params.startDate)
     }
     if (params.endDate) {
-      sql += ' AND request_timestamp <= ?'
+      whereClause += ' AND request_timestamp <= ?'
       args.push(params.endDate)
     }
+    // Generic search across auth_id, model, and request_id
+    if (params.search) {
+      const searchPattern = `%${params.search}%`
+      whereClause += ' AND (auth_id LIKE ? OR model LIKE ? OR request_id LIKE ?)'
+      args.push(searchPattern, searchPattern, searchPattern)
+    }
 
-    sql += ' ORDER BY request_timestamp DESC'
-    sql += ` LIMIT ${params.limit || 100} OFFSET ${params.offset || 0}`
+    // Get total count
+    const countSql = `SELECT COUNT(*) as total FROM audit_logs ${whereClause}`
+    const countResult = this.db.prepare(countSql).get(...args) as { total: number }
+    const total = countResult.total
 
-    return this.db.prepare(sql).all(...args) as any[]
+    // Get paginated data (use provided limit, or default to 100 if not specified)
+    const limit = params.limit || 100
+    const offset = params.offset || 0
+    const dataSql = `SELECT * FROM audit_logs ${whereClause} ORDER BY request_timestamp DESC LIMIT ? OFFSET ?`
+    const data = this.db.prepare(dataSql).all(...args, limit, offset) as any[]
+
+    return { data, total }
   }
 
   async getStatistics(startDate?: string, endDate?: string): Promise<object> {

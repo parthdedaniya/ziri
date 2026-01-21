@@ -11,12 +11,26 @@ router.use(requireAdmin)
 
 /**
  * GET /api/providers
- * List all providers
+ * List all providers with optional search, limit, and offset
  */
 router.get('/', (req: Request, res: Response) => {
   try {
-    const providers = providerService.listProviders()
-    res.json({ providers })
+    const {
+      search,
+      limit,
+      offset
+    } = req.query
+    
+    const result = providerService.listProviders({
+      search: search as string | undefined,
+      limit: limit ? parseInt(limit as string, 10) : undefined,
+      offset: offset ? parseInt(offset as string, 10) : undefined
+    })
+    
+    res.json({
+      providers: result.data,
+      total: result.total
+    })
   } catch (error: any) {
     console.error('[PROVIDERS] List error:', error)
     res.status(500).json({

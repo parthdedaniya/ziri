@@ -17,11 +17,15 @@ const dateRange = ref<'today' | '7d' | '30d' | 'all'>('7d')
 
 // Pagination
 const currentPage = ref(1)
-const itemsPerPage = ref(20)
+const itemsPerPage = ref(10) // Default to 10 items per page
 
 // Loading state
 const isLoading = ref(true)
 const allLogs = ref<any[]>([])
+const totalLogs = ref<number | undefined>(undefined) // Total count from API for pagination (undefined until loaded)
+
+// Debounced search query
+const debouncedSearchQuery = useDebounce(searchQuery, 300)
 
 // Calculate date range
 const getDateRange = () => {
@@ -66,6 +70,8 @@ const fetchLogs = async () => {
       ...(filterModel.value && { model: filterModel.value }),
       ...(dateRangeParams.startDate && { startDate: dateRangeParams.startDate }),
       ...(dateRangeParams.endDate && { endDate: dateRangeParams.endDate }),
+      // Send search query to backend for server-side filtering
+      ...(searchQuery.value && { search: searchQuery.value }),
     })
 
     const response = await fetch(`/api/audit?${params.toString()}`, {
@@ -77,6 +83,7 @@ const fetchLogs = async () => {
     if (response.ok) {
       const data = await response.json()
       allLogs.value = data.data || []
+      totalLogs.value = data.total !== undefined ? data.total : undefined // Use total count from API for pagination
     }
   } catch (error) {
     // Error handled silently
@@ -85,8 +92,8 @@ const fetchLogs = async () => {
   }
 }
 
-// Watch for filter changes
-watch([filterDecision, filterProvider, filterModel, dateRange, currentPage, itemsPerPage], () => {
+// Watch for filter changes (including debounced search query)
+watch([filterDecision, filterProvider, filterModel, dateRange, currentPage, itemsPerPage, debouncedSearchQuery], () => {
   fetchLogs()
 })
 
@@ -112,16 +119,8 @@ const getCostForLog = async (requestId: string) => {
   return 0
 }
 
-const filteredLogs = computed(() => {
-  return allLogs.value.filter(log => {
-    const matchesSearch = searchQuery.value === '' || 
-      (log.auth_id && log.auth_id.toLowerCase().includes(searchQuery.value.toLowerCase())) ||
-      (log.model && log.model.toLowerCase().includes(searchQuery.value.toLowerCase())) ||
-      (log.request_id && log.request_id.toLowerCase().includes(searchQuery.value.toLowerCase()))
-    
-    return matchesSearch
-  })
-})
+// Note: Search is now handled server-side via API, so filteredLogs is removed
+// The search query is sent to the API which filters results in the database
 
 const uniqueProviders = computed(() => {
   return [...new Set(allLogs.value.map(log => log.provider).filter(Boolean))].sort()
@@ -214,10 +213,11 @@ onMounted(() => {
     <UiTable 
       v-else
       :columns="columns" 
-      :data="filteredLogs" 
+      :data="allLogs" 
       :paginated="true"
       :current-page="currentPage"
       :items-per-page="itemsPerPage"
+      :total-items="totalLogs !== undefined ? totalLogs : allLogs.length"
       empty-message="No logs found"
       @update:current-page="currentPage = $event"
       @update:items-per-page="itemsPerPage = $event"

@@ -84,7 +84,12 @@ export interface IEntityStore {
   /**
    * Get all entities (or filter by UID)
    */
-  getEntities(uid?: string): Promise<Entity[]>
+  getEntities(uid?: string, params?: {
+    search?: string
+    limit?: number
+    offset?: number
+    entityType?: string
+  }): Promise<{ data: Entity[]; total: number }>
   
   /**
    * Create an entity

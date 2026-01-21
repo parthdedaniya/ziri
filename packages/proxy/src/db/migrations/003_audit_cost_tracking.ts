@@ -4,13 +4,22 @@
 import type Database from 'better-sqlite3'
 
 export function up(db: Database.Database): void {
-  // 1. Drop old simplified tables if they exist
-  db.exec(`DROP TABLE IF EXISTS cost_tracking`)
-  db.exec(`DROP TABLE IF EXISTS audit_logs`)
+  // Check if tables already exist - if they do, skip migration to preserve data!
+  const tablesExist = db.prepare(`
+    SELECT name FROM sqlite_master 
+    WHERE type='table' AND name IN ('audit_logs', 'cost_tracking', 'model_pricing', 'model_aliases')
+  `).all() as { name: string }[]
+  
+  const existingTableNames = new Set(tablesExist.map(t => t.name))
+  
+  // CRITICAL: Only create tables if they don't exist
+  // This prevents data loss on restart!
+  // DO NOT drop existing tables - they contain valuable data!
 
-  // 2. model_pricing table
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS model_pricing (
+  // 2. model_pricing table (only create if doesn't exist)
+  if (!existingTableNames.has('model_pricing')) {
+    db.exec(`
+    CREATE TABLE model_pricing (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       provider TEXT NOT NULL,
       model TEXT NOT NULL,
@@ -32,10 +41,12 @@ export function up(db: Database.Database): void {
       UNIQUE(provider, model, effective_from)
     )
   `)
+  }
 
-  // 3. model_aliases table
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS model_aliases (
+  // 3. model_aliases table (only create if doesn't exist)
+  if (!existingTableNames.has('model_aliases')) {
+    db.exec(`
+    CREATE TABLE model_aliases (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       alias TEXT NOT NULL UNIQUE,
       provider TEXT NOT NULL,
@@ -43,10 +54,12 @@ export function up(db: Database.Database): void {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `)
+  }
 
-  // 4. audit_logs table - comprehensive authorization logging
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS audit_logs (
+  // 4. audit_logs table - comprehensive authorization logging (only create if doesn't exist)
+  if (!existingTableNames.has('audit_logs')) {
+    db.exec(`
+    CREATE TABLE audit_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       request_id TEXT NOT NULL UNIQUE,
       
@@ -92,10 +105,12 @@ export function up(db: Database.Database): void {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `)
+  }
 
-  // 5. cost_tracking table
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS cost_tracking (
+  // 5. cost_tracking table (only create if doesn't exist)
+  if (!existingTableNames.has('cost_tracking')) {
+    db.exec(`
+    CREATE TABLE cost_tracking (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       request_id TEXT NOT NULL,
       execution_key TEXT NOT NULL,
@@ -144,8 +159,9 @@ export function up(db: Database.Database): void {
       FOREIGN KEY (pricing_id) REFERENCES model_pricing(id) ON DELETE SET NULL
     )
   `)
+  }
 
-  // Create indexes
+  // Create indexes (always safe to create - IF NOT EXISTS handles duplicates)
   db.exec(`
     -- model_pricing indexes
     CREATE INDEX IF NOT EXISTS idx_model_pricing_provider ON model_pricing(provider);

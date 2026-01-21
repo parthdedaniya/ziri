@@ -28,7 +28,8 @@ async function findUserKeyIdForUser(userId: string): Promise<string | null> {
   const entityStore = serviceFactory.getEntityStore()
   
   // Get all UserKey entities and find the one for this user
-  const allEntities = await entityStore.getEntities()
+  const allEntitiesResult = await entityStore.getEntities()
+  const allEntities = allEntitiesResult.data
   const userKeyEntity = allEntities.find(e => 
     e.uid.type === 'UserKey' && 
     (e.attrs as any).user && 

@@ -11,27 +11,111 @@ const router: Router = Router()
  * GET /api/policies
  * Get all policies (active and inactive) for admin management
  * Note: Authorization engine will still only evaluate active policies
+ * Supports search, limit, offset, and effect filter
  */
 router.get('/', requireAdmin, async (req: Request, res: Response) => {
   try {
+    const {
+      search,
+      limit,
+      offset,
+      effect
+    } = req.query
+    
     const db = getDatabase()
-    const rows = db.prepare(`
+    
+    // Build WHERE clause
+    let whereClause = "WHERE obj_type = 'policy'"
+    const args: any[] = []
+    
+    // Get total count first
+    let countSql = `SELECT COUNT(*) as total FROM schema_policy ${whereClause}`
+    const countResult = db.prepare(countSql).get(...args) as { total: number }
+    let total = countResult.total
+    
+    // Get paginated data
+    const limitValue = limit ? parseInt(limit as string, 10) : 100
+    const offsetValue = offset ? parseInt(offset as string, 10) : 0
+    const dataSql = `
       SELECT content, description, status 
       FROM schema_policy 
-      WHERE obj_type = 'policy'
+      ${whereClause}
       ORDER BY created_at ASC
-    `).all() as { content: string; description: string | null; status: number }[]
+      LIMIT ? OFFSET ?
+    `
+    const rows = db.prepare(dataSql).all(...args, limitValue, offsetValue) as { content: string; description: string | null; status: number }[]
 
-    const policies = rows.map(row => ({
+    // Map policies
+    let policies = rows.map(row => ({
       policy: row.content,
       description: row.description || '',
       isActive: row.status === 1
     }))
     
+    // Apply search filter (client-side since we need to search policy content)
+    if (search) {
+      const searchLower = (search as string).toLowerCase()
+      policies = policies.filter(p => 
+        p.description.toLowerCase().includes(searchLower) ||
+        p.policy.toLowerCase().includes(searchLower)
+      )
+      // Recalculate total based on filtered results
+      const allRows = db.prepare(`
+        SELECT content, description, status 
+        FROM schema_policy 
+        ${whereClause}
+        ORDER BY created_at ASC
+      `).all(...args) as { content: string; description: string | null; status: number }[]
+      const allPolicies = allRows.map(row => ({
+        policy: row.content,
+        description: row.description || '',
+        isActive: row.status === 1
+      }))
+      const filtered = allPolicies.filter(p => 
+        p.description.toLowerCase().includes(searchLower) ||
+        p.policy.toLowerCase().includes(searchLower)
+      )
+      total = filtered.length
+    }
+    
+    // Apply effect filter (permit/forbid) - extract from policy content
+    if (effect && (effect === 'permit' || effect === 'forbid')) {
+      policies = policies.filter(p => {
+        const policyLower = p.policy.toLowerCase()
+        return effect === 'permit' 
+          ? policyLower.includes('permit(')
+          : policyLower.includes('forbid(')
+      })
+      // Recalculate total if search was also applied
+      if (search) {
+        // Already filtered above
+      } else {
+        const allRows = db.prepare(`
+          SELECT content, description, status 
+          FROM schema_policy 
+          ${whereClause}
+          ORDER BY created_at ASC
+        `).all(...args) as { content: string; description: string | null; status: number }[]
+        const allPolicies = allRows.map(row => ({
+          policy: row.content,
+          description: row.description || '',
+          isActive: row.status === 1
+        }))
+        const filtered = allPolicies.filter(p => {
+          const policyLower = p.policy.toLowerCase()
+          return effect === 'permit' 
+            ? policyLower.includes('permit(')
+            : policyLower.includes('forbid(')
+        })
+        total = filtered.length
+      }
+    }
+    
     res.json({
       data: {
         policies
-      }
+      },
+      total
     })
   } catch (error: any) {
     res.status(500).json({

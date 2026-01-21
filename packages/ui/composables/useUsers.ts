@@ -34,7 +34,11 @@ export function useUsers() {
   const { getAuthHeader } = useAdminAuth()
   const toast = useToast()
 
-  const loadUsers = async () => {
+  const loadUsers = async (params?: {
+    search?: string
+    limit?: number
+    offset?: number
+  }) => {
     loading.value = true
     try {
       const authHeader = getAuthHeader()
@@ -42,8 +46,16 @@ export function useUsers() {
         throw new Error('Please login first')
       }
       
+      // Build query string
+      const queryParams = new URLSearchParams()
+      if (params?.search) queryParams.set('search', params.search)
+      if (params?.limit) queryParams.set('limit', params.limit.toString())
+      if (params?.offset) queryParams.set('offset', params.offset.toString())
+      
+      const url = `/api/users${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+      
       // Use relative URL - Nuxt server API will proxy to proxy server
-      const response = await fetch('/api/users', {
+      const response = await fetch(url, {
         headers: {
           'Authorization': authHeader
         }
@@ -55,6 +67,7 @@ export function useUsers() {
       
       const data = await response.json()
       users.value = data.users || []
+      return { users: data.users || [], total: data.total || 0 }
     } catch (error: any) {
       toast.error(`Failed to load users: ${error.message}`)
       throw error

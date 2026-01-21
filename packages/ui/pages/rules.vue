@@ -4,6 +4,7 @@ import { useConfigStore } from '~/stores/config'
 import { useToast } from '~/composables/useToast'
 import { useSchema } from '~/composables/useSchema'
 import { useCedarWasm } from '~/composables/useCedarWasm'
+import { useDebounce } from '~/composables/useDebounce'
 import type { Policy, CreatePolicyInput } from '~/types/cedar'
 import type { ValidationError } from '~/composables/useCedarWasm'
 
@@ -12,19 +13,6 @@ const { listRules, createRule, updateRule, deleteRule, setRuleStatus, rules, loa
 const { getSchema } = useSchema()
 const { validatePolicies, formatPolicy } = useCedarWasm()
 const toast = useToast()
-
-// Auto-load rules when page mounts (if config is set)
-onMounted(async () => {
-  await nextTick()
-  
-  if (configStore.isConfigured) {
-    try {
-      await listRules()
-    } catch (e) {
-      // Error handled by composable
-    }
-  }
-})
 
 // Modal state
 const showCreateModal = ref(false)
@@ -40,6 +28,7 @@ const filterEffect = ref<'' | 'permit' | 'forbid'>('')
 // Pagination
 const currentPage = ref(1)
 const itemsPerPage = ref(20)
+const totalRules = ref(0)
 
 // Form state
 const newRule = reactive<CreatePolicyInput & { isActive: boolean }>({
@@ -53,16 +42,36 @@ const validationErrors = ref<ValidationError[]>([])
 const validationWarnings = ref<ValidationError[]>([])
 const isValidating = ref(false)
 
-const displayRules = computed(() => {
-  return rules.value.filter(rule => {
-    const matchesSearch = searchQuery.value === '' || 
-      rule.description.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      rule.policy.toLowerCase().includes(searchQuery.value.toLowerCase())
-    
-    const matchesFilter = filterEffect.value === '' || rule.effect === filterEffect.value
-    
-    return matchesSearch && matchesFilter
-  })
+// Debounced search query
+const debouncedSearchQuery = useDebounce(searchQuery, 300)
+
+// Fetch rules with server-side search and pagination
+const fetchRules = async () => {
+  try {
+    const result = await listRules({
+      search: debouncedSearchQuery.value || undefined,
+      effect: filterEffect.value || undefined,
+      limit: itemsPerPage.value,
+      offset: (currentPage.value - 1) * itemsPerPage.value
+    })
+    totalRules.value = result.total || 0
+  } catch (e) {
+    // Error already handled in composable
+  }
+}
+
+// Watch for filter changes
+watch([debouncedSearchQuery, filterEffect, currentPage, itemsPerPage], () => {
+  fetchRules()
+})
+
+// Auto-load rules when page mounts (if config is set)
+onMounted(async () => {
+  await nextTick()
+  
+  if (configStore.isConfigured) {
+    await fetchRules()
+  }
 })
 
 const columns = [
@@ -337,11 +346,12 @@ const handleDeleteRule = async () => {
     <!-- Rules Table -->
     <UiTable 
       :columns="columns" 
-      :data="displayRules" 
+      :data="rules" 
       :loading="loading" 
       :paginated="true"
       :current-page="currentPage"
       :items-per-page="itemsPerPage"
+      :total-items="totalRules"
       :empty-message="searchQuery || filterEffect ? 'No rules match your search criteria.' : 'No rules found. Create your first rule to get started.'"
       @update:current-page="currentPage = $event"
       @update:items-per-page="itemsPerPage = $event"

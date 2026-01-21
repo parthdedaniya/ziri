@@ -1,7 +1,7 @@
 <script setup lang="ts">
 interface Props {
   currentPage: number
-  totalItems: number
+  totalItems?: number // Optional to handle loading states
   itemsPerPage: number
   showItemsPerPage?: boolean
 }
@@ -16,8 +16,9 @@ const emit = defineEmits<{
 }>()
 
 const totalPages = computed(() => {
-  if (props.itemsPerPage >= props.totalItems) return 1
-  return Math.ceil(props.totalItems / props.itemsPerPage)
+  const total = props.totalItems || 0
+  if (props.itemsPerPage >= total) return 1
+  return Math.ceil(total / props.itemsPerPage)
 })
 
 const goToPage = (page: number) => {
@@ -28,7 +29,8 @@ const goToPage = (page: number) => {
 
 const itemsPerPageOptions = computed(() => {
   const options = [10, 20, 50]
-  if (props.totalItems > 50) {
+  const total = props.totalItems || 0
+  if (total > 50) {
     options.push(100)
   }
   return options
@@ -39,9 +41,9 @@ const itemsPerPageOptions = computed(() => {
   <div class="flex items-center justify-between gap-4 flex-wrap">
     <div class="flex items-center gap-2">
       <span class="text-sm text-[rgb(var(--text-muted))]">
-        Showing {{ Math.min((currentPage - 1) * itemsPerPage + 1, totalItems) }} to 
-        {{ Math.min(currentPage * itemsPerPage, totalItems) }} of 
-        {{ totalItems.toLocaleString() }} entries
+        Showing {{ Math.min((currentPage - 1) * itemsPerPage + 1, totalItems || 0) }} to 
+        {{ Math.min(currentPage * itemsPerPage, totalItems || 0) }} of 
+        {{ (totalItems || 0).toLocaleString() }} entries
       </span>
     </div>
     
@@ -50,11 +52,12 @@ const itemsPerPageOptions = computed(() => {
       <div v-if="showItemsPerPage" class="flex items-center gap-2">
         <span class="text-sm text-[rgb(var(--text-muted))]">Show:</span>
         <select 
-          :value="itemsPerPage >= totalItems ? 'all' : itemsPerPage"
+          :value="itemsPerPage >= (totalItems || 0) ? 'all' : itemsPerPage"
           @change="(e) => {
             const value = (e.target as HTMLSelectElement).value
+            const total = props.totalItems || 0
             if (value === 'all') {
-              emit('update:itemsPerPage', totalItems)
+              emit('update:itemsPerPage', total)
             } else {
               emit('update:itemsPerPage', Number(value))
             }
@@ -65,7 +68,7 @@ const itemsPerPageOptions = computed(() => {
           <option v-for="option in itemsPerPageOptions" :key="option" :value="option">
             {{ option }}
           </option>
-          <option v-if="totalItems > 100" value="all">All</option>
+          <option v-if="(totalItems || 0) > 100" value="all">All</option>
         </select>
       </div>
       

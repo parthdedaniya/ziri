@@ -11,12 +11,26 @@ router.use(requireAdmin)
 
 /**
  * GET /api/users
- * List all users
+ * List all users with optional search, limit, and offset
  */
 router.get('/', (req: Request, res: Response) => {
   try {
-    const users = userService.listUsers()
-    res.json({ users })
+    const {
+      search,
+      limit,
+      offset
+    } = req.query
+    
+    const result = userService.listUsers({
+      search: search as string | undefined,
+      limit: limit ? parseInt(limit as string, 10) : undefined,
+      offset: offset ? parseInt(offset as string, 10) : undefined
+    })
+    
+    res.json({
+      users: result.data,
+      total: result.total
+    })
   } catch (error: any) {
     console.error('[USERS] List error:', error)
     res.status(500).json({

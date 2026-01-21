@@ -210,12 +210,62 @@ export async function createUser(input: CreateUserInput): Promise<{ user: User; 
 }
 
 /**
- * List all users
+ * List all users with optional search, limit, and offset
  */
-export function listUsers(): User[] {
+export function listUsers(params?: {
+  search?: string
+  limit?: number
+  offset?: number
+}): { data: User[]; total: number } {
   const db = getDatabase()
-  const users = db.prepare('SELECT * FROM auth ORDER BY created_at DESC').all() as any[]
-  return users.map(mapDbUserToUser)
+  
+  // Build WHERE clause
+  let whereClause = 'WHERE 1=1'
+  const args: any[] = []
+  
+  if (params?.search) {
+    const searchPattern = `%${params.search}%`
+    // Search across name, email (decrypted), and id (userId)
+    // Note: We can't search encrypted email directly, so we'll search name and id
+    whereClause += ' AND (name LIKE ? OR id LIKE ?)'
+    args.push(searchPattern, searchPattern)
+  }
+  
+  // Get total count
+  const countSql = `SELECT COUNT(*) as total FROM auth ${whereClause}`
+  const countResult = db.prepare(countSql).get(...args) as { total: number }
+  const total = countResult.total
+  
+  // Get paginated data
+  const limit = params?.limit || 100
+  const offset = params?.offset || 0
+  const dataSql = `SELECT * FROM auth ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+  const users = db.prepare(dataSql).all(...args, limit, offset) as any[]
+  
+  // Map and filter by search if needed (for email search since it's encrypted)
+  let mappedUsers = users.map(mapDbUserToUser)
+  
+  // If search provided, also filter by decrypted email (can't do this in SQL)
+  if (params?.search) {
+    const searchLower = params.search.toLowerCase()
+    mappedUsers = mappedUsers.filter(user => 
+      user.name.toLowerCase().includes(searchLower) ||
+      user.email.toLowerCase().includes(searchLower) ||
+      user.userId.toLowerCase().includes(searchLower)
+    )
+    // Recalculate total based on filtered results
+    // Note: This is not perfect but necessary since email is encrypted
+    const allUsers = db.prepare('SELECT * FROM auth').all() as any[]
+    const allMapped = allUsers.map(mapDbUserToUser)
+    const filtered = allMapped.filter(user => 
+      user.name.toLowerCase().includes(searchLower) ||
+      user.email.toLowerCase().includes(searchLower) ||
+      user.userId.toLowerCase().includes(searchLower)
+    )
+    return { data: mappedUsers, total: filtered.length }
+  }
+  
+  return { data: mappedUsers, total }
 }
 
 /**
@@ -314,7 +364,8 @@ export async function deleteUser(userId: string): Promise<void> {
   // 1. Delete UserKey entity (find by user reference)
   try {
     // Get all UserKey entities and find the one for this user
-    const allEntities = await entityStore.getEntities()
+    const allEntitiesResult = await entityStore.getEntities()
+    const allEntities = allEntitiesResult.data
     const userKeyEntities = allEntities.filter(e => 
       e.uid.type === 'UserKey' && 
       (e.attrs as any).user && 

@@ -14,8 +14,8 @@
     "dev": "tsc --watch"
   },
   "dependencies": {
-    "@zs-ai/auth-plugin": "workspace:^1.0.0",
-    "@zs-ai/config": "workspace:*",
+    "@zs-ai/auth-plugin": "file:../auth-plugin",
+    "@zs-ai/config": "file:../config",
     "@cedar-policy/cedar-wasm": "^4.0.0"
   },
   "devDependencies": {

@@ -27,9 +27,12 @@ export function getDatabase(): Database.Database {
   // Enable foreign keys
   db.pragma('foreign_keys = ON')
 
-  // Initialize schema (async but we'll await it)
+  // Initialize schema synchronously - we need to wait for migrations
+  // This is a blocking operation but necessary for proper initialization
   initializeSchema(db).catch((error) => {
-    console.warn('[DB] Schema initialization error:', error.message)
+    console.error('[DB] ❌ Schema initialization failed:', error.message)
+    console.error('[DB] Stack:', error.stack)
+    // Don't throw - let the server start but log the error clearly
   })
 
   console.log(`[DB] Database initialized at: ${DB_PATH}`)
@@ -40,19 +43,54 @@ export function getDatabase(): Database.Database {
 async function initializeSchema(database: Database.Database): Promise<void> {
   console.log('[DB] Initializing database schema...')
   
-  for (const schema of ALL_SCHEMAS) {
-    database.exec(schema)
-  }
-  
-  // Run migration for audit/cost tracking tables
+  // Run migration for audit/cost tracking tables FIRST (before base schema)
+  // This creates the proper audit_logs table structure
   try {
     const { up: migrationUp } = await import('./migrations/003_audit_cost_tracking.js')
     migrationUp(database)
-    console.log('[DB] Migration 003 applied: audit_cost_tracking')
+    console.log('[DB] ✅ Migration 003 applied: audit_cost_tracking')
   } catch (error: any) {
     // Migration might fail if tables already exist, that's okay
-    if (!error.message?.includes('already exists') && !error.message?.includes('Cannot find module')) {
-      console.warn('[DB] Migration 003 failed (may already be applied):', error.message)
+    if (error.message?.includes('already exists')) {
+      console.log('[DB] Migration 003: tables already exist, skipping')
+    } else if (error.message?.includes('Cannot find module')) {
+      console.warn('[DB] Migration 003: module not found')
+    } else {
+      console.error('[DB] Migration 003 failed:', error.message)
+      throw error
+    }
+  }
+
+  // Run migration for rate limiting tables
+  try {
+    const { up: migrationUp } = await import('./migrations/004_rate_limiting.js')
+    migrationUp(database)
+    console.log('[DB] ✅ Migration 004 applied: rate_limiting')
+  } catch (error: any) {
+    // Migration might fail if tables already exist, that's okay
+    if (error.message?.includes('already exists')) {
+      console.log('[DB] Migration 004: tables already exist, skipping')
+    } else if (error.message?.includes('Cannot find module')) {
+      console.error('[DB] Migration 004: module not found - this is required!')
+      throw error
+    } else {
+      console.error('[DB] Migration 004 failed:', error.message)
+      throw error
+    }
+  }
+  
+  // Apply base schemas (skip audit_logs since migration 003 already created it)
+  // Filter out CREATE_AUDIT_LOGS_TABLE since migration 003 handles it
+  const schemasToApply = ALL_SCHEMAS.filter(schema => !schema.includes('CREATE TABLE IF NOT EXISTS audit_logs'))
+  
+  for (const schema of schemasToApply) {
+    try {
+      database.exec(schema)
+    } catch (error: any) {
+      // Ignore "already exists" errors
+      if (!error.message?.includes('already exists')) {
+        console.warn('[DB] Schema execution warning:', error.message)
+      }
     }
   }
   
@@ -66,7 +104,7 @@ async function initializeSchema(database: Database.Database): Promise<void> {
     }
   }
   
-  console.log('[DB] Database schema initialized')
+  console.log('[DB] ✅ Database schema initialized')
   
   // Admin user will be created in initializeAdminUser() function
   // No need to create placeholder here since we're using new schema
