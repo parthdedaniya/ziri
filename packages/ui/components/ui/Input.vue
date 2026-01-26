@@ -27,11 +27,11 @@ const showPassword = ref(false)
 const isFocused = ref(false)
 const internalValue = ref<string>(String(props.modelValue || ''))
 
-// Watch for external changes to modelValue (but not while focused to avoid conflicts)
+ 
 watch(() => props.modelValue, (newValue) => {
   if (!isFocused.value) {
     if (props.type === 'number') {
-      // For number inputs, convert to string to preserve decimal formatting
+ 
       internalValue.value = newValue === 0 || newValue === '' ? '' : String(newValue)
     } else {
       internalValue.value = String(newValue || '')
@@ -50,12 +50,12 @@ const handleInput = (event: Event) => {
   const target = event.target as HTMLInputElement
   const rawValue = target.value
   
-  // Always keep the raw string value in the input field
+ 
   internalValue.value = rawValue
   
   if (props.type === 'number') {
-    // For number inputs, parse and emit the numeric value
-    // But keep the string in the input field to preserve decimals while typing
+ 
+ 
     if (rawValue === '' || rawValue === '-' || rawValue === '.') {
       emit('update:modelValue', 0)
       return
@@ -79,7 +79,7 @@ const handleFocus = () => {
 const handleBlur = () => {
   isFocused.value = false
   
-  // On blur, ensure we have a valid number for number inputs
+ 
   if (props.type === 'number') {
     const stringValue = internalValue.value
     
@@ -91,7 +91,7 @@ const handleBlur = () => {
     
     const parsed = parseFloat(stringValue)
     if (!isNaN(parsed)) {
-      // Update to the parsed value (this will trigger watch, but we're not focused so it's ok)
+ 
       internalValue.value = String(parsed)
       emit('update:modelValue', parsed)
     } else {

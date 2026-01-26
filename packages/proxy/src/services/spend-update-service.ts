@@ -1,4 +1,4 @@
-// Spend update service - updates UserKey entity spend values after successful requests
+ 
 
 import type Database from 'better-sqlite3'
 import { getDatabase } from '../db/index.js'
@@ -39,17 +39,10 @@ export class SpendUpdateService {
     this.db = db || getDatabase()
   }
 
-  /**
-   * Update the UserKey entity's spend values after a successful request.
-   * Calculates spend from cost_tracking table with full precision, then rounds to 4 decimals for entity.
-   * This ensures small costs accumulate properly without being lost to rounding.
-   * 
-   * @param userKeyId - The UserKey entity ID (e.g., "uk-c07c98871ecfe27f")
-   * @param cost - The calculated cost in USD (full precision, already stored in cost_tracking)
-   */
+   
   async addSpend(userKeyId: string, cost: number): Promise<void> {
-    // Get the execution keys (user_agent_keys.id) for this UserKey
-    // First, get the user ID from the UserKey entity
+ 
+ 
     const entityStmt = this.db.prepare(`
       SELECT ejson FROM entities 
       WHERE etype = 'UserKey' AND eid = ?
@@ -67,7 +60,7 @@ export class SpendUpdateService {
       throw new Error(`UserKey entity missing user reference: ${userKeyId}`)
     }
 
-    // Get all execution keys for this user
+ 
     const executionKeys = this.db.prepare(`
       SELECT id FROM user_agent_keys WHERE auth_id = ?
     `).all(userId) as { id: string }[]
@@ -79,7 +72,7 @@ export class SpendUpdateService {
       return
     }
 
-    // Get last reset times from entity (used to calculate period spend)
+ 
     const parseDecimal = (value: CedarDecimalValue | string | undefined): number => {
       if (!value) return 0
       if (typeof value === 'string') return parseFloat(value) || 0
@@ -90,12 +83,12 @@ export class SpendUpdateService {
     const lastDailyResetStr = entity.attrs.last_daily_reset
     const lastMonthlyResetStr = entity.attrs.last_monthly_reset
 
-    // Calculate daily spend: sum all costs since last daily reset (or today if no reset)
+ 
     const now = new Date()
     let dailyStartISO: string
     if (lastDailyResetStr) {
       const lastDailyReset = new Date(lastDailyResetStr)
-      // Get UTC midnight of the reset day
+ 
       const resetDate = new Date(Date.UTC(
         lastDailyReset.getUTCFullYear(),
         lastDailyReset.getUTCMonth(),
@@ -103,16 +96,16 @@ export class SpendUpdateService {
       ))
       dailyStartISO = resetDate.toISOString()
     } else {
-      // No reset yet, use today's UTC midnight
+ 
       const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
       dailyStartISO = todayStart.toISOString()
     }
 
-    // Calculate monthly spend: sum all costs since last monthly reset (or month start if no reset)
+ 
     let monthlyStartISO: string
     if (lastMonthlyResetStr) {
       const lastMonthlyReset = new Date(lastMonthlyResetStr)
-      // Get UTC first day of the reset month
+ 
       const resetMonth = new Date(Date.UTC(
         lastMonthlyReset.getUTCFullYear(),
         lastMonthlyReset.getUTCMonth(),
@@ -120,15 +113,15 @@ export class SpendUpdateService {
       ))
       monthlyStartISO = resetMonth.toISOString()
     } else {
-      // No reset yet, use current month start
+ 
       const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
       monthlyStartISO = monthStart.toISOString()
     }
 
-    // Build IN clause for execution keys
+ 
     const placeholders = executionKeyIds.map(() => '?').join(',')
     
-    // Get daily spend total (full precision from database)
+ 
     const dailySpendResult = this.db.prepare(`
       SELECT COALESCE(SUM(total_cost), 0) as total
       FROM cost_tracking
@@ -137,7 +130,7 @@ export class SpendUpdateService {
         AND status = 'completed'
     `).get(...executionKeyIds, dailyStartISO) as { total: number }
 
-    // Get monthly spend total (full precision from database)
+ 
     const monthlySpendResult = this.db.prepare(`
       SELECT COALESCE(SUM(total_cost), 0) as total
       FROM cost_tracking
@@ -154,17 +147,17 @@ export class SpendUpdateService {
     console.log(`[SPEND_UPDATE]   Monthly period: ${monthlyStartISO} to now, total (full precision): ${monthlySpendFullPrecision}`)
     console.log(`[SPEND_UPDATE]   Adding cost: ${cost} (already stored in cost_tracking)`)
 
-    // Round to 4 decimal places only when updating entity
+ 
     const dailySpendRounded = parseFloat(dailySpendFullPrecision.toFixed(4))
     const monthlySpendRounded = parseFloat(monthlySpendFullPrecision.toFixed(4))
 
     console.log(`[SPEND_UPDATE] Rounded for entity - dailySpend: ${dailySpendRounded}, monthlySpend: ${monthlySpendRounded}`)
 
-    // Update entity with rounded values
+ 
     entity.attrs.current_daily_spend = this.createDecimalValue(dailySpendRounded.toFixed(4))
     entity.attrs.current_monthly_spend = this.createDecimalValue(monthlySpendRounded.toFixed(4))
 
-    // Save back to database
+ 
     const updateStmt = this.db.prepare(`
       UPDATE entities 
       SET ejson = ?, updated_at = datetime('now')
@@ -173,7 +166,7 @@ export class SpendUpdateService {
 
     const result = updateStmt.run(JSON.stringify(entity), userKeyId)
     
-    // Verify the update
+ 
     const verifyStmt = this.db.prepare(`
       SELECT ejson FROM entities 
       WHERE etype = 'UserKey' AND eid = ?
@@ -197,5 +190,5 @@ export class SpendUpdateService {
   }
 }
 
-// Export singleton instance
+ 
 export const spendUpdateService = new SpendUpdateService()

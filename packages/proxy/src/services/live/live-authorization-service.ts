@@ -1,15 +1,7 @@
-// Live authorization service - wraps existing PDP calls
-
 import { loadConfig } from '../../config.js'
 import type { IAuthorizationService, AuthorizationRequest, AuthorizationResult } from '../interfaces.js'
 
-/**
- * Live authorization service implementation (wraps PDP)
- */
 export class LiveAuthorizationService implements IAuthorizationService {
-  /**
-   * Authorize a request using external PDP
-   */
   async authorize(request: AuthorizationRequest): Promise<AuthorizationResult> {
     const config = loadConfig()
     
@@ -82,7 +74,6 @@ export class LiveAuthorizationService implements IAuthorizationService {
         }
       }
       
-      // Handle nested data structure
       const decision = result.data?.decision || result.decision
       
       return {
@@ -94,9 +85,7 @@ export class LiveAuthorizationService implements IAuthorizationService {
     }
   }
   
-  /**
-   * Check if authorization service is healthy
-   */
+   
   async isHealthy(): Promise<boolean> {
     const config = loadConfig()
     
@@ -105,7 +94,6 @@ export class LiveAuthorizationService implements IAuthorizationService {
     }
     
     try {
-      // Try a simple health check (if PDP supports it) or just check URL is configured
       return true
     } catch {
       return false
@@ -113,5 +101,4 @@ export class LiveAuthorizationService implements IAuthorizationService {
   }
 }
 
-// Export singleton instance
 export const liveAuthorizationService = new LiveAuthorizationService()

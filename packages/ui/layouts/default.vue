@@ -9,7 +9,7 @@ const adminAuth = useAdminAuth()
 const userAuth = useUserAuth()
 
 const handleLogout = async () => {
-  // Logout from both stores (whichever is active)
+ 
   if (adminAuth.isAuthenticated.value) {
     await adminAuth.logout()
   }
@@ -18,12 +18,12 @@ const handleLogout = async () => {
   }
 }
 
-// Get user role for navigation
+ 
 const adminAuthStore = useAdminAuthStore()
 const userAuthStore = useUserAuthStore()
 
-// NOTE: Auth loading happens in middleware, this is just for layout's reactive state
-// Don't reload here to avoid race conditions
+ 
+ 
 
 const userRole = computed(() => {
   return userAuthStore.user?.role || adminAuthStore.user?.role || null
@@ -31,14 +31,14 @@ const userRole = computed(() => {
 
 const isAdmin = computed(() => userRole.value === 'admin')
 
-// Dashboard (independent, always at top) - Admin only
+ 
 const dashboardItem = { name: 'Dashboard', path: '/', icon: 'dashboard', adminOnly: true }
 
-// Navigation sections (same as Sidebar)
+ 
 const navSections = computed(() => {
   const sections = []
   
-  // Admin-only sections
+ 
   if (isAdmin.value) {
     sections.push(
       {
@@ -82,7 +82,7 @@ const navSections = computed(() => {
     )
   }
   
-  // User sections (accessible by both admin and user)
+ 
   sections.push({
     title: 'My Account',
     icon: 'user',
@@ -94,7 +94,7 @@ const navSections = computed(() => {
   return sections
 })
 
-// Icon helper (same as Sidebar)
+ 
 const getIcon = (iconName: string) => {
   const icons: Record<string, string> = {
     dashboard: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z',
@@ -121,7 +121,7 @@ const isActive = (path: string) => {
   return route.path.startsWith(path)
 }
 
-// Get page title from route
+ 
 const pageTitle = computed(() => {
   const titles: Record<string, string> = {
     '/': 'Dashboard',
@@ -136,13 +136,13 @@ const pageTitle = computed(() => {
     '/me': 'My Profile'
   }
   
-  // Check for key detail page
+ 
   if (route.path.startsWith('/keys/') && route.params.id) {
     return `Key: ${route.params.id}`
   }
   
   
-  // Check for providers page
+ 
   if (route.path === '/providers') {
     return 'LLM Providers'
   }

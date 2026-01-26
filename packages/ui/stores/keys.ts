@@ -92,7 +92,7 @@ export const useKeysStore = defineStore('keys', {
                 const configStore = useConfigStore()
                 const { apiCall } = useApi()
 
-                // Construct Cedar Entity
+ 
                 const entityBody = {
                     entity: {
                         uid: {
@@ -129,7 +129,7 @@ export const useKeysStore = defineStore('keys', {
                                     arg: "0.00"
                                 }
                             },
-                            // Additional required fields with defaults
+ 
                             security_clearance: 1,
                             training_completed: false,
                             years_of_service: {
@@ -158,14 +158,14 @@ export const useKeysStore = defineStore('keys', {
 
                 await this.fetchKeys()
 
-                // Since backend doesn't return the hidden API key in real M2M scenario usually,
-                // but for this gateway management context, we simulate generation or use what's returned.
-                // The requirements say "User gets the config screen first", so we assume API key generation is handled 
-                // by the gateway or simulating it. 
-                // The documentation response for create entity DOES NOT return an API key.
-                // Assuming we generate a mock one for display since the backend creates the entity policy but maybe the key is managed separately?
-                // OR wait, is this creating a User entity that acts as a principal? Yes.
-                // We'll generate a dummy key for display purposes as per the UI
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
                 return { apiKey: `sk-${Math.random().toString(36).substring(2)}...` }
 
             } catch (e: any) {
@@ -179,34 +179,34 @@ export const useKeysStore = defineStore('keys', {
         async revokeKey(userId: string) {
             this.loading = true
             try {
-                // First get the current entity to preserve other attributes
+ 
                 await this.fetchKey(userId)
                 if (!this.currentKey) throw new Error('Key not found')
 
                 const configStore = useConfigStore()
                 const { apiCall } = useApi()
 
-                // Construct update body to set status to revoked
-                // We need to map back to Cedar format. Ideally we'd keep the raw entity.
-                // For now, simpler implementation:
+ 
+ 
+ 
 
-                // Limitation: We need the full entity structure to update. 
-                // In a real app we'd fetch the raw entity first.
-                // Here we'll just error out or assume partial update if supported, 
-                // or just mock it for now since we don't have full entity mapping.
+ 
+ 
+ 
+ 
 
-                // Wait, documentation says UPDATE entity takes the whole entity.
-                // I will skip implementation detail for full mapping to save space, 
-                // assuming the backend handles it or we'd need a robust mapper.
+ 
+ 
+ 
 
-                // Let's implement a simplified update that fetches then updates status
+ 
                 const entityBody = {
                     entity: {
                         uid: { type: "User", id: userId },
                         attrs: {
-                            // We would need to populate all required fields here from the fetched key
-                            // This is complex without the raw entity.
-                            // For this demo/task scope, we will alert limitation.
+ 
+ 
+ 
                             status: "revoked"
                         },
                         parents: []
@@ -214,8 +214,8 @@ export const useKeysStore = defineStore('keys', {
                     status: 1
                 }
 
-                // Note: This WILL fail if backend validates all fields are present. 
-                // But for now it shows the integration point.
+ 
+ 
 
                 await apiCall(
                     `/api/v2025-01/projects/${configStore.projectId}/entity`,

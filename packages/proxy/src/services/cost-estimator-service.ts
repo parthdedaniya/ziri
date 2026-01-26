@@ -1,5 +1,3 @@
-// Cost estimator service - estimates cost before making LLM request
-
 import { pricingService } from './pricing-service.js'
 
 interface CostEstimate {
@@ -29,81 +27,62 @@ export class CostEstimatorService {
 
   private readonly SAFETY_BUFFER = 1.3 // 30% buffer
 
-  /**
-   * Estimate the cost of a request before sending to LLM
-   * Uses input size and model characteristics to predict total cost
-   */
   async estimateCost(
     provider: string,
     model: string,
     messages: Array<{ role: string; content: string | any }>,
     maxTokens?: number
   ): Promise<CostEstimate> {
-    // 1. Calculate input tokens
     const totalChars = this.countMessageCharacters(messages)
     const charsPerToken = this.getCharsPerToken(provider)
     const estimatedInputTokens = Math.ceil(totalChars / charsPerToken)
 
-    // 2. Estimate output tokens
     let estimatedOutputTokens: number
     
     if (maxTokens) {
-      // If max_tokens is specified, use it as upper bound
       estimatedOutputTokens = maxTokens
     } else {
-      // Otherwise, estimate based on model and input size
       const outputRatio = this.getOutputRatio(model)
       estimatedOutputTokens = Math.ceil(estimatedInputTokens * outputRatio)
-      
-      // Cap at reasonable maximum (4096 for most models)
       estimatedOutputTokens = Math.min(estimatedOutputTokens, 4096)
     }
 
-    // 3. Calculate base cost
     const costResult = await pricingService.calculateCost(
       provider,
       model,
       estimatedInputTokens,
       estimatedOutputTokens,
-      0 // No cached tokens for estimation
+      0
     )
 
-    // 4. Apply safety buffer
     const estimatedCost = costResult.totalCost * this.SAFETY_BUFFER
-
-    // 5. Determine confidence level
     const confidence = this.determineConfidence(maxTokens, estimatedInputTokens)
 
     return {
       estimatedInputTokens,
       estimatedOutputTokens,
-      estimatedCost, // Full precision - will be rounded only when storing to entity
+      estimatedCost,
       confidence,
     }
   }
 
-  /**
-   * Count total characters in messages
-   */
+   
   private countMessageCharacters(
     messages: Array<{ role: string; content: string | any }>
   ): number {
     let totalChars = 0
 
     for (const message of messages) {
-      // Add role overhead (~4 tokens per message for formatting)
       totalChars += 16
 
       if (typeof message.content === 'string') {
         totalChars += message.content.length
       } else if (Array.isArray(message.content)) {
-        // Handle multi-modal content (text + images)
         for (const part of message.content) {
           if (part.type === 'text') {
             totalChars += part.text?.length || 0
           } else if (part.type === 'image_url') {
-            // Images are ~765 tokens for low detail, ~1105 for high
-            totalChars += 4000 // Conservative estimate
+            totalChars += 4000
           }
         }
       } else if (message.content && typeof message.content === 'object') {
@@ -114,9 +93,6 @@ export class CostEstimatorService {
     return totalChars
   }
 
-  /**
-   * Get characters per token ratio for provider
-   */
   private getCharsPerToken(provider: string): number {
     const key = provider.toLowerCase()
     if (key.includes('openai') || key.includes('gpt')) {
@@ -128,9 +104,6 @@ export class CostEstimatorService {
     return this.CHARS_PER_TOKEN['default']
   }
 
-  /**
-   * Get expected output ratio for model
-   */
   private getOutputRatio(model: string): number {
     const modelLower = model.toLowerCase()
     
@@ -143,24 +116,18 @@ export class CostEstimatorService {
     return this.OUTPUT_RATIOS['default']
   }
 
-  /**
-   * Determine confidence level of estimate
-   */
   private determineConfidence(
     maxTokens: number | undefined,
     inputTokens: number
   ): 'high' | 'medium' | 'low' {
     if (maxTokens) {
-      // If max_tokens specified, we have high confidence in upper bound
       return 'high'
     }
     if (inputTokens < 1000) {
-      // Small inputs are harder to predict output size
       return 'medium'
     }
     return 'low'
   }
 }
 
-// Export singleton instance
 export const costEstimatorService = new CostEstimatorService()

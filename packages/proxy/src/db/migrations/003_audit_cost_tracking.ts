@@ -1,10 +1,6 @@
-// Migration 003: Comprehensive audit logging and cost tracking
-// Adds model_pricing, model_aliases, and updates audit_logs and cost_tracking tables
-
 import type Database from 'better-sqlite3'
 
 export function up(db: Database.Database): void {
-  // Check if tables already exist - if they do, skip migration to preserve data!
   const tablesExist = db.prepare(`
     SELECT name FROM sqlite_master 
     WHERE type='table' AND name IN ('audit_logs', 'cost_tracking', 'model_pricing', 'model_aliases')
@@ -12,11 +8,6 @@ export function up(db: Database.Database): void {
   
   const existingTableNames = new Set(tablesExist.map(t => t.name))
   
-  // CRITICAL: Only create tables if they don't exist
-  // This prevents data loss on restart!
-  // DO NOT drop existing tables - they contain valuable data!
-
-  // 2. model_pricing table (only create if doesn't exist)
   if (!existingTableNames.has('model_pricing')) {
     db.exec(`
     CREATE TABLE model_pricing (
@@ -43,7 +34,6 @@ export function up(db: Database.Database): void {
   `)
   }
 
-  // 3. model_aliases table (only create if doesn't exist)
   if (!existingTableNames.has('model_aliases')) {
     db.exec(`
     CREATE TABLE model_aliases (
@@ -56,14 +46,12 @@ export function up(db: Database.Database): void {
   `)
   }
 
-  // 4. audit_logs table - comprehensive authorization logging (only create if doesn't exist)
   if (!existingTableNames.has('audit_logs')) {
     db.exec(`
     CREATE TABLE audit_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       request_id TEXT NOT NULL UNIQUE,
       
-      -- Principal info
       principal TEXT NOT NULL,
       principal_type TEXT NOT NULL,
       auth_id TEXT,
@@ -75,20 +63,17 @@ export function up(db: Database.Database): void {
       provider TEXT,
       model TEXT,
       
-      -- Decision
       decision TEXT NOT NULL CHECK (decision IN ('permit', 'forbid')),
       decision_reason TEXT,
       policies_evaluated TEXT,
       determining_policies TEXT,
       
-      -- Request metadata
       request_ip TEXT,
       user_agent TEXT,
       request_method TEXT,
       request_path TEXT,
       request_body_hash TEXT,
       
-      -- Cedar context
       cedar_context TEXT,
       entity_snapshot TEXT,
       
@@ -98,7 +83,6 @@ export function up(db: Database.Database): void {
       auth_end_time TEXT,
       auth_duration_ms INTEGER,
       
-      -- Provider response (updated after LLM call)
       provider_request_id TEXT,
       cost_tracking_id INTEGER,
       
@@ -107,7 +91,6 @@ export function up(db: Database.Database): void {
   `)
   }
 
-  // 5. cost_tracking table (only create if doesn't exist)
   if (!existingTableNames.has('cost_tracking')) {
     db.exec(`
     CREATE TABLE cost_tracking (
@@ -120,7 +103,6 @@ export function up(db: Database.Database): void {
       provider TEXT NOT NULL,
       provider_request_id TEXT,
       
-      -- Model info
       model_requested TEXT NOT NULL,
       model_used TEXT,
       
@@ -130,7 +112,6 @@ export function up(db: Database.Database): void {
       total_tokens INTEGER NOT NULL,
       cached_tokens INTEGER DEFAULT 0,
       
-      -- Costs (USD)
       input_cost REAL NOT NULL,
       output_cost REAL NOT NULL,
       cache_savings REAL DEFAULT 0,
@@ -142,7 +123,6 @@ export function up(db: Database.Database): void {
       input_rate_used REAL,
       output_rate_used REAL,
       
-      -- Timing
       request_timestamp TEXT NOT NULL,
       response_timestamp TEXT,
       latency_ms INTEGER,
@@ -161,9 +141,7 @@ export function up(db: Database.Database): void {
   `)
   }
 
-  // Create indexes (always safe to create - IF NOT EXISTS handles duplicates)
   db.exec(`
-    -- model_pricing indexes
     CREATE INDEX IF NOT EXISTS idx_model_pricing_provider ON model_pricing(provider);
     CREATE INDEX IF NOT EXISTS idx_model_pricing_provider_model ON model_pricing(provider, model);
     CREATE INDEX IF NOT EXISTS idx_model_pricing_effective ON model_pricing(effective_from, effective_until);
@@ -178,7 +156,6 @@ export function up(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(request_timestamp);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_auth_decision_time ON audit_logs(auth_id, decision, request_timestamp);
 
-    -- cost_tracking indexes
     CREATE INDEX IF NOT EXISTS idx_cost_tracking_request_id ON cost_tracking(request_id);
     CREATE INDEX IF NOT EXISTS idx_cost_tracking_execution_key ON cost_tracking(execution_key);
     CREATE INDEX IF NOT EXISTS idx_cost_tracking_provider ON cost_tracking(provider);

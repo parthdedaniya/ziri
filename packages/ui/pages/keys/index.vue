@@ -17,7 +17,7 @@ const { users, loadUsers } = useUsers()
 const { validateEntities } = useCedarWasm()
 const toast = useToast()
 
-// Auto-load keys and users when page mounts (if config is set)
+ 
 onMounted(async () => {
   await nextTick()
   
@@ -28,52 +28,52 @@ onMounted(async () => {
         loadUsers().catch(() => {})
       ])
     } catch (e) {
-      // Error handled by composables
+ 
     }
   }
 })
 
-// Modal state
+ 
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
 const showKeyModal = ref(false)
 const generatedKey = ref('')
 const keyToEdit = ref<Key | null>(null)
 
-// Loading states for actions
+ 
 const isEditing = ref(false)
 const isRotating = ref<string | null>(null)
 const isCreating = ref(false)
 const originalEntity = ref<Entity | null>(null)
 
-// Filter state
+ 
 const searchQuery = ref('')
 const filterStatus = ref<'' | 'active' | 'revoked' | 'disabled'>('')
 
-// Pagination
+ 
 const currentPage = ref(1)
 const itemsPerPage = ref(20)
 const totalKeys = ref(0)
 
-// Sorting state
+ 
 const sortBy = ref<string | null>(null)
 const sortOrder = ref<'asc' | 'desc' | null>(null)
 
-// Form state - only userId needed (UserKey is created with user)
+ 
 const newKey = reactive<{
   userId: string
 }>({
   userId: ''
 })
 
-// Edit form state - only status is editable for UserKey
+ 
 const editKey = reactive<{
   status: 'active' | 'revoked' | 'disabled'
 }>({
   status: 'active'
 })
 
-// Validation state
+ 
 const validationErrors = ref<ValidationError[]>([])
 const isValidating = ref(false)
 
@@ -81,10 +81,10 @@ const selectedUser = computed(() => {
   return users.value.find(u => u.userId === newKey.userId)
 })
 
-// Debounced search query
+ 
 const debouncedSearchQuery = useDebounce(searchQuery, 300)
 
-// Fetch keys with server-side search, pagination, and sorting
+ 
 const fetchKeys = async () => {
   try {
     const result = await listKeys({
@@ -96,19 +96,19 @@ const fetchKeys = async () => {
     })
     totalKeys.value = result.total || 0
   } catch (e) {
-    // Error already handled in composable
+ 
   }
 }
 
-// Handle sort change
+ 
 const handleSort = (newSortBy: string | null, newSortOrder: 'asc' | 'desc' | null) => {
   sortBy.value = newSortBy
   sortOrder.value = newSortOrder
-  // Reset to first page when sorting changes
+ 
   currentPage.value = 1
 }
 
-// Client-side filter by status (since status filtering isn't implemented server-side yet)
+ 
 const displayKeys = computed(() => {
   if (filterStatus.value === '') {
     return keys.value
@@ -124,13 +124,13 @@ const displayKeys = computed(() => {
   })
 })
 
-// Watch for filter changes
+ 
 watch([debouncedSearchQuery, currentPage, itemsPerPage, sortBy, sortOrder], () => {
   fetchKeys()
 })
 
 watch([filterStatus], () => {
-  // Status filter is client-side, no need to refetch
+ 
 })
 
 const columns = [
@@ -145,16 +145,12 @@ const columns = [
 ]
 
 const viewKeyDetail = (row: Key) => {
-  // Use userKeyId if available, otherwise fallback to userId
+ 
   const identifier = row.userKeyId || row.userId
   router.push(`/keys/${identifier}`)
 }
 
-/**
- * Convert edit form to UserKey entity format
- * Entity UID is now UserKey::"userKeyId" (not Key::"keyHash")
- * Only status is editable for UserKey
- */
+ 
 const convertToUserKeyEntity = (userKeyId: string, formData: { status: 'active' | 'revoked' | 'disabled' }, original: Entity): Entity => {
   return {
     uid: {
@@ -162,7 +158,7 @@ const convertToUserKeyEntity = (userKeyId: string, formData: { status: 'active' 
       id: userKeyId
     },
     attrs: {
-      // Keep all original UserKey attributes
+ 
       current_daily_spend: normalizeDecimal(original.attrs.current_daily_spend, 4),
       current_monthly_spend: normalizeDecimal(original.attrs.current_monthly_spend, 4),
       last_daily_reset: original.attrs.last_daily_reset,
@@ -174,9 +170,7 @@ const convertToUserKeyEntity = (userKeyId: string, formData: { status: 'active' 
   }
 }
 
-/**
- * Validate entity
- */
+ 
 const validateEntity = async (entity: Entity) => {
   isValidating.value = true
   try {
@@ -195,9 +189,7 @@ const validateEntity = async (entity: Entity) => {
   }
 }
 
-/**
- * Handle edit key
- */
+ 
 const handleEditKey = async (key: Key) => {
   if (isEditing.value) return
   
@@ -209,11 +201,11 @@ const handleEditKey = async (key: Key) => {
       return
     }
     
-    // Fetch full UserKey entity data by userKeyId
+ 
     const fullKey = await getKey(key.userKeyId)
     keyToEdit.value = fullKey
     
-    // Fetch original UserKey entity
+ 
     const { getAuthHeader } = useAdminAuth()
     const authHeader = getAuthHeader()
     if (!authHeader) {
@@ -238,8 +230,8 @@ const handleEditKey = async (key: Key) => {
     
     originalEntity.value = data.data[0]
     
-    // Populate edit form - only status is editable for UserKey
-    // User attributes (department, isAgent, limitRequestsPerMinute) are in User entity, not UserKey
+ 
+ 
     editKey.status = originalEntity.value.attrs.status || 'active'
     
     validationErrors.value = []
@@ -251,28 +243,26 @@ const handleEditKey = async (key: Key) => {
   }
 }
 
-// Loading state for update
+ 
 const isUpdating = ref(false)
 
-/**
- * Handle update key
- */
+ 
 const handleUpdateKey = async () => {
   if (!keyToEdit.value || !originalEntity.value || !keyToEdit.value.userKeyId || isUpdating.value) return
   
   try {
     isUpdating.value = true
-    // Convert form to UserKey entity (only status is editable)
+ 
     const entity = convertToUserKeyEntity(keyToEdit.value.userKeyId, editKey, originalEntity.value)
     
-    // Validate entity
+ 
     const isValid = await validateEntity(entity)
     if (!isValid) {
       toast.warning('Please fix validation errors before saving')
       return
     }
     
-    // Update UserKey entity
+ 
     await updateKey(keyToEdit.value.userKeyId, entity)
     
     showEditModal.value = false
@@ -280,25 +270,23 @@ const handleUpdateKey = async () => {
     originalEntity.value = null
     validationErrors.value = []
     
-    // Reset form
+ 
     editKey.status = 'active'
   } catch (e) {
-    // Error handled by composable
+ 
   } finally {
     isUpdating.value = false
   }
 }
 
-/**
- * Handle cancel edit
- */
+ 
 const handleCancelEdit = () => {
   showEditModal.value = false
   keyToEdit.value = null
   originalEntity.value = null
   validationErrors.value = []
   
-  // Reset form
+ 
   editKey.status = 'active'
 }
 
@@ -317,19 +305,19 @@ const handleCreateKey = async () => {
     showCreateModal.value = false
     showKeyModal.value = true
     
-    // Reset form
+ 
     newKey.userId = ''
     
-    // Reload keys to show new one
+ 
     await fetchKeys()
   } catch (e) {
-    // Error handled by composable
+ 
   } finally {
     isCreating.value = false
   }
 }
 
-// Delete functionality removed - keys are deleted when user is deleted
+ 
 
 const handleRotateKey = async (userId: string) => {
   if (isRotating.value === userId) return
@@ -340,7 +328,7 @@ const handleRotateKey = async (userId: string) => {
     generatedKey.value = result.apiKey
     showKeyModal.value = true
   } catch (e) {
-    // Error handled by composable
+ 
   } finally {
     isRotating.value = null
   }
@@ -351,7 +339,7 @@ const closeKeyModal = () => {
   generatedKey.value = ''
 }
 
-// Get auth header helper
+ 
 const { getAuthHeader } = useAdminAuth()
 </script>
 

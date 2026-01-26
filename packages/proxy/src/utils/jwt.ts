@@ -1,4 +1,4 @@
-// JWT token utilities
+ 
 
 import jwt from 'jsonwebtoken'
 import { getMasterKey } from './master-key.js'
@@ -15,22 +15,18 @@ export interface TokenPayload {
   name?: string
 }
 
-/**
- * Generate JWT secret from master key (or use separate secret)
- */
+ 
 function getJwtSecret(): string {
-  // Use master key as base for JWT secret (or can be separate)
+ 
   const masterKey = getMasterKey()
   if (!masterKey) {
     throw new Error('Master key not found')
   }
-  // Create a hash of master key for JWT secret (or use master key directly)
+ 
   return createHash('sha256').update(masterKey + JWT_SECRET_KEY).digest('hex')
 }
 
-/**
- * Generate access token
- */
+ 
 export function generateAccessToken(payload: TokenPayload): string {
   const secret = getJwtSecret()
   return jwt.sign(payload, secret, {
@@ -39,9 +35,7 @@ export function generateAccessToken(payload: TokenPayload): string {
   })
 }
 
-/**
- * Generate refresh token
- */
+ 
 export function generateRefreshToken(payload: TokenPayload): string {
   const secret = getJwtSecret()
   return jwt.sign(payload, secret, {
@@ -50,9 +44,7 @@ export function generateRefreshToken(payload: TokenPayload): string {
   })
 }
 
-/**
- * Verify and decode access token
- */
+ 
 export function verifyAccessToken(token: string): TokenPayload {
   const secret = getJwtSecret()
   try {
@@ -71,9 +63,7 @@ export function verifyAccessToken(token: string): TokenPayload {
   }
 }
 
-/**
- * Verify and decode refresh token
- */
+ 
 export function verifyRefreshToken(token: string): TokenPayload {
   const secret = getJwtSecret()
   try {
@@ -92,9 +82,7 @@ export function verifyRefreshToken(token: string): TokenPayload {
   }
 }
 
-/**
- * Hash refresh token for storage
- */
+ 
 export function hashRefreshToken(token: string): string {
   return createHash('sha256').update(token).digest('hex')
 }

@@ -1,4 +1,4 @@
-// Admin authentication composable
+ 
 
 import { useAdminAuthStore } from '~/stores/admin-auth'
 import { useToast } from './useToast'
@@ -7,7 +7,7 @@ export function useAdminAuth() {
   const adminAuthStore = useAdminAuthStore()
   const toast = useToast()
 
-  // Load auth from storage on init
+ 
   if (process.client) {
     adminAuthStore.loadFromStorage()
   }
@@ -39,7 +39,7 @@ export function useAdminAuth() {
         data.user
       )
       
-      // Get and store server session ID after login
+ 
       try {
         const healthResponse = await fetch('/api/health')
         if (healthResponse.ok) {
@@ -54,7 +54,7 @@ export function useAdminAuth() {
       
       toast.success('Login successful!')
       
-      // Redirect to config page after login
+ 
       if (process.client) {
         await navigateTo('/config')
       }
@@ -73,7 +73,7 @@ export function useAdminAuth() {
     adminAuthStore.clearAuth()
     toast.info('Logged out successfully')
     
-    // Redirect to login page
+ 
     if (process.client) {
       await navigateTo('/login')
     }
@@ -91,10 +91,10 @@ export function useAdminAuth() {
       return false
     }
     
-    // Check server session before refreshing (detect server restart)
+ 
     const sessionValid = await adminAuthStore.checkServerSession()
     if (!sessionValid) {
-      // Server restarted, already logged out by checkServerSession
+ 
       return false
     }
     
@@ -110,18 +110,18 @@ export function useAdminAuth() {
       })
       
       if (!response.ok) {
-        // Refresh failed, need to login again
+ 
         adminAuthStore.clearAuth()
         return false
       }
       
       const data = await response.json()
       
-      // Update access token
+ 
       adminAuthStore.accessToken = data.accessToken
       adminAuthStore.tokenExpiry = new Date(Date.now() + (data.expiresIn - 60) * 1000)
       
-      // Update cookie (reuse setTokens to persist)
+ 
       if (process.client && adminAuthStore.user && adminAuthStore.refreshToken) {
         adminAuthStore.setTokens(
           data.accessToken,

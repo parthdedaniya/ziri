@@ -7,7 +7,7 @@ import { formatDate } from '~/utils/formatters'
 const { users, loading, loadUsers, createUser, updateUser, deleteUser, resetPassword } = useUsers()
 const toast = useToast()
 
-// Modal state
+ 
 const showCreateModal = ref(false)
 const showPasswordModal = ref(false)
 const showDeleteModal = ref(false)
@@ -17,12 +17,12 @@ const selectedUser = ref<User | null>(null)
 const userToDelete = ref<User | null>(null)
 const userToResetPassword = ref<User | null>(null)
 
-// Loading states
+ 
 const isCreatingUser = ref(false)
 const isResettingPassword = ref(false)
 const isDeletingUser = ref(false)
 
-// Form state
+ 
 const newUser = reactive<CreateUserInput>({
   email: '',
   name: '',
@@ -31,20 +31,20 @@ const newUser = reactive<CreateUserInput>({
   limitRequestsPerMinute: 100
 })
 
-// Filter and pagination
+ 
 const searchQuery = ref('')
 const currentPage = ref(1)
 const itemsPerPage = ref(20)
 const totalUsers = ref(0)
 
-// Sorting state
+ 
 const sortBy = ref<string | null>(null)
 const sortOrder = ref<'asc' | 'desc' | null>(null)
 
-// Debounced search query
+ 
 const debouncedSearchQuery = useDebounce(searchQuery, 300)
 
-// Fetch users with server-side search, pagination, and sorting
+ 
 const fetchUsers = async () => {
   try {
     const result = await loadUsers({
@@ -56,19 +56,19 @@ const fetchUsers = async () => {
     })
     totalUsers.value = result.total || 0
   } catch (e) {
-    // Error already handled in composable
+ 
   }
 }
 
-// Handle sort change
+ 
 const handleSort = (newSortBy: string | null, newSortOrder: 'asc' | 'desc' | null) => {
   sortBy.value = newSortBy
   sortOrder.value = newSortOrder
-  // Reset to first page when sorting changes
+ 
   currentPage.value = 1
 }
 
-// Watch for filter changes
+ 
 watch([debouncedSearchQuery, currentPage, itemsPerPage, sortBy, sortOrder], () => {
   fetchUsers()
 })
@@ -90,17 +90,17 @@ const handleCreateUser = async () => {
     const result = await createUser(newUser)
     showCreateModal.value = false
     
-    // Only show password modal if email was NOT sent (password is in response)
+ 
     if (result.password) {
       generatedPassword.value = result.password
       showPasswordModal.value = true
       toast.warning('Email was not sent. Please save the password below.')
     } else {
-      // Email was sent successfully
+ 
       toast.success('User created successfully. Credentials have been sent to the user\'s email address.')
     }
     
-    // Reset form
+ 
     Object.assign(newUser, {
       email: '',
       name: '',
@@ -150,16 +150,16 @@ const handleResetPassword = async () => {
     selectedUser.value = userToResetPassword.value
     showResetPasswordModal.value = false
     
-    // Show password modal only if email was NOT sent (password is in response)
+ 
     if (result.password) {
       generatedPassword.value = result.password
       showPasswordModal.value = true
       toast.warning('Email was not sent. Please save the password below.')
     } else if (result.emailSent) {
-      // Email was sent successfully
+ 
       toast.success('Password reset successfully. The new password has been sent to the user\'s email address.')
     } else {
-      // Fallback (shouldn't happen)
+ 
       toast.success('Password reset successfully.')
     }
     

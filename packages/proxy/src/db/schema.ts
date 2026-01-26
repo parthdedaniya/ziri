@@ -1,6 +1,3 @@
-// Database schema definitions for SQLite
-// New schema with TEXT primary keys, encryption support, and merged schema/policy table
-
 export const CREATE_AUTH_TABLE = `
 CREATE TABLE IF NOT EXISTS auth (
   id TEXT PRIMARY KEY,
@@ -139,7 +136,6 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_decision ON audit_logs(decision);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_execution_time ON audit_logs(execution_time);
 `;
 
-// All schemas in order
 export const ALL_SCHEMAS = [
   CREATE_AUTH_TABLE,
   CREATE_USER_AGENT_KEYS_TABLE,
@@ -151,7 +147,6 @@ export const ALL_SCHEMAS = [
   CREATE_AUDIT_LOGS_TABLE
 ];
 
-// Legacy table names (for migration reference, not used in new schema)
 export const LEGACY_TABLES = [
   'users',
   'api_keys',

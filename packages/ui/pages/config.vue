@@ -14,7 +14,7 @@ const { listKeys } = useKeys()
 const isSaving = ref(false)
 const showMasterKey = ref(false)
 
-// Local form state
+ 
 const form = reactive({
   mode: 'local' as 'local' | 'live',
   server: {
@@ -43,7 +43,7 @@ const form = reactive({
 })
 
 onMounted(async () => {
-  // Load current config
+ 
   try {
     const response = await fetch('/api/config')
     if (response.ok) {
@@ -63,7 +63,7 @@ onMounted(async () => {
         configStore.masterKey = config.masterKey
       }
     } else {
-      // Fallback to store values
+ 
       form.mode = 'local'
       form.server = configStore.server || { host: '127.0.0.1', port: configStore.port || 3100 }
       form.publicUrl = configStore.publicUrl || ''
@@ -77,7 +77,7 @@ onMounted(async () => {
       form.logLevel = configStore.logLevel || 'info'
     }
   } catch (e) {
-    // Fallback to store values
+ 
     form.mode = 'local'
     form.server = configStore.server || { host: '127.0.0.1', port: configStore.port || 3100 }
     form.publicUrl = configStore.publicUrl || ''

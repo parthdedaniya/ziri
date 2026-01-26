@@ -1,5 +1,3 @@
-// Rate limiter service using rate-limiter-flexible with SQLite adapter
-
 import { RateLimiterSQLite } from 'rate-limiter-flexible'
 import type Database from 'better-sqlite3'
 import { getDatabase } from '../db/index.js'
@@ -13,33 +11,23 @@ interface RateLimitResult {
 }
 
 interface RateLimitConfig {
-  requestsPerMinute: number | null // null = unlimited
+  requestsPerMinute: number | null
 }
 
 export class RateLimiterService {
   private db: Database.Database
   private limiters: Map<string, RateLimiterSQLite> = new Map()
-  private readonly WINDOW_SIZE_SECONDS = 60 // 1 minute window
+  private readonly WINDOW_SIZE_SECONDS = 60
 
   constructor(db?: Database.Database) {
     this.db = db || getDatabase()
   }
 
-  /**
-   * Get or create rate limiter for a key
-   * Creates limiters per limit value (not per keyId) to allow sharing limiters across keys with same limits
-   */
   private async getLimiter(keyType: 'user' | 'api_key' | 'ip', keyId: string, limit: number): Promise<RateLimiterSQLite> {
-    // Cache key is based on keyType and limit only (not keyId)
-    // This allows one limiter instance to handle multiple keys with the same limit
     const cacheKey = `${keyType}:${limit}`
     const keyPrefix = `rl_${keyType}`
     
     if (!this.limiters.has(cacheKey)) {
-      console.log(`[RATE_LIMITER] Creating new limiter: cacheKey=${cacheKey}, keyPrefix=${keyPrefix}, limit=${limit}, duration=${this.WINDOW_SIZE_SECONDS}s`)
-      
-      // Ensure table exists before creating limiter
-      // Check if table exists, if not create it
       try {
         const tableExists = this.db.prepare(`
           SELECT name FROM sqlite_master 
@@ -48,14 +36,12 @@ export class RateLimiterService {
         
         if (!tableExists) {
           console.warn(`[RATE_LIMITER] Table rate_limit_buckets does not exist, creating it...`)
-          // Import and run migration directly
           const { up: migrationUp } = await import('../db/migrations/004_rate_limiting.js')
           migrationUp(this.db)
           console.log(`[RATE_LIMITER] ✅ Created rate_limit_buckets table`)
         }
       } catch (error: any) {
         console.error(`[RATE_LIMITER] Error ensuring table exists:`, error.message)
-        // Try to create table anyway
         try {
           const { up: migrationUp } = await import('../db/migrations/004_rate_limiting.js')
           migrationUp(this.db)
@@ -69,27 +55,19 @@ export class RateLimiterService {
       const limiter = new RateLimiterSQLite({
         storeClient: this.db,
         storeType: 'better-sqlite3',
-        keyPrefix: keyPrefix, // Common prefix for all keys of this type
-        points: limit, // Number of requests
-        duration: this.WINDOW_SIZE_SECONDS, // Per duration (seconds)
+        keyPrefix: keyPrefix,
+        points: limit,
+        duration: this.WINDOW_SIZE_SECONDS,
         tableName: 'rate_limit_buckets',
-        tableCreated: true, // We create the table in migration
+        tableCreated: true,
       })
       
       this.limiters.set(cacheKey, limiter)
-      console.log(`[RATE_LIMITER] Limiter created and cached: ${cacheKey}`)
     }
     
     return this.limiters.get(cacheKey)!
   }
 
-  /**
-   * Check if request is allowed under rate limits
-   * @param keyType - Type of rate limit key ('user', 'api_key', 'ip')
-   * @param keyId - The actual key value
-   * @param config - Rate limit configuration
-   * @returns Rate limit result
-   */
   async checkRateLimit(
     keyType: 'user' | 'api_key' | 'ip',
     keyId: string,
@@ -97,7 +75,6 @@ export class RateLimiterService {
   ): Promise<RateLimitResult> {
     console.log(`[RATE_LIMITER] checkRateLimit START: keyType=${keyType}, keyId=${keyId}, config.requestsPerMinute=${config.requestsPerMinute}`)
     
-    // If limit is null, undefined, or 0, allow unlimited requests
     if (config.requestsPerMinute === null || config.requestsPerMinute === undefined || config.requestsPerMinute === 0) {
       console.log(`[RATE_LIMITER] Unlimited requests allowed (limit is ${config.requestsPerMinute})`)
       return {
@@ -114,7 +91,6 @@ export class RateLimiterService {
     
     console.log(`[RATE_LIMITER] Rate limiting enabled: limit=${limit}, keyPrefix=${keyPrefix}, expectedStoredKey=${expectedStoredKey}`)
     
-      // Check database state BEFORE consume
       try {
         const expectedKey = `${keyPrefix}_${keyId}`
         const dbEntryBefore = this.db.prepare(`
@@ -125,7 +101,6 @@ export class RateLimiterService {
         
         console.log(`[RATE_LIMITER] Database entry BEFORE consume (key=${expectedKey}):`, JSON.stringify(dbEntryBefore, null, 2))
         
-        // Also check all entries with the keyPrefix to see what's stored
         const allEntriesWithPrefix = this.db.prepare(`
           SELECT key, points, expire 
           FROM rate_limit_buckets 
@@ -141,7 +116,6 @@ export class RateLimiterService {
     
     const limiter = await this.getLimiter(keyType, keyId, limit)
     
-    // Try to get current state before consuming
     try {
       const currentState = await limiter.get(keyId)
       console.log(`[RATE_LIMITER] Current state from limiter.get(${keyId}):`, JSON.stringify(currentState, null, 2))
@@ -151,7 +125,6 @@ export class RateLimiterService {
 
     try {
       console.log(`[RATE_LIMITER] Calling limiter.consume(${keyId})...`)
-      // Pass keyId to consume - it will be combined with keyPrefix internally
       const result = await limiter.consume(keyId)
       
       console.log(`[RATE_LIMITER] consume() SUCCESS:`, {
@@ -160,7 +133,6 @@ export class RateLimiterService {
         result: JSON.stringify(result),
       })
       
-      // Check database state AFTER consume
       try {
         const expectedKey = `${keyPrefix}_${keyId}`
         const dbEntryAfter = this.db.prepare(`
@@ -183,7 +155,6 @@ export class RateLimiterService {
         resetAt,
       }
     } catch (rejRes: any) {
-      // Rate limit exceeded
       console.error(`[RATE_LIMITER] consume() FAILED (rate limit exceeded):`, {
         message: rejRes.message,
         msBeforeNext: rejRes.msBeforeNext,
@@ -191,7 +162,6 @@ export class RateLimiterService {
         error: JSON.stringify(rejRes),
       })
       
-      // Check database state AFTER failed consume
       try {
         const expectedKey = `${keyPrefix}_${keyId}`
         const dbEntryAfter = this.db.prepare(`
@@ -220,9 +190,6 @@ export class RateLimiterService {
     }
   }
 
-  /**
-   * Get current rate limit status for a key (for monitoring/debugging)
-   */
   async getRateLimitStatus(
     keyType: 'user' | 'api_key' | 'ip',
     keyId: string,
@@ -250,12 +217,7 @@ export class RateLimiterService {
     }
   }
 
-  /**
-   * Clean up old rate limit buckets
-   * Run periodically (e.g., every 5 minutes)
-   */
   cleanup(): number {
-    // Clean up expired entries (expire is Unix timestamp in milliseconds)
     const cutoff = Date.now()
     
     const stmt = this.db.prepare(`
@@ -266,11 +228,7 @@ export class RateLimiterService {
     return result.changes
   }
 
-  /**
-   * Clear rate limit data for a specific key (for debugging/admin)
-   */
   clearKey(keyType: 'user' | 'api_key' | 'ip', keyId: string): number {
-    // The key stored in the database will be prefixed with rl_${keyType}
     const expectedKey = `rl_${keyType}_${keyId}`
     
     const stmt = this.db.prepare(`
@@ -282,9 +240,6 @@ export class RateLimiterService {
     return result.changes
   }
 
-  /**
-   * Get current rate limit status for debugging
-   */
   async debugKey(keyType: 'user' | 'api_key' | 'ip', keyId: string, limit: number | null): Promise<any> {
     if (limit === null || limit === 0) {
       return { message: 'Unlimited - no rate limiting applied' }
@@ -297,7 +252,6 @@ export class RateLimiterService {
     try {
       const result = await limiter.get(keyId)
       
-      // Also check database directly
       const expectedKey = `${keyPrefix}_${keyId}`
       const dbCheck = this.db.prepare(`
         SELECT key, points, expire 
@@ -323,5 +277,4 @@ export class RateLimiterService {
   }
 }
 
-// Export singleton instance
 export const rateLimiterService = new RateLimiterService()

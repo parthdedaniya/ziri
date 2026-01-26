@@ -18,7 +18,7 @@ export const useAuthStore = defineStore('auth', {
     actions: {
         setToken(token: string, expiresIn: number) {
             this.token = token
-            // Expire 60 seconds early to account for clock skew
+ 
             this.tokenExpiry = new Date(Date.now() + (expiresIn - 60) * 1000)
             this.error = null
         },

@@ -9,7 +9,7 @@ const configStore = useConfigStore()
 const { providers, loading, listProviders, addProvider, removeProvider, testProvider } = useProviders()
 const toast = useToast()
 
-// Supported provider templates
+ 
 const PROVIDER_TEMPLATES: Record<string, { displayName: string; baseUrl: string; models: string[] }> = {
   openai: {
     displayName: 'OpenAI',
@@ -23,7 +23,7 @@ const PROVIDER_TEMPLATES: Record<string, { displayName: string; baseUrl: string;
   }
 }
 
-// Auto-load providers when page mounts
+ 
 onMounted(async () => {
   try {
     await listProviders()
@@ -32,21 +32,21 @@ onMounted(async () => {
   }
 })
 
-// Modal state
+ 
 const showCreateModal = ref(false)
 const showDeleteModal = ref(false)
 const providerToDelete = ref<Provider | null>(null)
 const testingProvider = ref<string | null>(null)
 
-// Pagination
+ 
 const currentPage = ref(1)
 const itemsPerPage = ref(20)
 
-// Sorting state
+ 
 const sortBy = ref<string | null>(null)
 const sortOrder = ref<'asc' | 'desc' | null>(null)
 
-// Form state
+ 
 const newProvider = reactive<CreateProviderInput & { providerType: string }>({
   name: '',
   providerType: 'openai',
@@ -54,14 +54,14 @@ const newProvider = reactive<CreateProviderInput & { providerType: string }>({
 })
 
 
-// Filter/search
+ 
 const searchQuery = ref('')
 const totalProviders = ref(0)
 
-// Debounced search query
+ 
 const debouncedSearchQuery = useDebounce(searchQuery, 300)
 
-// Fetch providers with server-side search, pagination, and sorting
+ 
 const fetchProviders = async () => {
   try {
     const result = await listProviders({
@@ -73,25 +73,25 @@ const fetchProviders = async () => {
     })
     totalProviders.value = result.total || 0
   } catch (e) {
-    // Error already handled in composable
+ 
   }
 }
 
-// Handle sort change
+ 
 const handleSort = (newSortBy: string | null, newSortOrder: 'asc' | 'desc' | null) => {
   sortBy.value = newSortBy
   sortOrder.value = newSortOrder
-  // Reset to first page when sorting changes
+ 
   currentPage.value = 1
 }
 
-// Watch for filter changes
+ 
 watch([debouncedSearchQuery, currentPage, itemsPerPage, sortBy, sortOrder], () => {
   fetchProviders()
 })
 
 const paginatedProviders = computed(() => {
-  // Server-side pagination - return providers as-is
+ 
   return providers.value
 })
 
@@ -112,7 +112,7 @@ const handleAddProvider = async () => {
     toast.success(`Provider '${newProvider.name}' added successfully`)
     showCreateModal.value = false
     
-    // Reset form
+ 
     newProvider.name = ''
     newProvider.providerType = 'openai'
     newProvider.apiKey = ''
@@ -159,7 +159,7 @@ const columns = [
   { key: 'name', header: 'Provider', sortable: true },
   { key: 'displayName', header: 'Display Name', sortable: true },
   { key: 'baseUrl', header: 'Base URL', sortable: true },
-  // { key: 'models', header: 'Models' },
+ 
   { key: 'hasCredentials', header: 'Status' },
   { key: 'actions', header: 'Actions' }
 ]

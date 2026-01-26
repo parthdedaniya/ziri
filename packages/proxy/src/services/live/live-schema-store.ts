@@ -1,25 +1,15 @@
-// Live schema store - wraps existing Backend API calls
-
 import { loadConfig } from '../../config.js'
 import { getM2MToken } from '../m2m-token-cache.js'
 import { randomBytes } from 'crypto'
 import type { ISchemaStore, SchemaData } from '../interfaces.js'
 
-// Generate unique IDs for requests
 function generateOpId(): string {
   return randomBytes(8).toString('hex')
 }
 
-// Generate session ID (persists for the lifetime of the service)
 const sessionId = randomBytes(8).toString('hex')
 
-/**
- * Live schema store implementation (wraps Backend API)
- */
 export class LiveSchemaStore implements ISchemaStore {
-  /**
-   * Get current schema
-   */
   async getSchema(): Promise<SchemaData> {
     const config = loadConfig()
     
@@ -52,9 +42,6 @@ export class LiveSchemaStore implements ISchemaStore {
     return result.data
   }
   
-  /**
-   * Update schema
-   */
   async updateSchema(schema: SchemaData['schema']): Promise<SchemaData> {
     const config = loadConfig()
     
@@ -93,5 +80,4 @@ export class LiveSchemaStore implements ISchemaStore {
   }
 }
 
-// Export singleton instance
 export const liveSchemaStore = new LiveSchemaStore()

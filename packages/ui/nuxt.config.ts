@@ -1,4 +1,4 @@
-// https://nuxt.com/docs/api/configuration/nuxt-config
+ 
 import wasm from 'vite-plugin-wasm'
 import topLevelAwait from 'vite-plugin-top-level-await'
 
@@ -37,8 +37,8 @@ export default defineNuxtConfig({
     }
   },
 
-  // Generate static output for CLI to serve
-  // NOTE: Only prerender dashboard if needed, but don't force it
+ 
+ 
   nitro: {
     prerender: {
       routes: ['/']
@@ -59,13 +59,13 @@ export default defineNuxtConfig({
     }
   },
   
-  // Prevent SSR hydration mismatches by ensuring client-side routing
+ 
   ssr: true,
   
-  // Router options to prevent default route issues
+ 
   router: {
     options: {
-      // Don't use hash mode
+ 
       hashMode: false
     }
   }

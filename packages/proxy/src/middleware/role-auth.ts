@@ -1,12 +1,10 @@
-// Role-based authentication middleware
+ 
 
 import type { Request, Response, NextFunction } from 'express'
 import { verifyAccessToken } from '../utils/jwt.js'
 import type { AuthenticatedRequest } from './jwt-auth.js'
 
-/**
- * Middleware to require user authentication (any role)
- */
+ 
 export function requireUser(
   req: AuthenticatedRequest,
   res: Response,
@@ -45,9 +43,7 @@ export function requireUser(
   }
 }
 
-/**
- * Middleware to require admin role specifically
- */
+ 
 export function requireAdminRole(
   req: AuthenticatedRequest,
   res: Response,

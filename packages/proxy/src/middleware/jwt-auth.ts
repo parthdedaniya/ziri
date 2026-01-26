@@ -1,4 +1,4 @@
-// JWT authentication middleware
+ 
 
 import type { Request, Response, NextFunction } from 'express'
 import { verifyAccessToken } from '../utils/jwt.js'
@@ -13,9 +13,7 @@ export interface AuthenticatedRequest extends Request {
   }
 }
 
-/**
- * Middleware to require JWT authentication
- */
+
 export function requireAuth(
   req: AuthenticatedRequest,
   res: Response,

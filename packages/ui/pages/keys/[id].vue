@@ -15,10 +15,10 @@ const { getAuthHeader } = useUnifiedAuth()
 const toast = useToast()
 
 const routeId = route.params.id as string
-// The route param could be either userKeyId or userId - try both
+ 
 const userId = routeId
 
-// Demo key data
+ 
 const demoKey = ref<Key>({
   userId: routeId,
   name: 'Alice Smith',
@@ -37,12 +37,12 @@ const demoKey = ref<Key>({
 
 const key = computed(() => currentKey.value || demoKey.value)
 
-// Cost tracking data
+ 
 const isLoadingCosts = ref(false)
 const dailyCostData = ref<any[]>([])
 const monthlyCostData = ref<any[]>([])
 
-// Fetch cost tracking data
+ 
 const fetchCostData = async () => {
   if (!key.value.executionKey) return
   
@@ -51,7 +51,7 @@ const fetchCostData = async () => {
     const authHeader = getAuthHeader()
     if (!authHeader) return
 
-    // Fetch daily costs (last 30 days)
+ 
     const dailyStartDate = new Date()
     dailyStartDate.setDate(dailyStartDate.getDate() - 30)
     const dailyParams = new URLSearchParams({
@@ -72,7 +72,7 @@ const fetchCostData = async () => {
       dailyCostData.value = dailyResult.data || []
     }
 
-    // Fetch monthly costs (last 12 months)
+ 
     const monthlyStartDate = new Date()
     monthlyStartDate.setMonth(monthlyStartDate.getMonth() - 12)
     const monthlyParams = new URLSearchParams({
@@ -90,7 +90,7 @@ const fetchCostData = async () => {
 
     if (monthlyResponse.ok) {
       const monthlyResult = await monthlyResponse.json()
-      // Group by month
+ 
       const monthlyMap = new Map<string, number>()
       monthlyResult.data?.forEach((item: any) => {
         const date = new Date(item.period || item.request_timestamp || '')
@@ -103,16 +103,16 @@ const fetchCostData = async () => {
       }))
     }
   } catch (error) {
-    // Error handled silently
+ 
   } finally {
     isLoadingCosts.value = false
   }
 }
 
-// Generate chart data from real cost tracking
+ 
 const dailySpendData = computed(() => {
   if (dailyCostData.value.length === 0) {
-    // Fallback to empty or demo data
+ 
     const labels = []
     const values = []
     const today = new Date()
@@ -125,7 +125,7 @@ const dailySpendData = computed(() => {
     return { labels, values }
   }
 
-  // Sort by date
+ 
   const sorted = [...dailyCostData.value].sort((a, b) => {
     const dateA = new Date(a.period || a.request_timestamp || '').getTime()
     const dateB = new Date(b.period || b.request_timestamp || '').getTime()
@@ -143,12 +143,12 @@ const dailySpendData = computed(() => {
 
 const monthlySpendData = computed(() => {
   if (monthlyCostData.value.length === 0) {
-    // Fallback to empty data
+ 
     const labels = ['Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan']
     return { labels, values: labels.map(() => 0) }
   }
 
-  // Sort by date
+ 
   const sorted = [...monthlyCostData.value].sort((a, b) => {
     const dateA = new Date(a.period || '').getTime()
     const dateB = new Date(b.period || '').getTime()
@@ -157,7 +157,7 @@ const monthlySpendData = computed(() => {
 
   return {
     labels: sorted.map(item => {
-      // Extract month from "Jan 2026" format
+ 
       return item.period?.split(' ')[0] || ''
     }),
     values: sorted.map(item => item.total_cost || 0)
@@ -172,7 +172,7 @@ const handleRevoke = async () => {
       demoKey.value.status = 'revoked'
     }
   } catch (e) {
-    // Error handled by composable
+ 
   }
 }
 
@@ -185,23 +185,23 @@ onMounted(async () => {
   
   if (configStore.isConfigured) {
     try {
-      // Try getKey first (if routeId is userKeyId), then fallback to getKeyByUserId (if routeId is userId)
+ 
       try {
         await getKey(routeId)
       } catch {
-        // If getKey fails, try getKeyByUserId
+ 
         await getKeyByUserId(routeId)
       }
       
-      // Fetch cost data after key is loaded
+ 
       await fetchCostData()
     } catch (e) {
-      // Error handled by composable
+ 
     }
   }
 })
 
-// Watch for key changes to refetch cost data
+ 
 watch(() => key.value.executionKey, () => {
   if (key.value.executionKey) {
     fetchCostData()

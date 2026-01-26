@@ -1,4 +1,4 @@
-// LLM provider service - makes requests to LLM providers
+ 
 
 import * as providerService from './provider-service.js'
 
@@ -31,28 +31,26 @@ export interface ChatCompletionResponse {
   }
 }
 
-/**
- * Make chat completion request to LLM provider
- */
+ 
 export async function chatCompletions(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
-  // Get provider
+ 
   const provider = providerService.getProvider(request.provider)
   if (!provider) {
     throw new Error(`Provider '${request.provider}' not configured`)
   }
   
-  // Get provider API key
+ 
   const apiKey = providerService.getProviderApiKey(request.provider)
   if (!apiKey) {
     throw new Error(`Provider API key not found for '${request.provider}'`)
   }
   
-  // Determine endpoint based on provider
+ 
   let endpoint: string
   let requestBody: any
   
   if (provider.baseUrl.includes('anthropic')) {
-    // Anthropic uses /messages endpoint with different format
+ 
     endpoint = `${provider.baseUrl}/messages`
     requestBody = {
       model: request.model,
@@ -63,7 +61,7 @@ export async function chatCompletions(request: ChatCompletionRequest): Promise<C
       }))
     }
   } else {
-    // OpenAI and others use /chat/completions
+ 
     endpoint = `${provider.baseUrl}/chat/completions`
     requestBody = {
       model: request.model,
@@ -78,7 +76,7 @@ export async function chatCompletions(request: ChatCompletionRequest): Promise<C
     }
   }
   
-  // Make request to LLM provider
+ 
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -99,9 +97,9 @@ export async function chatCompletions(request: ChatCompletionRequest): Promise<C
   
   const result = await response.json() as any
   
-  // Normalize response format (Anthropic uses different format)
+ 
   if (provider.baseUrl.includes('anthropic')) {
-    // Convert Anthropic response to OpenAI format
+ 
     const anthropicResult = result as {
       id?: string
       model: string

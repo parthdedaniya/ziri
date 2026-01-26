@@ -1,17 +1,8 @@
-// Local policy store using SQLite
-// Uses merged schema_policy table
-
 import { getDatabase } from '../../db/index.js'
 import { randomBytes } from 'crypto'
 import type { IPolicyStore, Policy } from '../interfaces.js'
 
-/**
- * Local policy store implementation
- */
 export class LocalPolicyStore implements IPolicyStore {
-  /**
-   * Get all policies (active only)
-   */
   async getPolicies(): Promise<Policy[]> {
     const db = getDatabase()
     const rows = db.prepare(`
@@ -27,13 +18,9 @@ export class LocalPolicyStore implements IPolicyStore {
     }))
   }
   
-  /**
-   * Create a new policy
-   */
   async createPolicy(policy: string, description: string): Promise<void> {
     const db = getDatabase()
     
-    // Generate policy ID
     const policyId = `policy-${randomBytes(8).toString('hex')}`
     
     try {
@@ -49,13 +36,9 @@ export class LocalPolicyStore implements IPolicyStore {
     }
   }
   
-  /**
-   * Update a policy
-   */
   async updatePolicy(oldPolicy: string, newPolicy: string, description: string): Promise<void> {
     const db = getDatabase()
     
-    // Remove status = 1 filter so we can update disabled policies too
     const result = db.prepare(`
       UPDATE schema_policy 
       SET content = ?, description = ?, updated_at = datetime('now')
@@ -67,13 +50,11 @@ export class LocalPolicyStore implements IPolicyStore {
     }
   }
   
-  /**
-   * Delete a policy
-   */
+   
   async deletePolicy(policy: string): Promise<void> {
     const db = getDatabase()
     
-    // Soft delete (set status to 0 = inactive)
+ 
     const result = db.prepare(`
       UPDATE schema_policy 
       SET status = 0, updated_at = datetime('now')
@@ -86,5 +67,4 @@ export class LocalPolicyStore implements IPolicyStore {
   }
 }
 
-// Export singleton instance
 export const localPolicyStore = new LocalPolicyStore()

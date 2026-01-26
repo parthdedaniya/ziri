@@ -80,3 +80,7 @@ temp/
 # Implementation plans (review before committing)
 *_implementation_plan.md
 RATE_LIMITING_QUEUEING_PLAN.md
+*_PLAN.md
+
+# Cursor rules
+.cursor/rules/

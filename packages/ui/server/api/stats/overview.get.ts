@@ -1,4 +1,4 @@
-// Proxy /api/stats/overview to proxy server
+ 
 
 import { getAuthHeader } from '../../utils/auth'
 

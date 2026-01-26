@@ -1,4 +1,4 @@
-// API key management routes (admin only - requires master key)
+ 
 
 import { Router, type Request, type Response } from 'express'
 import { requireAdmin } from '../middleware/auth.js'
@@ -6,13 +6,10 @@ import * as keyService from '../services/key-service.js'
 
 const router: Router = Router()
 
-// All routes require admin authentication
+ 
 router.use(requireAdmin)
 
-/**
- * GET /api/keys
- * List all API keys
- */
+ 
 router.get('/', (req: Request, res: Response) => {
   try {
     const keys = keyService.listKeys()
@@ -26,10 +23,7 @@ router.get('/', (req: Request, res: Response) => {
   }
 })
 
-/**
- * GET /api/keys/user/:userId
- * Get keys for a specific user
- */
+ 
 router.get('/user/:userId', (req: Request, res: Response) => {
   try {
     const { userId } = req.params
@@ -44,10 +38,7 @@ router.get('/user/:userId', (req: Request, res: Response) => {
   }
 })
 
-/**
- * POST /api/keys
- * Create a new API key
- */
+ 
 router.post('/', async (req: Request, res: Response) => {
   try {
     const { userId } = req.body
@@ -62,7 +53,7 @@ router.post('/', async (req: Request, res: Response) => {
     
     const result = await keyService.createKey({ 
       userId
-      // UserKey entity is created with user, so we only need userId
+ 
     })
     
     res.status(201).json({
@@ -96,11 +87,7 @@ router.post('/', async (req: Request, res: Response) => {
   }
 })
 
-/**
- * POST /api/keys/:userId/rotate
- * Rotate an API key (generate new key for same user)
- * Creates new entity with copied attributes, deletes old entity
- */
+ 
 router.post('/:userId/rotate', async (req: Request, res: Response) => {
   try {
     const { userId } = req.params
@@ -130,10 +117,7 @@ router.post('/:userId/rotate', async (req: Request, res: Response) => {
   }
 })
 
-/**
- * DELETE /api/keys/:userId
- * Delete all API keys for a user (and their entities)
- */
+ 
 router.delete('/:userId', async (req: Request, res: Response) => {
   try {
     const { userId } = req.params
@@ -158,10 +142,7 @@ router.delete('/:userId', async (req: Request, res: Response) => {
   }
 })
 
-/**
- * DELETE /api/keys/id/:keyId
- * Delete a single API key by ID
- */
+ 
 router.delete('/id/:keyId', async (req: Request, res: Response) => {
   try {
     const { keyId } = req.params

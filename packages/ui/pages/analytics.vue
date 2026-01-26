@@ -10,10 +10,8 @@ definePageMeta({
 
 const { getAuthHeader } = useUnifiedAuth()
 
-// Time range
 const timeRange = ref<'7d' | '30d' | '90d' | 'all'>('30d')
 
-// Loading state
 const isLoading = ref(true)
 const overviewStats = ref({
   totalRequests: 0,
@@ -25,7 +23,6 @@ const costByProvider = ref<any[]>([])
 const costByModel = ref<any[]>([])
 const dailyCost = ref<any[]>([])
 
-// Calculate date range
 const getDateRange = () => {
   const now = new Date()
   switch (timeRange.value) {
@@ -52,7 +49,6 @@ const getDateRange = () => {
   }
 }
 
-// Fetch overview statistics
 const fetchOverviewStats = async () => {
   try {
     const authHeader = getAuthHeader()
@@ -69,11 +65,10 @@ const fetchOverviewStats = async () => {
       overviewStats.value = data
     }
   } catch (error) {
-    // Error handled silently
+ 
   }
 }
 
-// Fetch cost by provider
 const fetchCostByProvider = async () => {
   try {
     const authHeader = getAuthHeader()
@@ -97,11 +92,10 @@ const fetchCostByProvider = async () => {
       costByProvider.value = data.data || []
     }
   } catch (error) {
-    // Error handled silently
+ 
   }
 }
 
-// Fetch cost by model
 const fetchCostByModel = async () => {
   try {
     const authHeader = getAuthHeader()
@@ -125,11 +119,10 @@ const fetchCostByModel = async () => {
       costByModel.value = data.data || []
     }
   } catch (error) {
-    // Error handled silently
+ 
   }
 }
 
-// Fetch daily cost trend
 const fetchDailyCost = async () => {
   try {
     const authHeader = getAuthHeader()
@@ -153,11 +146,10 @@ const fetchDailyCost = async () => {
       dailyCost.value = data.data || []
     }
   } catch (error) {
-    // Error handled silently
+ 
   }
 }
 
-// Fetch all data
 const fetchAllData = async () => {
   isLoading.value = true
   try {
@@ -172,31 +164,25 @@ const fetchAllData = async () => {
   }
 }
 
-// Watch time range changes
 watch(timeRange, () => {
   fetchAllData()
 })
 
-// Real-time updates via SSE
 useRealtimeUpdates({
   onAuditLogCreated: () => {
-    // Refetch overview stats when new audit log is created
     fetchOverviewStats()
   },
   onCostTracked: () => {
-    // Refetch all cost-related data when cost is tracked
     fetchCostByProvider()
     fetchCostByModel()
     fetchDailyCost()
     fetchOverviewStats()
   },
   onBatchUpdate: () => {
-    // For batch updates, refetch everything
     fetchAllData()
   }
 })
 
-// Calculate stats
 const stats = computed(() => {
   const totalRequests = overviewStats.value.totalRequests || 0
   const permitCount = overviewStats.value.permitCount || 0
@@ -212,7 +198,6 @@ const stats = computed(() => {
   }
 })
 
-// Top models (from cost by model)
 const topModels = computed(() => {
   const total = costByModel.value.reduce((sum, item) => sum + (item.total_cost || 0), 0)
   return costByModel.value
@@ -226,13 +211,11 @@ const topModels = computed(() => {
     .slice(0, 5)
 })
 
-// Chart data transformations
 const dailyCostChartData = computed(() => {
   if (!dailyCost.value || dailyCost.value.length === 0) {
     return { labels: [], values: [] }
   }
   
-  // Sort by date and format
   const sorted = [...dailyCost.value].sort((a, b) => {
     const dateA = new Date(a.period || a.request_timestamp || '').getTime()
     const dateB = new Date(b.period || b.request_timestamp || '').getTime()
@@ -264,7 +247,6 @@ const costByModelChartData = computed(() => {
     return { labels: [], values: [] }
   }
   
-  // Get top 10 models for chart
   const sorted = [...costByModel.value]
     .sort((a, b) => (b.total_cost || 0) - (a.total_cost || 0))
     .slice(0, 10)

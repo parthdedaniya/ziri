@@ -61,7 +61,7 @@ export const useSchemaStore = defineStore('schema', {
                     }
                 )
 
-                // Refresh after update to get version
+ 
                 await this.fetchSchema()
             } catch (e: any) {
                 this.error = e.message

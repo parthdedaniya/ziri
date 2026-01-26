@@ -1,18 +1,15 @@
-// Composable for Cedar WASM operations (validation, conversion, etc.)
-// NOTE: This composable should only be used in client-side code (.vue files)
-// WASM modules require special handling and cannot be used in SSR context
+ 
+ 
+ 
 
-// Cedar-WASM module (lazy loaded, client-only)
-// Using 'any' type to avoid type imports that cause build issues
+ 
+ 
 let cedar: any = null
 let cedarLoadingPromise: Promise<any> | null = null
 
-/**
- * Lazy load Cedar WASM module (client-only)
- * Uses dynamic import to avoid WASM loading during SSR/build
- */
+ 
 async function loadCedar(): Promise<any> {
-  // Only load on client side
+ 
   if (process.server) {
     throw new Error('Cedar WASM can only be used on the client side')
   }
@@ -22,7 +19,7 @@ async function loadCedar(): Promise<any> {
   }
   
   if (!cedarLoadingPromise) {
-    // Use dynamic import with ?url suffix to handle WASM properly
+ 
     cedarLoadingPromise = import('@cedar-policy/cedar-wasm').catch((error) => {
       console.error('[CEDAR WASM] Failed to load module:', error)
       throw new Error('Failed to load Cedar WASM module. Make sure you are running on the client side.')
@@ -58,15 +55,11 @@ export interface EntityValidationResult {
   errors: ValidationError[]
 }
 
-/**
- * Composable for Cedar WASM operations
- */
+ 
 export function useCedarWasm() {
-  /**
-   * Convert Cedar text schema to JSON
-   */
+   
   const schemaToJson = async (cedarText: string): Promise<{ json: any } | { errors: ValidationError[] }> => {
-    // Only run on client side
+ 
     if (process.server) {
       return {
         errors: [{
@@ -103,11 +96,9 @@ export function useCedarWasm() {
     }
   }
 
-  /**
-   * Convert JSON schema to Cedar text
-   */
+   
   const schemaToText = async (jsonSchema: any): Promise<{ text: string } | { errors: ValidationError[] }> => {
-    // Only run on client side
+ 
     if (process.server) {
       return {
         errors: [{
@@ -144,11 +135,9 @@ export function useCedarWasm() {
     }
   }
 
-  /**
-   * Validate Cedar text schema
-   */
+   
   const validateCedarSchema = async (cedarText: string): Promise<SchemaValidationResult> => {
-    // Only run on client side
+ 
     if (process.server) {
       return {
         valid: false,
@@ -188,11 +177,9 @@ export function useCedarWasm() {
     }
   }
 
-  /**
-   * Validate JSON schema
-   */
+   
   const validateJsonSchema = async (jsonSchema: any): Promise<SchemaValidationResult> => {
-    // Only run on client side
+ 
     if (process.server) {
       return {
         valid: false,
@@ -232,14 +219,12 @@ export function useCedarWasm() {
     }
   }
 
-  /**
-   * Validate policies against schema
-   */
+   
   const validatePolicies = async (
     policyText: string,
     schema: any
   ): Promise<PolicyValidationResult> => {
-    // Only run on client side
+ 
     if (process.server) {
       return {
         valid: false,
@@ -255,7 +240,7 @@ export function useCedarWasm() {
     try {
       const cedarModule = await loadCedar()
       
-      // Ensure schema is JSON object
+ 
       const schemaObj = typeof schema === 'string' ? JSON.parse(schema) : schema
       
       const result: any = cedarModule.validate({
@@ -310,11 +295,9 @@ export function useCedarWasm() {
     }
   }
 
-  /**
-   * Validate entities
-   */
+   
   const validateEntities = async (entities: any[]): Promise<EntityValidationResult> => {
-    // Only run on client side
+ 
     if (process.server) {
       return {
         valid: false,
@@ -354,14 +337,12 @@ export function useCedarWasm() {
     }
   }
 
-  /**
-   * Format policy text
-   */
+   
   const formatPolicy = async (
     policyText: string,
     indentWidth: number = 4
   ): Promise<{ formatted: string } | { errors: ValidationError[] }> => {
-    // Only run on client side
+ 
     if (process.server) {
       return {
         errors: [{

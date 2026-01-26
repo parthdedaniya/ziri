@@ -1,4 +1,4 @@
-// Entity types matching Backend API format
+ 
 
 export interface CedarDecimal {
   __extn: {
@@ -19,10 +19,10 @@ export interface EntityUid {
   id: string
 }
 
-// Entity attributes can be for User, UserKey, or other entity types
-// Using a more flexible type to support different entity schemas
+ 
+ 
 export interface EntityAttrs {
-  // User entity attributes
+ 
   user_id?: string
   name?: string
   email?: string
@@ -30,7 +30,7 @@ export interface EntityAttrs {
   is_agent?: boolean
   limit_requests_per_minute?: number
   
-  // UserKey entity attributes
+ 
   current_daily_spend?: CedarDecimal
   current_monthly_spend?: CedarDecimal
   last_daily_reset?: string
@@ -43,7 +43,7 @@ export interface EntityAttrs {
     }
   }
   
-  // Legacy Key entity attributes (for backward compatibility)
+ 
   role?: string
   security_clearance?: number
   training_completed?: boolean
@@ -54,7 +54,7 @@ export interface EntityAttrs {
   created_at?: string
   team?: string
   
-  // Allow any additional properties
+ 
   [key: string]: any
 }
 

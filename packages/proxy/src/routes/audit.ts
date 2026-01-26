@@ -1,18 +1,11 @@
-// Audit routes - query audit logs
-
 import { Router, type Request, type Response } from 'express'
 import { requireAdmin } from '../middleware/auth.js'
 import { auditLogService } from '../services/audit-log-service.js'
 
 const router: Router = Router()
 
-// All routes require admin authentication
 router.use(requireAdmin)
 
-/**
- * GET /api/audit
- * Query audit logs with filters
- */
 router.get('/', async (req: Request, res: Response) => {
   try {
     const {
@@ -62,10 +55,6 @@ router.get('/', async (req: Request, res: Response) => {
   }
 })
 
-/**
- * GET /api/audit/statistics
- * Get audit statistics
- */
 router.get('/statistics', async (req: Request, res: Response) => {
   try {
     const { startDate, endDate } = req.query

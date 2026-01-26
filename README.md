@@ -1,6 +1,6 @@
 # ZS AI Gateway
 
-A production-grade LLM Gateway management interface with Cedar-based authorization. This monorepo contains a local proxy server, management UI, SDKs, and authentication for managing API keys, policies, and schema.
+A production-grade LLM Gateway management interface with Cedar-based authorization. This monorepo contains two main packages: a proxy server (with bundled CLI, UI, and admin tools) and a lightweight SDK for end users.
 
 > 💡 **New to the project?** Check out the [QUICKSTART.md](./QUICKSTART.md) guide for a streamlined setup process.
 
@@ -15,10 +15,13 @@ A production-grade LLM Gateway management interface with Cedar-based authorizati
 - **Email Service**: Optional email notifications for user credentials and password resets
 - **User SDK**: Client library for end-users to make authorized LLM calls using API keys
 - **Server-Side Search & Pagination**: All list pages support efficient server-side search and pagination with debounced inputs
+- **Server-Side Sorting**: All data tables support server-side sorting by clicking column headers
 - **Rate Limiting**: Per-user and per-API-key rate limiting with persistent state
 - **Queue Management**: Per-user concurrent request limiting with persistent queueing
+- **Cost Estimation & Reservation**: Estimates request costs before authorization and temporarily reserves them to prevent concurrent request bypass
 - **Precise Cost Tracking**: Full-precision cost storage with accurate daily/monthly spend calculation
 - **Comprehensive Audit Logging**: All authorization decisions logged with full context and searchable history
+- **Real-Time Updates**: Server-Sent Events (SSE) for automatic updates on Logs, Analytics, and Dashboard pages
 
 ## 📦 Prerequisites
 
@@ -52,11 +55,11 @@ npm install
 
 This will install dependencies for:
 - Root workspace
-- `packages/proxy` - Proxy server
-- `packages/ui` - Management UI
-- `packages/sdk` - SDK packages
-- `packages/auth-plugin` - Authentication plugin
-- `packages/cli` - CLI tool
+- `packages/proxy` - Proxy server (includes CLI, UI, config, and auth-plugin bundled)
+- `packages/sdk` - User SDK (zero dependencies, for end users)
+- `packages/ui` - Management UI (development only, bundled into proxy for production)
+- `packages/config` - Config module (internal, used by proxy)
+- `packages/auth-plugin` - Auth plugin (internal, used by proxy)
 
 ### 3. Build All Packages
 
@@ -76,8 +79,21 @@ npm run build:sdk    # Build SDKs
 
 ### Step 1: Start the Proxy Server
 
-The proxy server runs in **local mode** by default (no configuration needed).
+The proxy server runs in **local mode** by default (no configuration needed). The proxy includes the CLI, UI, and all admin tools bundled together.
 
+**Option A: Using the CLI (Recommended)**
+```bash
+# From project root
+npm run start
+
+# Or using the CLI directly
+npx zs-ai start
+
+# Or with custom port/host
+npx zs-ai start --port 3100 --host localhost
+```
+
+**Option B: Development Mode**
 ```bash
 cd packages/proxy
 npm run dev
@@ -107,31 +123,25 @@ Health Check: http://127.0.0.1:3100/health
 ======================================================================
 ```
 
-### Step 2: Start the Management UI
+### Step 2: Access the Management UI
 
-In a new terminal:
+The UI is **bundled with the proxy server** and served automatically.
 
-```bash
-# From project root
-npm run dev
-```
-
-Or from the UI package:
-```bash
-cd packages/ui
-npm run dev
-```
-
-The UI will start on `http://localhost:3000` (or next available port).
-
-### Step 3: Access the UI
-
-1. Open `http://localhost:3000` in your browser
+1. Open `http://localhost:3100` (or the port shown in the console) in your browser
 2. You'll be redirected to `/config` if this is the first run
 3. Click "Skip Configuration" or configure email service (optional)
 4. Login with admin credentials:
    - **Username/Email**: `admin` or `admin@zs-ai.local`
    - **Password**: The master key displayed when you started the proxy
+
+**Note:** For development, you can run the UI separately with hot reload:
+```bash
+# Terminal 1: Start proxy (API only)
+npm run dev:proxy
+
+# Terminal 2: Start UI with hot reload
+npm run dev
+```
 
 ### Step 4: Create Your First User
 
@@ -180,16 +190,21 @@ curl -X POST http://127.0.0.1:3100/api/chat/completions \
 
 ### Using the User SDK
 
+The SDK has **zero dependencies** and can be installed independently:
+
+```bash
+npm install @zs-ai/sdk
+```
+
+**Usage:**
 ```javascript
-import { UserSDK } from '@zs-ai/sdk/user'
+import { UserSDK } from '@zs-ai/sdk'
 
 const sdk = new UserSDK({
   apiKey: 'sk-zs-your-api-key-here',
-  authMode: 'local',
-  backendUrl: 'http://127.0.0.1:3100'
+  proxyUrl: process.env.ZS_AI_PROXY_URL || 'http://localhost:3100'
 })
 
-// Make an LLM call
 const response = await sdk.chatCompletions({
   provider: 'openai',
   model: 'gpt-4',
@@ -198,6 +213,10 @@ const response = await sdk.chatCompletions({
   ]
 })
 ```
+
+**Configuration:**
+- `proxyUrl`: Proxy server URL (defaults to `http://localhost:3100` or `process.env.ZS_AI_PROXY_URL`)
+- `apiKey`: Your API key (starts with `sk-zs-`)
 
 ### Management Operations
 
@@ -287,26 +306,37 @@ For testing, use the UI to create users, manage keys, and make test LLM requests
 ```
 .
 ├── packages/
-│   ├── proxy/          # Local proxy server (Express + SQLite)
+│   ├── proxy/          # Proxy server (includes CLI, UI, config, auth-plugin)
 │   │   ├── src/
+│   │   │   ├── cli/     # CLI commands (bundled)
 │   │   │   ├── routes/  # API routes
 │   │   │   ├── services/ # Business logic
 │   │   │   ├── db/      # Database schema & migrations
-│   │   │   └── index.ts # Entry point
-│   │   └── package.json
-│   ├── ui/              # Nuxt 3 management interface
-│   │   ├── pages/       # UI pages
-│   │   ├── components/  # Vue components
-│   │   ├── composables/ # Vue composables
-│   │   └── server/      # Nuxt server API routes
-│   ├── sdk/             # Management & User SDKs
-│   ├── auth-plugin/     # M2M authentication provider
-│   ├── cli/             # CLI tool
-│   └── config/          # Shared configuration
-├── docs/                # Documentation
+│   │   │   └── server.ts # Server setup
+│   │   ├── dist/
+│   │   │   ├── ui/      # Bundled UI assets (production)
+│   │   │   └── cli/     # CLI executable
+│   │   └── package.json # Includes CLI bin entry
+│   ├── sdk/             # User SDK (zero dependencies)
+│   │   ├── src/
+│   │   │   ├── user.ts  # User SDK implementation
+│   │   │   ├── types.ts # TypeScript types
+│   │   │   └── index.ts # Exports (UserSDK only)
+│   │   └── package.json # Zero dependencies
+│   ├── ui/              # Management UI (development)
+│   │   └── .output/     # Built UI (bundled into proxy)
+│   ├── config/          # Config module (internal, private)
+│   └── auth-plugin/     # Auth plugin (internal, private)
 ├── package.json         # Root workspace config
 └── README.md           # This file
 ```
+
+**Package Overview:**
+- **`@zs-ai/proxy`**: Admin package - includes proxy server, CLI (`zs-ai`), UI (bundled), config, and auth-plugin
+- **`@zs-ai/sdk`**: End-user package - lightweight SDK with zero dependencies
+- **`@zs-ai/ui`**: Development UI package (bundled into proxy for production)
+- **`@zs-ai/config`**: Internal config module (private, used by proxy)
+- **`@zs-ai/auth-plugin`**: Internal auth plugin (private, used by proxy)
 
 ## 📚 Documentation
 
@@ -366,14 +396,27 @@ If no key exists, one will be auto-generated on first run and stored in the conf
 
 ### Running in Development Mode
 
+**Option 1: Integrated Mode (UI bundled)**
 ```bash
-# Proxy server (with hot reload)
-cd packages/proxy
-npm run dev
+# Start proxy with bundled UI
+npm run dev:proxy
+# Access UI at http://localhost:3100
+```
 
-# UI (with hot reload)
-cd packages/ui
+**Option 2: Separate UI Development (with hot reload)**
+```bash
+# Terminal 1: Proxy server (API only)
+npm run dev:proxy
+
+# Terminal 2: UI with hot reload
 npm run dev
+# UI runs at http://localhost:3000 (proxies API to :3100)
+```
+
+**SDK Development:**
+```bash
+cd packages/sdk
+npm run dev  # TypeScript watch mode
 ```
 
 ### Building for Production
@@ -391,26 +434,32 @@ npm run build:sdk
 ### Running Production Builds
 
 ```bash
-# Proxy server
-cd packages/proxy
-npm start
+# Build everything
+npm run build
 
-# UI preview
-cd packages/ui
-npm run preview
+# Start proxy (includes bundled UI)
+npm run start
+
+# Or use the CLI
+npx zs-ai start
 ```
+
+The UI is automatically served from the proxy server at `http://localhost:3100`.
 
 ## 📝 Scripts
 
 ```bash
 # Development
-npm run dev              # Run UI dev server
-npm run build            # Build all packages
-npm run build:proxy      # Build proxy server
-npm run build:ui         # Build UI
-npm run build:sdk        # Build SDKs
-npm run preview          # Preview built UI
+npm run dev              # Run UI dev server (separate from proxy)
+npm run dev:proxy        # Run proxy dev server (with bundled UI)
+npm run build            # Build all packages (config → auth-plugin → ui → proxy → sdk)
+npm run build:proxy      # Build proxy (compiles TS + copies UI)
+npm run build:ui         # Build UI package
+npm run build:sdk        # Build SDK package
+npm run start            # Start proxy server (production)
 ```
+
+**Note:** The root `build` script builds packages in the correct order to avoid duplicate builds.
 
 ## 🔐 Security Notes
 

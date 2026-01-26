@@ -1,25 +1,15 @@
-// Live policy store - wraps existing Backend API calls
-
 import { loadConfig } from '../../config.js'
 import { getM2MToken } from '../m2m-token-cache.js'
 import { randomBytes } from 'crypto'
 import type { IPolicyStore, Policy } from '../interfaces.js'
 
-// Generate unique IDs for requests
 function generateOpId(): string {
   return randomBytes(8).toString('hex')
 }
 
-// Generate session ID (persists for the lifetime of the service)
 const sessionId = randomBytes(8).toString('hex')
 
-/**
- * Live policy store implementation (wraps Backend API)
- */
 export class LivePolicyStore implements IPolicyStore {
-  /**
-   * Get all policies
-   */
   async getPolicies(): Promise<Policy[]> {
     const config = loadConfig()
     
@@ -52,9 +42,6 @@ export class LivePolicyStore implements IPolicyStore {
     return result.data.policies || []
   }
   
-  /**
-   * Create a new policy
-   */
   async createPolicy(policy: string, description: string): Promise<void> {
     const config = loadConfig()
     
@@ -86,18 +73,11 @@ export class LivePolicyStore implements IPolicyStore {
     }
   }
   
-  /**
-   * Update a policy
-   */
   async updatePolicy(oldPolicy: string, newPolicy: string, description: string): Promise<void> {
-    // Backend API doesn't have update endpoint, so delete and create
     await this.deletePolicy(oldPolicy)
     await this.createPolicy(newPolicy, description)
   }
   
-  /**
-   * Delete a policy
-   */
   async deletePolicy(policy: string): Promise<void> {
     const config = loadConfig()
     
@@ -130,5 +110,4 @@ export class LivePolicyStore implements IPolicyStore {
   }
 }
 
-// Export singleton instance
 export const livePolicyStore = new LivePolicyStore()

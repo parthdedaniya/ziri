@@ -1,4 +1,4 @@
-// User authentication composable (for end users)
+ 
 
 import { useUserAuthStore } from '~/stores/user-auth'
 import { useToast } from './useToast'
@@ -7,7 +7,7 @@ export function useUserAuth() {
   const userAuthStore = useUserAuthStore()
   const toast = useToast()
 
-  // Load auth from storage on init
+ 
   if (process.client) {
     userAuthStore.loadFromStorage()
   }
@@ -41,7 +41,7 @@ export function useUserAuth() {
       
       toast.success('Login successful!')
       
-      // Redirect based on role
+ 
       if (process.client) {
         if (data.user.role === 'admin') {
           await navigateTo('/config')
@@ -64,7 +64,7 @@ export function useUserAuth() {
     userAuthStore.clearAuth()
     toast.info('Logged out successfully')
     
-    // Redirect to login page
+ 
     if (process.client) {
       await navigateTo('/login')
     }
@@ -94,18 +94,18 @@ export function useUserAuth() {
       })
       
       if (!response.ok) {
-        // Refresh failed, need to login again
+ 
         userAuthStore.clearAuth()
         return false
       }
       
       const data = await response.json()
       
-      // Update access token
+ 
       userAuthStore.accessToken = data.accessToken
       userAuthStore.tokenExpiry = new Date(Date.now() + (data.expiresIn - 60) * 1000)
       
-      // Update cookie (reuse setTokens to persist)
+ 
       if (process.client && userAuthStore.user && userAuthStore.refreshToken) {
         userAuthStore.setTokens(
           data.accessToken,

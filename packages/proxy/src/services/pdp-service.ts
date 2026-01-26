@@ -1,4 +1,4 @@
-// PDP (Policy Decision Point) service
+ 
 
 import { config } from '../index.js'
 
@@ -17,9 +17,7 @@ export interface PDPResponse {
   }
 }
 
-/**
- * Authorize request using PDP
- */
+ 
 export async function authorizeRequest(request: PDPRequest): Promise<PDPResponse> {
   if (!config.pdpUrl) {
     throw new Error('PDP URL not configured')
@@ -48,7 +46,7 @@ export async function authorizeRequest(request: PDPRequest): Promise<PDPResponse
     })
     
     if (!response.ok) {
-      // Handle error response
+ 
       try {
         const errorData = await response.json() as {
           code?: number
@@ -93,7 +91,7 @@ export async function authorizeRequest(request: PDPRequest): Promise<PDPResponse
       }
     }
     
-    // Handle nested data structure
+ 
     const decision = result.data?.decision || result.decision
     const errors = result.data?.diagnostics?.errors || result.diagnostics?.errors || []
     

@@ -4,7 +4,7 @@ import { defaultConfig } from '~/types/config'
 
 const STORAGE_KEY = 'llm-gateway-config'
 
-// Cookie helper functions
+ 
 const getCookie = (name: string): string | null => {
   if (typeof document === 'undefined') return null
   const value = `; ${document.cookie}`
@@ -32,8 +32,8 @@ export const useConfigStore = defineStore('config', {
 
     getters: {
         isConfigured: (state) => {
-            // In local mode, we don't need Backend API credentials
-            // Configuration is considered valid if server settings exist
+ 
+ 
             return !!(state.server?.port || state.port)
         }
     },
@@ -44,12 +44,12 @@ export const useConfigStore = defineStore('config', {
                 return
             }
 
-            // Try to load from config file API first (when served via CLI)
+ 
             try {
                 const response = await fetch('/api/config')
                 if (response.ok) {
                     const config = await response.json()
-                    // Map config file format to UI config format
+ 
                     const uiConfig: GatewayConfig = {
                         mode: config.mode || 'local',
                         server: config.server || {
@@ -61,7 +61,7 @@ export const useConfigStore = defineStore('config', {
                             enabled: false,
                             provider: 'manual'
                         },
-                        // Legacy fields (for backward compatibility)
+ 
                         projectId: config.projectId || '',
                         orgId: config.orgId || '',
                         clientId: config.clientId || '',
@@ -73,20 +73,20 @@ export const useConfigStore = defineStore('config', {
                         masterKey: config.masterKey || ''
                     }
                     this.$patch(uiConfig)
-                    // Also sync to cookie as backup
+ 
                     setCookie(STORAGE_KEY, JSON.stringify(this.$state), 365)
                     return
                 }
             } catch (error) {
-                // API endpoint not available (UI running standalone or not via CLI)
+ 
             }
 
-            // Fallback to cookie
+ 
             const stored = getCookie(STORAGE_KEY)
             if (stored) {
                 try {
                     const parsed = JSON.parse(stored)
-                    // Use $patch for reactivity - patch all properties
+ 
                     this.$patch({
                         mode: parsed.mode || 'local',
                         server: parsed.server || {
@@ -98,7 +98,7 @@ export const useConfigStore = defineStore('config', {
                             enabled: false,
                             provider: 'manual'
                         },
-                        // Legacy fields
+ 
                         projectId: parsed.projectId || '',
                         orgId: parsed.orgId || '',
                         clientId: parsed.clientId || '',
@@ -110,7 +110,7 @@ export const useConfigStore = defineStore('config', {
                         masterKey: parsed.masterKey || ''
                     })
                 } catch (e) {
-                    // Failed to parse stored config
+ 
                 }
             }
         },
@@ -118,7 +118,7 @@ export const useConfigStore = defineStore('config', {
         async saveToStorage() {
             if (!import.meta.client) return
 
-            // Save server and email settings (include mode)
+ 
             const configToSave = {
                 mode: this.mode || 'local',  // Use stored mode or default to local
                 server: this.server || {
@@ -133,7 +133,7 @@ export const useConfigStore = defineStore('config', {
                 logLevel: this.logLevel || 'info'
             }
 
-            // Always save to cookie as backup - save the full state
+ 
             const stateToSave = {
                 server: this.server || {
                     host: '127.0.0.1',
@@ -151,8 +151,8 @@ export const useConfigStore = defineStore('config', {
             }
             setCookie(STORAGE_KEY, JSON.stringify(stateToSave), 365)
 
-            // Try to save to config file via API (when served via CLI)
-            // Get auth header from admin auth store
+ 
+ 
             try {
                 const { useAdminAuthStore } = await import('~/stores/admin-auth')
                 const adminAuthStore = useAdminAuthStore()
@@ -175,20 +175,20 @@ export const useConfigStore = defineStore('config', {
                     await response.json().catch(() => ({ error: response.statusText }))
                 }
             } catch (error) {
-                // API endpoint not available (UI running standalone)
+ 
             }
         },
 
         async updateConfig(config: Partial<GatewayConfig>) {
-            // Use $patch for proper reactivity
+ 
             this.$patch(config)
             await this.saveToStorage()
-            // Wait a bit to ensure state is persisted
+ 
             await new Promise(resolve => setTimeout(resolve, 50))
         },
 
         async resetToDefaults() {
-            // Use $patch for proper reactivity
+ 
             this.$patch(defaultConfig)
             await this.saveToStorage()
         }

@@ -1,7 +1,7 @@
-// Composable for converting between JSON and Cedar schema formats
+ 
 
 export function useCedarSchema() {
-  // Convert JSON schema (API format) to Cedar format
+ 
   const jsonToCedar = (jsonSchema: any): string => {
     if (!jsonSchema || typeof jsonSchema !== 'object') {
       return ''
@@ -9,7 +9,7 @@ export function useCedarSchema() {
 
     let cedar = ''
     
-    // Handle common types first (like RequestContext)
+ 
     if (jsonSchema.commonTypes) {
       for (const [typeName, typeDef] of Object.entries(jsonSchema.commonTypes)) {
         cedar += `  type ${typeName} = {\n`
@@ -27,7 +27,7 @@ export function useCedarSchema() {
       }
     }
     
-    // Handle entity types
+ 
     const entityTypes = jsonSchema['']?.entityTypes || jsonSchema.entityTypes
     if (entityTypes) {
       for (const [entityType, typeDef] of Object.entries(entityTypes)) {
@@ -51,7 +51,7 @@ export function useCedarSchema() {
       }
     }
 
-    // Handle actions
+ 
     const actions = jsonSchema['']?.actions || jsonSchema.actions
     if (actions) {
       for (const [actionName, actionDef] of Object.entries(actions)) {
@@ -81,13 +81,13 @@ export function useCedarSchema() {
     return cedar.trim()
   }
 
-  // Convert Cedar format to JSON schema
+ 
   const cedarToJson = (cedarSchema: string): any => {
-    // This is a simplified parser - for production, use a proper Cedar parser
-    // For now, we'll just return the original JSON if conversion fails
+ 
+ 
     try {
-      // Basic parsing logic here
-      // This is complex, so we'll keep it simple for now
+ 
+ 
       return null
     } catch (e) {
       console.error('Failed to parse Cedar schema:', e)

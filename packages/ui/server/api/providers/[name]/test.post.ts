@@ -1,4 +1,4 @@
-// Proxy test provider API to proxy server
+ 
 
 import { getAuthHeader } from '../../../utils/auth'
 
@@ -37,8 +37,8 @@ export default defineEventHandler(async (event) => {
     }
     
     const data = await response.json()
-    // Normalize response format - proxy returns { success: true, message: string }
-    // UI expects { status: string, models?: number }
+ 
+ 
     return {
       data: {
         status: data.success ? 'success' : 'failed',

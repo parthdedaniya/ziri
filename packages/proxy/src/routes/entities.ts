@@ -1,17 +1,9 @@
-// Entity routes - manage Cedar entities (local mode)
-
 import { Router, type Request, type Response } from 'express'
 import { requireAdmin } from '../middleware/auth.js'
 import { serviceFactory } from '../services/service-factory.js'
 
 const router: Router = Router()
 
-/**
- * GET /api/entities
- * Get all entities (or filter by UID)
- * Optionally include API keys if includeApiKeys=true
- * Supports search, limit, offset, and entityType parameters
- */
 router.get('/', requireAdmin, async (req: Request, res: Response) => {
   try {
     const uid = req.query.uid as string | undefined
@@ -37,34 +29,27 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
     
     const entities = result.data
     
-    // If API keys requested, fetch them from database and attach to entities
     if (includeApiKeys) {
       const { getDatabase } = await import('../db/index.js')
       const db = getDatabase()
       const entitiesWithKeys = await Promise.all(entities.map(async entity => {
-        // Attach API keys for UserKey entities (not Key entities anymore)
         if (entity.uid.type === 'UserKey') {
-          // userKeyId is the entity UID id
           const userKeyId = entity.uid.id
-          // Get the active API key linked to this UserKey (should only be one now)
-          // Find auth_id from UserKey entity's user reference
           const userEntityId = (entity.attrs as any).user?.__entity?.id
           if (userEntityId) {
             const dbKey = db.prepare('SELECT id, key_value, key_hash FROM user_agent_keys WHERE auth_id = ? ORDER BY created_at DESC LIMIT 1').get(userEntityId) as { id: string; key_value: string; key_hash: string } | undefined
             if (dbKey) {
-              // Decrypt API key
               const { decrypt } = await import('../utils/encryption.js')
               const decryptedKey = decrypt(dbKey.key_value)
               return {
                 ...entity,
                 apiKey: decryptedKey,
                 keyHash: dbKey.key_hash,
-                executionKey: dbKey.id, // user_agent_keys.id for cost tracking
+                executionKey: dbKey.id,
                 userKeyId: userKeyId
               }
             }
           }
-          // Return entity without API key if not found
           return {
             ...entity,
             apiKey: null,
@@ -94,11 +79,6 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
   }
 })
 
-/**
- * PUT /api/entities
- * Update an entity
- * Requires full entity body (same as create)
- */
 router.put('/', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { entity, status } = req.body
@@ -110,7 +90,6 @@ router.put('/', requireAdmin, async (req: Request, res: Response) => {
       return
     }
     
-    // Validate entity structure
     if (!entity.uid || !entity.uid.type || !entity.uid.id) {
       res.status(400).json({
         error: 'Entity must have uid with type and id'

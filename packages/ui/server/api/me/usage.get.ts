@@ -1,4 +1,4 @@
-// Proxy /api/me/usage to proxy server
+ 
 
 import { getAuthHeader } from '../../utils/auth'
 

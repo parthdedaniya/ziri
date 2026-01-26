@@ -7,7 +7,7 @@ export interface User {
   name: string
 }
 
-// Cookie helper functions
+ 
 const getCookie = (name: string): string | null => {
   if (typeof document === 'undefined') return null
   const value = `; ${document.cookie}`
@@ -57,12 +57,12 @@ export const useUserAuthStore = defineStore('userAuth', {
     setTokens(accessToken: string, refreshToken: string, expiresIn: number, user: User) {
       this.accessToken = accessToken
       this.refreshToken = refreshToken
-      // Expire 60 seconds early to account for clock skew
+ 
       this.tokenExpiry = new Date(Date.now() + (expiresIn - 60) * 1000)
       this.user = user
       this.error = null
       
-      // Persist to cookie (30 days expiry)
+ 
       if (process.client) {
         const authData = {
           accessToken,
@@ -81,7 +81,7 @@ export const useUserAuthStore = defineStore('userAuth', {
       this.user = null
       this.error = null
       
-      // Clear cookie
+ 
       if (process.client) {
         removeCookie(COOKIE_NAME)
       }
@@ -96,14 +96,14 @@ export const useUserAuthStore = defineStore('userAuth', {
           const data = JSON.parse(stored)
           const expiry = new Date(data.tokenExpiry)
           
-          // Check if token is still valid
+ 
           if (expiry > new Date()) {
             this.accessToken = data.accessToken
             this.refreshToken = data.refreshToken
             this.tokenExpiry = expiry
             this.user = data.user
           } else {
-            // Token expired, clear it
+ 
             this.clearAuth()
           }
         }

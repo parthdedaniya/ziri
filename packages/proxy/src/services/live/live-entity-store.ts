@@ -1,27 +1,16 @@
-// Live entity store - wraps existing Backend API calls
-
 import { loadConfig } from '../../config.js'
 import { getM2MToken } from '../m2m-token-cache.js'
 import { randomBytes } from 'crypto'
 import type { IEntityStore } from '../interfaces.js'
 import type { Entity } from '../interfaces.js'
 
-// Generate unique IDs for requests
 function generateOpId(): string {
   return randomBytes(8).toString('hex')
 }
 
-// Generate session ID (persists for the lifetime of the service)
 const sessionId = randomBytes(8).toString('hex')
 
-/**
- * Live entity store implementation (wraps Backend API)
- */
 export class LiveEntityStore implements IEntityStore {
-  /**
-   * Get all entities (or filter by UID)
-   * Note: Live mode doesn't support search/pagination - returns all entities
-   */
   async getEntities(uid?: string, params?: {
     search?: string
     limit?: number
@@ -44,7 +33,6 @@ export class LiveEntityStore implements IEntityStore {
     if (uid) {
       queryParams.set('uid', uid)
     }
-    // Note: Backend API may not support search/pagination - fetch all and filter client-side if needed
     if (queryParams.toString()) {
       url += `?${queryParams.toString()}`
     }
@@ -67,7 +55,6 @@ export class LiveEntityStore implements IEntityStore {
     const result = await response.json() as { data: Entity[] }
     let entities = result.data || []
     
-    // Apply client-side filtering if params provided (since backend API may not support it)
     if (params?.entityType) {
       entities = entities.filter(e => e.uid.type === params.entityType)
     }
@@ -95,14 +82,12 @@ export class LiveEntityStore implements IEntityStore {
     
     const total = entities.length
     
-    // Apply sorting (client-side since backend API may not support it)
     if (params?.sortBy && params?.sortOrder) {
       const sortKey = params.sortBy
       entities.sort((a, b) => {
         let aVal: any
         let bVal: any
         
-        // Handle different sort fields
         if (sortKey === 'userId') {
           if (a.uid.type === 'UserKey' && (a.attrs as any).user?.__entity?.id) {
             aVal = (a.attrs as any).user.__entity.id
@@ -157,7 +142,6 @@ export class LiveEntityStore implements IEntityStore {
       })
     }
     
-    // Apply pagination
     if (params?.limit || params?.offset) {
       const limit = params.limit || 100
       const offset = params.offset || 0
@@ -167,9 +151,7 @@ export class LiveEntityStore implements IEntityStore {
     return { data: entities, total }
   }
   
-  /**
-   * Create an entity
-   */
+   
   async createEntity(entity: Entity, status: number): Promise<void> {
     const config = loadConfig()
     
@@ -201,9 +183,6 @@ export class LiveEntityStore implements IEntityStore {
     }
   }
   
-  /**
-   * Update an entity (full entity body required, same as create)
-   */
   async updateEntity(entity: Entity, status: number): Promise<void> {
     const config = loadConfig()
     
@@ -235,9 +214,7 @@ export class LiveEntityStore implements IEntityStore {
     }
   }
   
-  /**
-   * Delete an entity by UID name
-   */
+   
   async deleteEntity(entityName: string): Promise<void> {
     const config = loadConfig()
     
@@ -268,5 +245,4 @@ export class LiveEntityStore implements IEntityStore {
   }
 }
 
-// Export singleton instance
 export const liveEntityStore = new LiveEntityStore()

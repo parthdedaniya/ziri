@@ -1,12 +1,6 @@
-// User SDK - for making LLM calls with authorization
-// Updated for new architecture: JWT auth + API key, proxy server, PDP-only
-
-import { readConfig } from '@zs-ai/config'
-
 export interface UserSDKConfig {
-  apiKey: string  // API key (sk-zs-{userId}-{hash}) - REQUIRED
-  proxyUrl?: string  // Optional: Proxy server URL (e.g., http://localhost:3100)
-  // If proxyUrl not provided, will try to load from config or env
+  apiKey: string
+  proxyUrl?: string
 }
 
 export class UserSDK {
@@ -14,19 +8,13 @@ export class UserSDK {
   private userId: string
 
   constructor(config: UserSDKConfig) {
-    // Auto-load from config file if not provided
     let finalConfig = { ...config }
     
     if (!finalConfig.proxyUrl) {
-      const fileConfig = readConfig()
-      if (fileConfig) {
-        finalConfig.proxyUrl = (fileConfig as any).proxyUrl || (fileConfig as any).publicUrl || process.env.ZS_AI_PROXY_URL || 'http://localhost:3100'
-      } else {
-        finalConfig.proxyUrl = process.env.ZS_AI_PROXY_URL || 'http://localhost:3100'
-      }
+      finalConfig.proxyUrl = process.env.ZS_AI_PROXY_URL || 'http://localhost:3100'
     }
     
-    // Validate required fields
+ 
     if (!finalConfig.apiKey) {
       throw new Error('apiKey is required')
     }
@@ -35,10 +23,10 @@ export class UserSDK {
       throw new Error('proxyUrl is required. Provide in config or set ZS_AI_PROXY_URL env var')
     }
     
-    // Validate API key format
+ 
     this.validateApiKey(finalConfig.apiKey)
     
-    // Extract userId from API key
+ 
     this.userId = this.extractUserId(finalConfig.apiKey)
     
     this.config = finalConfig
@@ -51,7 +39,7 @@ export class UserSDK {
   }
 
   private extractUserId(apiKey: string): string {
-    // Format: sk-zs-{userId}-{hash}
+ 
     const parts = apiKey.substring(6).split('-')
     if (parts.length < 2) {
       throw new Error('Invalid API key format')
@@ -60,10 +48,7 @@ export class UserSDK {
   }
 
 
-  /**
-   * Make chat completion request
-   * Uses API key only - no username/password required
-   */
+   
   async chatCompletions(params: {
     provider: string
     model: string
@@ -72,7 +57,7 @@ export class UserSDK {
     context?: Record<string, any>
     [key: string]: any
   }): Promise<any> {
-    // Make request to proxy server with API key only
+ 
     const response = await fetch(`${this.config.proxyUrl}/api/chat/completions`, {
       method: 'POST',
       headers: {
@@ -99,9 +84,7 @@ export class UserSDK {
     return response.json()
   }
 
-  /**
-   * Get userId extracted from API key
-   */
+   
   getUserId(): string {
     return this.userId
   }

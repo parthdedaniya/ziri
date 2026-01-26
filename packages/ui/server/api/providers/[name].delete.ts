@@ -1,4 +1,4 @@
-// Proxy delete provider API to proxy server
+ 
 
 import { getAuthHeader } from '../../utils/auth'
 

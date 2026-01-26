@@ -1,4 +1,4 @@
-// Shared types for SDK
+ 
 
 export interface EntityUid {
   type: string
@@ -97,7 +97,7 @@ export interface Schema {
   version: string
 }
 
-// API Response types
+ 
 export interface EntitiesResponse {
   data: Entity[]
 }

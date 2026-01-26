@@ -1,34 +1,22 @@
-// Local entity store using SQLite
-// Uses new entities table with etype/eid composite key
-
 import { getDatabase } from '../../db/index.js'
 import type { IEntityStore } from '../interfaces.js'
 import type { Entity } from '../interfaces.js'
 
-/**
- * Local entity store implementation
- */
 export class LocalEntityStore implements IEntityStore {
-  /**
-   * Get all entities (or filter by UID)
-   * Supports optional search, limit, and offset for pagination
-   */
   async getEntities(uid?: string, params?: {
     search?: string
     limit?: number
     offset?: number
-    entityType?: string // Filter by entity type (e.g., 'UserKey')
+    entityType?: string
     sortBy?: string | null
     sortOrder?: 'asc' | 'desc' | null
   }): Promise<{ data: Entity[]; total: number }> {
     const db = getDatabase()
     
-    // Build WHERE clause
     let whereClause = 'WHERE 1=1'
     const args: any[] = []
     
     if (uid) {
-      // Parse UID format: "User::\"userId\""
       const match = uid.match(/^(\w+)::"([^"]+)"$/)
       if (!match) {
         throw new Error(`Invalid UID format: ${uid}`)
@@ -43,15 +31,12 @@ export class LocalEntityStore implements IEntityStore {
       args.push(params.entityType)
     }
     
-    // Get total count
     const countSql = `SELECT COUNT(*) as total FROM entities ${whereClause}`
     const countResult = db.prepare(countSql).get(...args) as { total: number }
     let total = countResult.total
     
-    // Build ORDER BY clause
-    let orderByClause = 'ORDER BY created_at DESC' // Default sort
+    let orderByClause = 'ORDER BY created_at DESC'
     if (params?.sortBy && params?.sortOrder) {
-      // Map frontend column names to database column names
       const columnMap: Record<string, string> = {
         'createdAt': 'created_at',
         'updatedAt': 'updated_at',
@@ -64,34 +49,29 @@ export class LocalEntityStore implements IEntityStore {
       }
     }
     
-    // Get paginated data
+ 
     const limit = params?.limit || 100
     const offset = params?.offset || 0
     const dataSql = `SELECT ejson, status, created_at, updated_at FROM entities ${whereClause} ${orderByClause} LIMIT ? OFFSET ?`
     const rows = db.prepare(dataSql).all(...args, limit, offset) as any[]
     
-    // Parse entities
+ 
     let entities = rows.map(row => {
       const entity = JSON.parse(row.ejson) as Entity
       return entity
     })
     
-    // If search provided, filter by JSON fields
-    // For UserKey entities, search across userId (from user reference), and we'll need to join with User entities
     if (params?.search && !uid) {
       const searchLower = params.search.toLowerCase()
       entities = entities.filter(entity => {
-        // Search in entity attrs (varies by type)
         const attrs = entity.attrs as any
         
-        // For UserKey: search userId from user reference
         if (entity.uid.type === 'UserKey' && attrs.user?.__entity?.id) {
           if (attrs.user.__entity.id.toLowerCase().includes(searchLower)) {
             return true
           }
         }
         
-        // For User: search name, email, userId
         if (entity.uid.type === 'User') {
           if (
             (attrs.name && attrs.name.toLowerCase().includes(searchLower)) ||
@@ -103,7 +83,6 @@ export class LocalEntityStore implements IEntityStore {
           }
         }
         
-        // Search in UID id
         if (entity.uid.id.toLowerCase().includes(searchLower)) {
           return true
         }
@@ -111,8 +90,6 @@ export class LocalEntityStore implements IEntityStore {
         return false
       })
       
-      // Recalculate total based on filtered results
-      // Note: limit and offset are passed separately, not in args array, so we can use args directly
       const allRows = db.prepare(`SELECT ejson FROM entities ${whereClause}`).all(...args) as any[]
       const allEntities = allRows.map(row => JSON.parse(row.ejson) as Entity)
       const filtered = allEntities.filter(entity => {
@@ -138,16 +115,13 @@ export class LocalEntityStore implements IEntityStore {
       })
       total = filtered.length
       
-      // If sorting is applied, re-sort the filtered results (for fields not in DB)
       if (params?.sortBy && params?.sortOrder) {
         const sortKey = params.sortBy
         entities.sort((a, b) => {
           let aVal: any
           let bVal: any
           
-        // Handle different sort fields
         if (sortKey === 'userId') {
-          // For UserKey: get userId from user reference
           if (a.uid.type === 'UserKey' && (a.attrs as any).user?.__entity?.id) {
             aVal = (a.attrs as any).user.__entity.id
           } else if (a.uid.type === 'User') {
@@ -164,7 +138,6 @@ export class LocalEntityStore implements IEntityStore {
             bVal = b.uid.id
           }
         } else if (sortKey === 'name' || sortKey === 'email') {
-          // For User entities
           if (a.uid.type === 'User') {
             aVal = (a.attrs as any)[sortKey] || ''
           } else {
@@ -177,20 +150,16 @@ export class LocalEntityStore implements IEntityStore {
             bVal = ''
           }
         } else if (sortKey === 'currentDailySpend' || sortKey === 'currentMonthlySpend') {
-          // For UserKey entities - extract decimal value
           const aAttrKey = sortKey === 'currentDailySpend' ? 'current_daily_spend' : 'current_monthly_spend'
           const bAttrKey = sortKey === 'currentDailySpend' ? 'current_daily_spend' : 'current_monthly_spend'
           const aAttr = (a.attrs as any)[aAttrKey]
           const bAttr = (b.attrs as any)[bAttrKey]
-          // Extract decimal value from CedarDecimal format
           aVal = typeof aAttr === 'object' && aAttr?.__extn?.arg ? parseFloat(aAttr.__extn.arg) : (typeof aAttr === 'string' ? parseFloat(aAttr) : 0)
           bVal = typeof bAttr === 'object' && bAttr?.__extn?.arg ? parseFloat(bAttr.__extn.arg) : (typeof bAttr === 'string' ? parseFloat(bAttr) : 0)
         } else if (sortKey === 'status') {
-          // For UserKey entities
           aVal = (a.attrs as any).status || 'active'
           bVal = (b.attrs as any).status || 'active'
         } else {
-          // For other fields, try to get from attrs or uid
           aVal = (a.attrs as any)[sortKey] || a.uid.id
           bVal = (b.attrs as any)[sortKey] || b.uid.id
         }
@@ -206,7 +175,6 @@ export class LocalEntityStore implements IEntityStore {
         })
       }
     } else if (params?.sortBy && params?.sortOrder) {
-      // Sort even when no search (for fields not in DB)
       const sortKey = params.sortBy
       entities.sort((a, b) => {
         let aVal: any
@@ -269,9 +237,6 @@ export class LocalEntityStore implements IEntityStore {
     return { data: entities, total }
   }
   
-  /**
-   * Create an entity
-   */
   async createEntity(entity: Entity, status: number): Promise<void> {
     const db = getDatabase()
     
@@ -292,9 +257,6 @@ export class LocalEntityStore implements IEntityStore {
     }
   }
   
-  /**
-   * Update an entity (full entity body required, same as create)
-   */
   async updateEntity(entity: Entity, status: number): Promise<void> {
     const db = getDatabase()
     
@@ -313,20 +275,15 @@ export class LocalEntityStore implements IEntityStore {
     }
   }
   
-  /**
-   * Delete an entity by UID name
-   */
   async deleteEntity(entityName: string): Promise<void> {
     const db = getDatabase()
     
-    // Parse UID format: "User::\"userId\""
     const match = entityName.match(/^(\w+)::"([^"]+)"$/)
     if (!match) {
       throw new Error(`Invalid entity name format: ${entityName}`)
     }
     const [, type, id] = match
     
-    // Soft delete (set status to 0 = inactive)
     const result = db.prepare(`
       UPDATE entities 
       SET status = 0, updated_at = datetime('now')
@@ -339,5 +296,4 @@ export class LocalEntityStore implements IEntityStore {
   }
 }
 
-// Export singleton instance
 export const localEntityStore = new LocalEntityStore()

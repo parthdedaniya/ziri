@@ -1,5 +1,3 @@
-// Policy routes - manage Cedar policies (local mode)
-
 import { Router, type Request, type Response } from 'express'
 import { requireAdmin } from '../middleware/auth.js'
 import { serviceFactory } from '../services/service-factory.js'
@@ -7,12 +5,6 @@ import { getDatabase } from '../db/index.js'
 
 const router: Router = Router()
 
-/**
- * GET /api/policies
- * Get all policies (active and inactive) for admin management
- * Note: Authorization engine will still only evaluate active policies
- * Supports search, limit, offset, and effect filter
- */
 router.get('/', requireAdmin, async (req: Request, res: Response) => {
   try {
     const {
@@ -26,18 +18,15 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
     
     const db = getDatabase()
     
-    // Build WHERE clause
     let whereClause = "WHERE obj_type = 'policy'"
     const args: any[] = []
     
-    // Build ORDER BY clause
-    let orderByClause = 'ORDER BY created_at ASC' // Default sort
+    let orderByClause = 'ORDER BY created_at ASC'
     if (sortBy && sortOrder && (sortOrder === 'asc' || sortOrder === 'desc')) {
-      // Map frontend column names to database column names
       const columnMap: Record<string, string> = {
         'description': 'description',
         'status': 'status',
-        'effect': 'content', // Effect is derived from content, but we'll sort by content
+        'effect': 'content',
         'createdAt': 'created_at',
         'updatedAt': 'updated_at'
       }
@@ -48,12 +37,10 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
       }
     }
     
-    // Get total count first
     let countSql = `SELECT COUNT(*) as total FROM schema_policy ${whereClause}`
     const countResult = db.prepare(countSql).get(...args) as { total: number }
     let total = countResult.total
     
-    // Get paginated data
     const limitValue = limit ? parseInt(limit as string, 10) : 100
     const offsetValue = offset ? parseInt(offset as string, 10) : 0
     const dataSql = `
@@ -65,7 +52,6 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
     `
     const rows = db.prepare(dataSql).all(...args, limitValue, offsetValue) as { content: string; description: string | null; status: number; created_at: string; updated_at: string }[]
 
-    // Map policies
     let policies = rows.map(row => ({
       policy: row.content,
       description: row.description || '',
@@ -73,14 +59,13 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
       effect: row.content.toLowerCase().includes('permit(') ? 'permit' : 'forbid' as 'permit' | 'forbid'
     }))
     
-    // Apply search filter (client-side since we need to search policy content)
     if (search) {
       const searchLower = (search as string).toLowerCase()
       policies = policies.filter(p => 
         p.description.toLowerCase().includes(searchLower) ||
         p.policy.toLowerCase().includes(searchLower)
       )
-      // Recalculate total based on filtered results
+ 
       const allRows = db.prepare(`
         SELECT content, description, status 
         FROM schema_policy 
@@ -100,12 +85,9 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
       total = filtered.length
     }
     
-    // Apply effect filter (permit/forbid) - extract from policy content
     if (effect && (effect === 'permit' || effect === 'forbid')) {
       policies = policies.filter(p => p.effect === effect)
-      // Recalculate total if search was also applied
       if (search) {
-        // Already filtered above, but need to re-filter by effect
         const allRows = db.prepare(`
           SELECT content, description, status 
           FROM schema_policy 
@@ -143,7 +125,6 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
       }
     }
     
-    // Apply client-side sorting if sortBy is 'effect' (since effect is derived from content)
     if (sortBy === 'effect' && sortOrder && (sortOrder === 'asc' || sortOrder === 'desc')) {
       policies.sort((a, b) => {
         const comparison = a.effect.localeCompare(b.effect)
@@ -165,10 +146,6 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
   }
 })
 
-/**
- * POST /api/policies
- * Create a new policy
- */
 router.post('/', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { policy, description } = req.body
@@ -195,10 +172,6 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
   }
 })
 
-/**
- * PUT /api/policies
- * Update a policy
- */
 router.put('/', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { oldPolicy, policy, description } = req.body
@@ -225,10 +198,6 @@ router.put('/', requireAdmin, async (req: Request, res: Response) => {
   }
 })
 
-/**
- * PATCH /api/policies/status
- * Activate or deactivate a policy (toggle status)
- */
 router.patch('/status', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { policy, isActive } = req.body as { policy?: string; isActive?: boolean }
@@ -242,7 +211,6 @@ router.patch('/status', requireAdmin, async (req: Request, res: Response) => {
 
     const db = getDatabase()
     
-    // First check if policy exists (regardless of status)
     const existing = db.prepare(`
       SELECT id FROM schema_policy 
       WHERE obj_type = 'policy' AND content = ?
@@ -255,7 +223,6 @@ router.patch('/status', requireAdmin, async (req: Request, res: Response) => {
       return
     }
     
-    // Update status (allow updating regardless of current status)
     const newStatus = isActive ? 1 : 0
     const result = db.prepare(`
       UPDATE schema_policy
@@ -282,10 +249,6 @@ router.patch('/status', requireAdmin, async (req: Request, res: Response) => {
   }
 })
 
-/**
- * DELETE /api/policies
- * Delete a policy
- */
 router.delete('/', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { policy } = req.body

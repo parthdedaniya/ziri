@@ -4,10 +4,10 @@ import { useUserAuthStore } from '~/stores/user-auth'
 
 const route = useRoute()
 
-// Sidebar collapsed state with persistence
+ 
 const isCollapsed = useState('sidebar-collapsed', () => false)
 
-// Get user role
+ 
 const adminAuthStore = useAdminAuthStore()
 const userAuthStore = useUserAuthStore()
 
@@ -27,10 +27,10 @@ const toggleSidebar = () => {
   isCollapsed.value = !isCollapsed.value
 }
 
-// Expose toggle to parent
+ 
 defineExpose({ toggleSidebar, isCollapsed })
 
-// Tooltip state management
+ 
 const tooltipState = ref<{
   visible: boolean
   text: string
@@ -43,14 +43,14 @@ const tooltipState = ref<{
   y: 0
 })
 
-// Tooltip positioning helper
+ 
 const showTooltip = (event: MouseEvent, text: string) => {
   if (!isCollapsed.value) return
   
   const target = event.currentTarget as HTMLElement
   const rect = target.getBoundingClientRect()
   
-  // Position tooltip: sidebar edge + small gap (6px) + arrow width (6px)
+ 
   tooltipState.value = {
     visible: true,
     text,
@@ -63,14 +63,14 @@ const hideTooltip = () => {
   tooltipState.value.visible = false
 }
 
-// Dashboard (independent, always at top) - Admin only
+ 
 const dashboardItem = { name: 'Dashboard', path: '/', icon: 'dashboard', adminOnly: true }
 
-// Navigation sections
+ 
 const navSections = computed(() => {
   const sections = []
   
-  // Admin-only sections
+ 
   if (isAdmin.value) {
     sections.push(
       {
@@ -119,7 +119,7 @@ const navSections = computed(() => {
     )
   }
   
-  // User sections (accessible by both admin and user)
+ 
   sections.push({
     title: 'My Account',
     icon: 'user',
@@ -139,7 +139,7 @@ const isActive = (path: string) => {
   return route.path.startsWith(path)
 }
 
-// Icon components
+ 
 const getIcon = (iconName: string) => {
   const icons: Record<string, string> = {
     dashboard: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z',

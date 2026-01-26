@@ -1,4 +1,4 @@
-import type { AuthConfig, TokenResponse } from './types'
+import type { AuthConfig, TokenResponse } from './types.js'
 
 export interface AuthProvider {
   getToken(): Promise<string>
@@ -20,12 +20,12 @@ export class M2MAuthProvider implements AuthProvider {
   }
 
   async getToken(): Promise<string> {
-    // Return cached token if still valid
+ 
     if (this.token && this.tokenExpiry && new Date() < this.tokenExpiry) {
       return this.token
     }
 
-    // Fetch new token
+ 
     const response = await fetch(`${this.config.backendUrl}/oauth2/token`, {
       method: 'POST',
       headers: {
@@ -48,7 +48,7 @@ export class M2MAuthProvider implements AuthProvider {
 
     const data = await response.json() as TokenResponse
     this.token = data.access_token
-    // Expire 60 seconds early to account for clock skew
+ 
     this.tokenExpiry = new Date(Date.now() + (data.expires_in - 60) * 1000)
 
     return this.token

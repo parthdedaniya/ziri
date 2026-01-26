@@ -1,4 +1,4 @@
-// Proxy providers API to proxy server
+ 
 
 import { getAuthHeader } from '../utils/auth'
 
@@ -36,7 +36,7 @@ export default defineEventHandler(async (event) => {
     
     const data = await response.json()
     console.log('[API] Providers response:', { hasProviders: !!data.providers, count: data.providers?.length || 0 })
-    // Normalize response format (proxy returns { providers: [...] }, composable expects { data: [...] })
+ 
     return {
       data: data.providers || []
     }

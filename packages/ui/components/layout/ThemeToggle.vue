@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Cookie helper functions
+ 
 const getCookie = (name: string): string | null => {
   if (typeof document === 'undefined') return null
   const value = `; ${document.cookie}`

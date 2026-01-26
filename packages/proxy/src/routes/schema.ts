@@ -1,4 +1,4 @@
-// Schema routes - manage Cedar schema (local mode)
+ 
 
 import { Router, type Request, type Response } from 'express'
 import { requireAdmin } from '../middleware/auth.js'
@@ -6,18 +6,14 @@ import { serviceFactory } from '../services/service-factory.js'
 
 const router: Router = Router()
 
-/**
- * GET /api/schema
- * Get current schema (returns JSON format)
- * Query param ?format=cedar returns Cedar text format
- */
+ 
 router.get('/', requireAdmin, async (req: Request, res: Response) => {
   try {
     const schemaStore = serviceFactory.getSchemaStore()
     const format = req.query.format as string | undefined
     
     if (format === 'cedar') {
-      // Return Cedar text format (retrieved directly from DB)
+ 
       if (!schemaStore.getSchemaAsCedarText) {
         res.status(500).json({
           error: 'Cedar text format not supported by this schema store'
@@ -25,10 +21,10 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
         return
       }
       
-      // Get Cedar text directly from DB (source of truth)
+ 
       const cedarText = await schemaStore.getSchemaAsCedarText()
       
-      // Also get JSON format for convenience (converts Cedar → JSON)
+ 
       const schema = await schemaStore.getSchema()
       
       res.json({
@@ -40,7 +36,7 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
         }
       })
     } else {
-      // Return JSON format (default) - converts Cedar text to JSON
+ 
       const schema = await schemaStore.getSchema()
       
       res.json({
@@ -59,12 +55,7 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
   }
 })
 
-/**
- * POST /api/schema
- * Update schema
- * Accepts either Cedar text (string) or JSON (object)
- * Query param ?format=cedar indicates Cedar text format
- */
+ 
 router.post('/', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { schema } = req.body
@@ -79,25 +70,25 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
     
     const schemaStore = serviceFactory.getSchemaStore()
     
-    // If format=cedar or schema is a string, treat as Cedar text
-    // Otherwise treat as JSON
+ 
+ 
     const schemaInput = format === 'cedar' || typeof schema === 'string' 
       ? schema 
       : schema
     
     const updated = await schemaStore.updateSchema(schemaInput)
     
-    // Return both Cedar text and JSON formats for UI
-    // IMPORTANT: Use the original input if it was Cedar text, don't reconvert
-    // because reconversion can lose fields (like request_cost)
+ 
+ 
+ 
     let cedarText: string | undefined
     if (typeof schemaInput === 'string') {
-      // Input was Cedar text - use it directly (this is what was stored in DB)
+ 
       cedarText = schemaInput
     } else {
-      // Input was JSON - need to get Cedar text from DB
-      // But we can't easily get it back, so convert JSON to Cedar text
-      // This should match what was stored
+ 
+ 
+ 
       if (schemaStore.getSchemaAsCedarText) {
         try {
           cedarText = await schemaStore.getSchemaAsCedarText()

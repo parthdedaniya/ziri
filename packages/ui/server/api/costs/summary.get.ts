@@ -1,4 +1,4 @@
-// Proxy /api/costs/summary to proxy server
+ 
 
 import { getAuthHeader } from '../../utils/auth'
 

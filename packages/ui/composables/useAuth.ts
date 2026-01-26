@@ -1,4 +1,4 @@
-// Unified authentication composable (auto-detects admin vs user)
+ 
 
 import { useAdminAuthStore } from '~/stores/admin-auth'
 import { useUserAuthStore } from '~/stores/user-auth'
@@ -9,24 +9,24 @@ export function useAuth() {
   const userAuthStore = useUserAuthStore()
   const toast = useToast()
 
-  // Load auth from storage on init
+ 
   if (process.client) {
     adminAuthStore.loadFromStorage()
     userAuthStore.loadFromStorage()
   }
 
   const login = async (username: string, password: string): Promise<boolean> => {
-    // Set loading state
+ 
     adminAuthStore.setLoading(true)
     userAuthStore.setLoading(true)
     adminAuthStore.setError(null)
     userAuthStore.setError(null)
     
     try {
-      // Strategy: Try admin login first if username is "admin", otherwise try user login
-      // If admin login fails, fall back to user login (in case there's a user with userId "admin")
+ 
+ 
       
-      // First, try admin login if username is "admin"
+ 
       if (username === 'admin') {
         try {
           const adminResponse = await fetch('/api/auth/admin/login', {
@@ -40,7 +40,7 @@ export function useAuth() {
           if (adminResponse.ok) {
             const adminData = await adminResponse.json()
             
-            // Admin login successful
+ 
             adminAuthStore.setTokens(
               adminData.accessToken,
               adminData.refreshToken,
@@ -50,7 +50,7 @@ export function useAuth() {
             
             toast.success('Admin login successful!')
             
-            // Redirect to config page
+ 
             if (process.client) {
               await navigateTo('/config')
             }
@@ -58,12 +58,12 @@ export function useAuth() {
             return true
           }
         } catch (error: any) {
-          // Admin login failed, continue to try user login
+ 
         }
       }
       
-      // Try user login (userId + password)
-      // This works for both regular users and potentially "admin" if admin login failed
+ 
+ 
       const userResponse = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
@@ -79,12 +79,12 @@ export function useAuth() {
       
       const userData = await userResponse.json()
       
-      // Ensure user object exists
+ 
       if (!userData.user) {
         throw new Error('Invalid response: user information missing')
       }
       
-      // User login successful
+ 
       userAuthStore.setTokens(
         userData.accessToken,
         userData.refreshToken,
@@ -94,7 +94,7 @@ export function useAuth() {
       
       toast.success('Login successful!')
       
-      // Redirect based on role
+ 
       if (process.client) {
         if (userData.user.role === 'admin') {
           await navigateTo('/config')
@@ -117,23 +117,23 @@ export function useAuth() {
   }
 
   const logout = async () => {
-    // Logout from both stores
+ 
     adminAuthStore.clearAuth()
     userAuthStore.clearAuth()
     toast.info('Logged out successfully')
     
-    // Redirect to login page
+ 
     if (process.client) {
       await navigateTo('/login')
     }
   }
 
   const getAuthHeader = (): string | null => {
-    // Check admin auth first
+ 
     if (adminAuthStore.isAuthenticated && adminAuthStore.accessToken) {
       return `Bearer ${adminAuthStore.accessToken}`
     }
-    // Then check user auth
+ 
     if (userAuthStore.isAuthenticated && userAuthStore.accessToken) {
       return `Bearer ${userAuthStore.accessToken}`
     }

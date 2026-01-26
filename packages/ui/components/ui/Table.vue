@@ -44,19 +44,19 @@ const emit = defineEmits<{
 
 const paginatedData = computed(() => {
   if (!props.paginated) return props.data
-  // If totalItems is provided, we're doing server-side pagination, so return data as-is
+ 
   if (props.totalItems !== undefined) {
     return props.data
   }
-  // Otherwise, do client-side pagination
+ 
   const start = (props.currentPage - 1) * props.itemsPerPage
   const end = start + props.itemsPerPage
   return props.data.slice(start, end)
 })
 
 const totalItemsForPagination = computed(() => {
-  // Use totalItems if provided (server-side), otherwise use data.length (client-side)
-  // Default to 0 if neither is available
+ 
+ 
   if (props.totalItems !== undefined) {
     return props.totalItems
   }
@@ -69,17 +69,14 @@ const handleRowClick = (row: any) => {
   }
 }
 
-/**
- * Handle column header click for sorting
- * Three-state sorting: asc → desc → null
- */
+ 
 const handleSort = (column: Column) => {
   if (!column.sortable) return
   
   let newSortBy: string | null = column.key
   let newSortOrder: SortOrder = 'asc'
   
-  // If clicking the same column, cycle through states
+ 
   if (props.sortBy === column.key) {
     if (props.sortOrder === 'asc') {
       newSortOrder = 'desc'
@@ -92,9 +89,7 @@ const handleSort = (column: Column) => {
   emit('update:sort', newSortBy, newSortOrder)
 }
 
-/**
- * Get sort icon for a column
- */
+ 
 const getSortIcon = (column: Column) => {
   if (!column.sortable || props.sortBy !== column.key) {
     return 'sort-default'

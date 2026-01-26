@@ -1,4 +1,4 @@
-// Pricing service - calculates costs based on model pricing data
+ 
 
 import type Database from 'better-sqlite3'
 import { getDatabase } from '../db/index.js'
@@ -40,7 +40,7 @@ export class PricingService {
   }
 
   async getPricing(provider: string, model: string): Promise<ModelPricing | null> {
-    // Check cache freshness
+ 
     if (Date.now() - this.cacheTimestamp > this.CACHE_TTL_MS) {
       this.cache.clear()
       this.cacheTimestamp = Date.now()
@@ -51,10 +51,10 @@ export class PricingService {
       return this.cache.get(cacheKey)!
     }
 
-    // 1. Try exact match
+ 
     let pricing = await this.findPricing(provider, model)
 
-    // 2. Try alias resolution
+ 
     if (!pricing) {
       const alias = this.db.prepare(
         'SELECT canonical_model FROM model_aliases WHERE alias = ? AND provider = ?'
@@ -65,7 +65,7 @@ export class PricingService {
       }
     }
 
-    // 3. Try partial matching (for date-suffixed models)
+ 
     if (!pricing) {
       pricing = await this.findPartialMatch(provider, model)
     }
@@ -109,7 +109,7 @@ export class PricingService {
       }
     }
 
-    // Fallback pricing
+ 
     const fallback = FALLBACK_PRICING[provider as keyof typeof FALLBACK_PRICING] 
       || FALLBACK_PRICING.openai
 
@@ -137,7 +137,7 @@ export class PricingService {
   }
 
   private async findPartialMatch(provider: string, model: string): Promise<ModelPricing | null> {
-    // Try to match without date suffix (e.g., gpt-4o-2024-08-06 -> gpt-4o)
+ 
     const baseModel = model.replace(/-\d{4}-\d{2}-\d{2}$/, '')
     if (baseModel !== model) {
       return this.findPricing(provider, baseModel)
@@ -151,5 +151,5 @@ export class PricingService {
   }
 }
 
-// Export singleton instance
+ 
 export const pricingService = new PricingService()

@@ -1,11 +1,8 @@
-// Test file for Cedar WASM integration
-// Tests authorization with hardcoded schema, policies, and entities
+ 
+ 
 
 import type * as cedarType from '@cedar-policy/cedar-wasm/nodejs'
 
-/**
- * Load Cedar WASM module
- */
 async function loadCedar(): Promise<typeof cedarType> {
   console.log('[TEST] Loading Cedar WASM module...')
   const cedar = await import('@cedar-policy/cedar-wasm/nodejs')
@@ -13,9 +10,6 @@ async function loadCedar(): Promise<typeof cedarType> {
   return cedar
 }
 
-/**
- * Hardcoded Cedar text schema (will be converted to JSON via Cedar WASM)
- */
 const hardcodedCedarTextSchema = `
 type RequestContext = {
   "ip_address": __cedar::ipaddr,
@@ -81,16 +75,10 @@ action "moderation" appliesTo {
 };
 `
 
-/**
- * Hardcoded policies
- */
 const hardcodedPolicies = [
   'permit(principal, action, resource) when { principal.status == "active" };'
 ]
 
-/**
- * Hardcoded entities
- */
 const hardcodedEntities = [
   {
     uid: {
@@ -120,9 +108,6 @@ const hardcodedEntities = [
   }
 ]
 
-/**
- * Parse EntityUID string to object format
- */
 function parseEntityUid(entityUid: string): { type: string; id: string } {
   const match = entityUid.match(/^([^:]+)::"([^"]+)"$/)
   if (!match) {
@@ -134,25 +119,22 @@ function parseEntityUid(entityUid: string): { type: string; id: string } {
   }
 }
 
-/**
- * Main test function
- */
 async function testCedarWasm(): Promise<void> {
   console.log('\n' + '='.repeat(80))
   console.log('CEDAR WASM INTEGRATION TEST')
   console.log('='.repeat(80) + '\n')
 
   try {
-    // Load Cedar WASM
+ 
     const cedar = await loadCedar()
     console.log('\n')
 
-    // Log Cedar text schema
+ 
     console.log('[TEST] 📋 CEDAR TEXT SCHEMA:')
     console.log(hardcodedCedarTextSchema)
     console.log('\n')
 
-    // Convert Cedar text schema to JSON
+ 
     console.log('[TEST] 🔄 Converting Cedar text schema to JSON...')
     const schemaConversion = cedar.schemaToJson(hardcodedCedarTextSchema)
     
@@ -166,12 +148,12 @@ async function testCedarWasm(): Promise<void> {
     console.log('[TEST] ✅ Schema converted to JSON successfully')
     console.log('\n')
 
-    // Log converted JSON schema
+ 
     console.log('[TEST] 📋 CONVERTED JSON SCHEMA:')
     console.log(JSON.stringify(hardcodedSchema, null, 2))
     console.log('\n')
 
-    // Validate schema
+ 
     console.log('[TEST] 🔍 Validating converted schema...')
     const schemaValidation = cedar.checkParseSchema(hardcodedSchema)
     if (schemaValidation.type === 'failure') {
@@ -182,7 +164,7 @@ async function testCedarWasm(): Promise<void> {
     console.log('[TEST] ✅ Schema validation passed')
     console.log('\n')
 
-    // Log policies
+ 
     console.log('[TEST] 📜 POLICIES:')
     hardcodedPolicies.forEach((policy, idx) => {
       console.log(`Policy ${idx + 1}:`)
@@ -191,12 +173,12 @@ async function testCedarWasm(): Promise<void> {
     })
     console.log('\n')
 
-    // Log entities
+ 
     console.log('[TEST] 👥 ENTITIES:')
     console.log(JSON.stringify(hardcodedEntities, null, 2))
     console.log('\n')
 
-    // Prepare authorization request
+ 
     const principal = 'User::"test-user-123"'
     const action = 'Action::"QueryLLM"'
     const resource = 'Resource::"gpt-4"'
@@ -207,7 +189,7 @@ async function testCedarWasm(): Promise<void> {
     console.log(`  Resource: ${resource}`)
     console.log('\n')
 
-    // Parse EntityUIDs
+ 
     const parsePrincipal = parseEntityUid(principal)
     const parseAction = parseEntityUid(action)
     const parseResource = parseEntityUid(resource)
@@ -218,7 +200,7 @@ async function testCedarWasm(): Promise<void> {
     console.log(`  Resource:`, parseResource)
     console.log('\n')
 
-    // Prepare context
+ 
     const context = {
       ip_address: {
         __extn: {
@@ -237,7 +219,7 @@ async function testCedarWasm(): Promise<void> {
     console.log(JSON.stringify(context, null, 2))
     console.log('\n')
 
-    // Prepare policies map
+ 
     const policiesMap: Record<string, string> = {}
     hardcodedPolicies.forEach((policy, idx) => {
       policiesMap[`policy${idx + 1}`] = policy
@@ -247,7 +229,7 @@ async function testCedarWasm(): Promise<void> {
     console.log(JSON.stringify(policiesMap, null, 2))
     console.log('\n')
 
-    // Build authorization call
+ 
     const authorizationCall: cedarType.AuthorizationCall = {
       principal: parsePrincipal,
       action: parseAction,
@@ -264,7 +246,7 @@ async function testCedarWasm(): Promise<void> {
     console.log(JSON.stringify(authorizationCall, null, 2))
     console.log('\n')
 
-    // Make authorization call
+ 
     console.log('[TEST] ⚡ Calling Cedar WASM isAuthorized...')
     const startTime = Date.now()
     const result = cedar.isAuthorized(authorizationCall)
@@ -273,12 +255,12 @@ async function testCedarWasm(): Promise<void> {
     console.log(`[TEST] ⏱️  Evaluation time: ${evaluationTime}ms`)
     console.log('\n')
 
-    // Log result
+ 
     console.log('[TEST] 📊 AUTHORIZATION RESULT:')
     console.log(JSON.stringify(result, null, 2))
     console.log('\n')
 
-    // Parse result
+ 
     if (result.type === 'failure') {
       console.error('[TEST] ❌ AUTHORIZATION FAILED:')
       result.errors.forEach((error: any, idx: number) => {
@@ -329,7 +311,7 @@ async function testCedarWasm(): Promise<void> {
   }
 }
 
-// Run the test
+ 
 testCedarWasm()
   .then(() => {
     console.log('[TEST] Test execution completed')

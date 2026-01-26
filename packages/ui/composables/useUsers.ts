@@ -1,4 +1,4 @@
-// Users composable - for managing users via Proxy API
+ 
 
 import { ref } from 'vue'
 import { useConfigStore } from '~/stores/config'
@@ -48,7 +48,7 @@ export function useUsers() {
         throw new Error('Please login first')
       }
       
-      // Build query string
+ 
       const queryParams = new URLSearchParams()
       if (params?.search) queryParams.set('search', params.search)
       if (params?.limit) queryParams.set('limit', params.limit.toString())
@@ -58,7 +58,7 @@ export function useUsers() {
       
       const url = `/api/users${queryParams.toString() ? '?' + queryParams.toString() : ''}`
       
-      // Use relative URL - Nuxt server API will proxy to proxy server
+ 
       const response = await fetch(url, {
         headers: {
           'Authorization': authHeader
@@ -86,7 +86,7 @@ export function useUsers() {
       throw new Error('Please login first')
     }
     
-    // Use relative URL - Nuxt server API will proxy to proxy server
+ 
     const response = await fetch('/api/users', {
       method: 'POST',
       headers: {
@@ -104,7 +104,7 @@ export function useUsers() {
     const result = await response.json()
     users.value.push(result.user)
     
-    // Return user and password (password only exists if email was not sent)
+ 
     return {
       user: result.user,
       password: result.password // Only present if email was not sent
@@ -117,7 +117,7 @@ export function useUsers() {
       throw new Error('Please login first')
     }
     
-    // Use relative URL - Nuxt server API will proxy to proxy server
+ 
     const response = await fetch(`/api/users/${userId}`, {
       method: 'PUT',
       headers: {
@@ -147,7 +147,7 @@ export function useUsers() {
       throw new Error('Please login first')
     }
     
-    // Use relative URL - Nuxt server API will proxy to proxy server
+ 
     const response = await fetch(`/api/users/${userId}`, {
       method: 'DELETE',
       headers: {
@@ -169,7 +169,7 @@ export function useUsers() {
       throw new Error('Please login first')
     }
     
-    // Use relative URL - Nuxt server API will proxy to proxy server
+ 
     const response = await fetch(`/api/users/${userId}/reset-password`, {
       method: 'POST',
       headers: {
@@ -183,7 +183,7 @@ export function useUsers() {
     }
     
     const result = await response.json()
-    // Return password only if email was not sent
+ 
     return {
       password: result.password, // Only present if email was not sent
       emailSent: result.emailSent || false

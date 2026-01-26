@@ -13,7 +13,7 @@ const props = withDefaults(defineProps<Props>(), {
   rounded: 'rounded-lg'
 })
 
-// Generate random widths for each line
+ 
 const lineWidths = computed(() => {
   return Array.from({ length: props.lines }, () => {
     return `${70 + Math.random() * 30}%`

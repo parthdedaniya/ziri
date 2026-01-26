@@ -1,4 +1,4 @@
-// Spend reset service - checks and resets daily/monthly spend before Cedar authorization
+ 
 
 import type Database from 'better-sqlite3'
 import { getDatabase } from '../db/index.js'
@@ -45,10 +45,7 @@ export class SpendResetService {
     this.db = db || getDatabase()
   }
 
-  /**
-   * Check if spend needs to be reset and perform reset if necessary.
-   * This should be called BEFORE Cedar authorization.
-   */
+   
   async checkAndResetSpend(userKeyEntity: UserKeyEntity): Promise<SpendResetResult> {
     const now = new Date()
     const result: SpendResetResult = {
@@ -57,16 +54,16 @@ export class SpendResetService {
       updatedEntity: null,
     }
 
-    // Handle date parsing - ensure we have valid dates
+ 
     const lastDailyResetStr = userKeyEntity.attrs.last_daily_reset || new Date().toISOString()
     const lastMonthlyResetStr = userKeyEntity.attrs.last_monthly_reset || new Date().toISOString()
     const lastDailyReset = new Date(lastDailyResetStr)
     const lastMonthlyReset = new Date(lastMonthlyResetStr)
 
-    // Check daily reset: has midnight (UTC) passed since last reset?
+ 
     const needsDailyReset = this.hasMidnightPassed(lastDailyReset, now)
 
-    // Check monthly reset: has month boundary passed since last reset?
+ 
     const needsMonthlyReset = this.hasMonthBoundaryPassed(lastMonthlyReset, now)
 
     if (needsDailyReset || needsMonthlyReset) {
@@ -85,7 +82,7 @@ export class SpendResetService {
         result.monthlyReset = true
       }
 
-      // Update entity in database
+ 
       const updatedEntity = {
         ...userKeyEntity,
         attrs: updatedAttrs,
@@ -98,11 +95,9 @@ export class SpendResetService {
     return result
   }
 
-  /**
-   * Check if midnight (UTC) has passed between two dates.
-   */
+   
   private hasMidnightPassed(lastReset: Date, now: Date): boolean {
-    // Get the date portion only (in UTC)
+ 
     const lastResetDate = new Date(Date.UTC(
       lastReset.getUTCFullYear(),
       lastReset.getUTCMonth(),
@@ -115,13 +110,11 @@ export class SpendResetService {
       now.getUTCDate()
     ))
 
-    // If now's date is greater than last reset's date, midnight has passed
+ 
     return nowDate.getTime() > lastResetDate.getTime()
   }
 
-  /**
-   * Check if month boundary has passed between two dates.
-   */
+   
   private hasMonthBoundaryPassed(lastReset: Date, now: Date): boolean {
     const lastResetYear = lastReset.getUTCFullYear()
     const lastResetMonth = lastReset.getUTCMonth()
@@ -129,7 +122,7 @@ export class SpendResetService {
     const nowYear = now.getUTCFullYear()
     const nowMonth = now.getUTCMonth()
 
-    // If year is greater, or same year but month is greater
+ 
     if (nowYear > lastResetYear) {
       return true
     }
@@ -139,9 +132,7 @@ export class SpendResetService {
     return false
   }
 
-  /**
-   * Create Cedar decimal extension format with 4 decimal places.
-   */
+   
   private createDecimalValue(value: string): CedarDecimalValue {
     return {
       __extn: {
@@ -151,9 +142,7 @@ export class SpendResetService {
     }
   }
 
-  /**
-   * Update the UserKey entity in the entities table.
-   */
+   
   private async updateEntityInDatabase(entity: UserKeyEntity): Promise<void> {
     const stmt = this.db.prepare(`
       UPDATE entities 
@@ -165,5 +154,5 @@ export class SpendResetService {
   }
 }
 
-// Export singleton instance
+ 
 export const spendResetService = new SpendResetService()

@@ -1,4 +1,4 @@
-// Proxy /api/audit to proxy server
+ 
 
 import { getAuthHeader } from '../utils/auth'
 

@@ -18,7 +18,6 @@
     "@cedar-policy/cedar-wasm": "^4.8.2",
     "@heroicons/vue": "^2.2.0",
     "@pinia/nuxt": "^0.9.0",
-    "@zs-ai/config": "*",
     "chart.js": "^4.4.7",
     "date-fns": "^4.1.0",
     "nuxt": "^3.20.2",

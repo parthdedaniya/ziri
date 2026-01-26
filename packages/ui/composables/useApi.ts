@@ -9,8 +9,8 @@ export function useApi() {
     const loading = ref(false)
     const error = ref<string | null>(null)
 
-    // Generate a session ID once per session (module scope)
-    // In a real app, this might persist in sessionStorage
+ 
+ 
     const sessionId = ref(Math.random().toString(36).substring(2, 7))
 
     const generateId = () => {
@@ -68,7 +68,7 @@ export function useApi() {
             const errorMsg = e.data?.message || e.message || 'API request failed'
             console.error('[API] ❌ Request failed:', errorMsg, e)
             error.value = errorMsg
-            // Don't throw for 404s on list operations if acceptable, but generally we want to throw
+ 
             throw new Error(errorMsg)
         } finally {
             loading.value = false

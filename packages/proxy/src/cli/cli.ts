@@ -2,7 +2,6 @@
 
 import { Command } from 'commander'
 import * as readline from 'readline'
-import { startProxyServer } from './proxy-server.js'
 import {
   readConfig,
   writeConfig,
@@ -21,7 +20,7 @@ import {
   readCredentials,
   writeCredentials,
   type ProviderMetadata
-} from '@zs-ai/config'
+} from '../config/index.js'
 
 const program = new Command()
 
@@ -35,20 +34,41 @@ program
   .description('Start proxy server with UI and API')
   .option('-p, --port <port>', 'Port to run on (auto-finds free port if in use)', '3100')
   .option('-h, --host <host>', 'Host to bind to', 'localhost')
-  .action((options) => {
+  .action(async (options) => {
     const port = parseInt(options.port, 10)
-    startProxyServer(port, options.host)
+    const host = options.host || 'localhost'
+    
+    process.env.PORT = port.toString()
+    process.env.HOST = host
+    
+    try {
+      const { startServer } = await import('../server.js')
+      await startServer()
+    } catch (error: any) {
+      console.error('❌ Failed to start server:', error.message)
+      process.exit(1)
+    }
   })
 
-// Alias for backward compatibility
 program
   .command('ui')
   .description('Start proxy server (alias for "start")')
   .option('-p, --port <port>', 'Port to run on (auto-finds free port if in use)', '3100')
   .option('-h, --host <host>', 'Host to bind to', 'localhost')
-  .action((options) => {
+  .action(async (options) => {
     const port = parseInt(options.port, 10)
-    startProxyServer(port, options.host)
+    const host = options.host || 'localhost'
+    
+    process.env.PORT = port.toString()
+    process.env.HOST = host
+    
+    try {
+      const { startServer } = await import('../server.js')
+      await startServer()
+    } catch (error: any) {
+      console.error('❌ Failed to start server:', error.message)
+      process.exit(1)
+    }
   })
 
 program
@@ -60,10 +80,8 @@ program
   .option('-i, --init', 'Initialize configuration interactively')
   .action((options) => {
     if (options.init) {
-      // Interactive config setup
       console.log('🔧 Initializing ZS AI Gateway configuration...\n')
       console.log('Please provide the following information:')
-      // TODO: Add interactive prompts using readline or inquirer
       console.log('Use: zs-ai config set <key>=<value> to set values')
       console.log('Required keys: backendUrl, orgId, projectId, clientId, clientSecret')
       console.log('Optional keys: pdpUrl (for live mode)')
@@ -104,7 +122,6 @@ program
     program.help()
   })
 
-// Helper function to prompt for password (master key)
 function promptPassword(message: string): Promise<string> {
   return new Promise((resolve) => {
     const rl = readline.createInterface({
@@ -112,7 +129,6 @@ function promptPassword(message: string): Promise<string> {
       output: process.stdout
     })
     
-    // Hide password input
     const stdin = process.stdin
     const wasRaw = stdin.isRaw || false
     stdin.setRawMode(true)
@@ -143,7 +159,7 @@ function promptPassword(message: string): Promise<string> {
           rl.close()
           process.exit()
           break
-        case '\u007f': // Backspace
+        case '\u007f':
           if (password.length > 0) {
             password = password.slice(0, -1)
             process.stdout.write('\b \b')
@@ -162,15 +178,12 @@ function promptPassword(message: string): Promise<string> {
   })
 }
 
-// Helper function to get or prompt for master key
 async function getMasterKey(): Promise<string> {
-  // Try environment variable first
   const envKey = process.env.ZS_AI_MASTER_KEY
   if (envKey) {
     return envKey
   }
   
-  // Prompt for password (master key)
   const password = await promptPassword('Enter master password for credentials (or set ZS_AI_MASTER_KEY env var): ')
   if (!password || password.trim().length === 0) {
     throw new Error('Master password cannot be empty')
@@ -179,7 +192,6 @@ async function getMasterKey(): Promise<string> {
   return password.trim()
 }
 
-// Provider metadata definitions for supported providers
 const PROVIDER_TEMPLATES: Record<string, Omit<ProviderMetadata, 'hasCredentials'>> = {
   openai: {
     name: 'openai',
@@ -197,7 +209,6 @@ const PROVIDER_TEMPLATES: Record<string, Omit<ProviderMetadata, 'hasCredentials'
   }
 }
 
-// Provider subcommands
 const providersCmd = program
   .command('providers')
   .description('Manage LLM provider configurations and API keys')
@@ -286,7 +297,6 @@ providersCmd
       
       console.log(`\n🧪 Testing connection to ${metadata.displayName}...`)
       
-      // Test with a simple request (e.g., list models endpoint)
       const testUrl = `${metadata.baseUrl}/models`
       const response = await fetch(testUrl, {
         method: 'GET',
@@ -319,7 +329,6 @@ providersCmd
     try {
       const name = providerName.toLowerCase()
       
-      // Check if provider template exists
       if (!PROVIDER_TEMPLATES[name]) {
         console.error(`❌ Unknown provider '${name}'`)
         console.error('\nSupported providers:')
@@ -329,7 +338,6 @@ providersCmd
         process.exit(1)
       }
       
-      // Check if already exists
       const existing = getProviderMetadata(name)
       if (existing) {
         console.log(`⚠️  Provider '${name}' already exists`)
@@ -349,7 +357,6 @@ providersCmd
         }
       }
       
-      // Prompt for API key
       const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout
@@ -365,21 +372,18 @@ providersCmd
         process.exit(1)
       }
       
-      // Validate API key format
       const validation = validateProviderApiKey(name, apiKey.trim())
       if (!validation.valid) {
         console.error(`❌ ${validation.error}`)
         process.exit(1)
       }
       
-      // Save metadata
       const metadata: ProviderMetadata = {
         ...PROVIDER_TEMPLATES[name],
         hasCredentials: true
       }
       setProviderMetadata(name, metadata)
       
-      // Save credentials (encrypted)
       const masterKey = await getMasterKey()
       setProviderCredentials(name, apiKey.trim(), masterKey)
       

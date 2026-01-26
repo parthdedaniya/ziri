@@ -1,4 +1,4 @@
-// Proxy create/update provider API to proxy server
+ 
 
 import { getAuthHeader } from '../utils/auth'
 

@@ -11,17 +11,17 @@ const { getSchema, updateSchema, lastSyncedAt, loading } = useSchema()
 const { schemaToJson, schemaToText, validateCedarSchema, validateJsonSchema } = useCedarWasm()
 const toast = useToast()
 
-// View/Edit mode: 'json' or 'cedar'
+ 
 const viewMode = ref<'json' | 'cedar'>('cedar')
 const isEditing = ref(false)
 const isSaving = ref(false)
 
-// Schema content (editable)
+ 
 const schemaContent = ref('')
 const validationErrors = ref<ValidationError[]>([])
 const validationDebounceTimer = ref<NodeJS.Timeout | null>(null)
 
-// Auto-load schema when page mounts (if config is set)
+ 
 onMounted(async () => {
   await nextTick()
   
@@ -29,37 +29,35 @@ onMounted(async () => {
     try {
       await loadSchema()
     } catch (e) {
-      // Error handled by composable
+ 
     }
   }
 })
 
-/**
- * Load schema in the current view mode
- */
+ 
 const loadSchema = async () => {
   try {
-    // Always request the format we need
+ 
     const data = await getSchema(viewMode.value)
     
     if (viewMode.value === 'cedar') {
-      // Load Cedar text - prefer schemaCedarText or schema if it's a string
+ 
       if (data.schemaCedarText) {
         schemaContent.value = data.schemaCedarText
       } else if (typeof data.schema === 'string') {
         schemaContent.value = data.schema
       } else {
-        // Convert JSON to Cedar if we only have JSON
+ 
         schemaContent.value = await convertJsonToCedar(data.schemaJson || data.schema)
       }
     } else {
-      // Load JSON - prefer schemaJson or schema if it's an object
+ 
       if (data.schemaJson) {
         schemaContent.value = JSON.stringify(data.schemaJson, null, 2)
       } else if (typeof data.schema === 'object') {
         schemaContent.value = JSON.stringify(data.schema, null, 2)
       } else {
-        // Convert Cedar to JSON if we only have Cedar text
+ 
         const jsonSchema = await convertCedarToJson(data.schema)
         schemaContent.value = JSON.stringify(jsonSchema, null, 2)
       }
@@ -72,9 +70,7 @@ const loadSchema = async () => {
   }
 }
 
-/**
- * Convert JSON to Cedar text
- */
+ 
 const convertJsonToCedar = async (jsonSchema: any): Promise<string> => {
   try {
     const jsonStr = typeof jsonSchema === 'string' ? jsonSchema : JSON.stringify(jsonSchema)
@@ -91,9 +87,7 @@ const convertJsonToCedar = async (jsonSchema: any): Promise<string> => {
   }
 }
 
-/**
- * Convert Cedar text to JSON
- */
+ 
 const convertCedarToJson = async (cedarText: string): Promise<any> => {
   try {
     const result = await schemaToJson(cedarText)
@@ -108,9 +102,7 @@ const convertCedarToJson = async (cedarText: string): Promise<any> => {
   }
 }
 
-/**
- * Validate schema on blur/focus change
- */
+ 
 const validateSchema = async () => {
   if (!schemaContent.value.trim()) {
     validationErrors.value = []
@@ -119,11 +111,11 @@ const validateSchema = async () => {
   
   try {
     if (viewMode.value === 'cedar') {
-      // Validate Cedar text
+ 
       const result = await validateCedarSchema(schemaContent.value)
       validationErrors.value = result.errors
     } else {
-      // Validate JSON
+ 
       try {
         const parsed = JSON.parse(schemaContent.value)
         const result = await validateJsonSchema(parsed)
@@ -145,9 +137,7 @@ const validateSchema = async () => {
   }
 }
 
-/**
- * Debounced validation
- */
+ 
 const debouncedValidate = () => {
   if (validationDebounceTimer.value) {
     clearTimeout(validationDebounceTimer.value)
@@ -158,27 +148,23 @@ const debouncedValidate = () => {
   }, 500)
 }
 
-/**
- * Handle schema content change
- */
+ 
 const onSchemaChange = (value: string) => {
   schemaContent.value = value
   debouncedValidate()
 }
 
-/**
- * Handle mode switch
- */
+ 
 const onModeSwitch = async (newMode: 'json' | 'cedar') => {
   if (isEditing.value && schemaContent.value.trim()) {
-    // Convert current content to new format
+ 
     try {
       if (viewMode.value === 'cedar' && newMode === 'json') {
-        // Cedar -> JSON
+ 
         const jsonSchema = await convertCedarToJson(schemaContent.value)
         schemaContent.value = JSON.stringify(jsonSchema, null, 2)
       } else if (viewMode.value === 'json' && newMode === 'cedar') {
-        // JSON -> Cedar
+ 
         const parsed = JSON.parse(schemaContent.value)
         schemaContent.value = await convertJsonToCedar(parsed)
       }
@@ -190,15 +176,13 @@ const onModeSwitch = async (newMode: 'json' | 'cedar') => {
       return
     }
   } else {
-    // Just switch mode and reload
+ 
     viewMode.value = newMode
     await loadSchema()
   }
 }
 
-/**
- * Save schema
- */
+ 
 const handleSave = async () => {
   if (validationErrors.value.length > 0) {
     toast.warning('Please fix validation errors before saving')
@@ -210,10 +194,10 @@ const handleSave = async () => {
     let cedarTextToSave: string
     
     if (viewMode.value === 'cedar') {
-      // Currently in Cedar mode - validate and save Cedar text directly
+ 
       cedarTextToSave = schemaContent.value
       
-      // Validate Cedar text before saving
+ 
       const validationResult = await validateCedarSchema(cedarTextToSave)
       if (!validationResult.valid) {
         validationErrors.value = validationResult.errors
@@ -221,13 +205,13 @@ const handleSave = async () => {
         return
       }
       
-      // Save as Cedar text (backend stores as Cedar text)
+ 
       await updateSchema(cedarTextToSave, 'cedar')
     } else {
-      // Currently in JSON mode - parse, validate, and convert to Cedar for storage
+ 
       const parsed = JSON.parse(schemaContent.value)
       
-      // Validate JSON schema
+ 
       const validationResult = await validateJsonSchema(parsed)
       if (!validationResult.valid) {
         validationErrors.value = validationResult.errors
@@ -235,13 +219,13 @@ const handleSave = async () => {
         return
       }
       
-      // Convert to Cedar text for storage (backend stores as Cedar text)
+ 
       cedarTextToSave = await convertJsonToCedar(parsed)
       await updateSchema(cedarTextToSave, 'cedar')
     }
     
-    // Reload schema in current view mode to reflect changes
-    // This ensures both formats are updated in the UI
+ 
+ 
     await loadSchema()
     
     isEditing.value = false
@@ -253,18 +237,14 @@ const handleSave = async () => {
   }
 }
 
-/**
- * Cancel editing
- */
+ 
 const handleCancel = async () => {
   isEditing.value = false
   validationErrors.value = []
   await loadSchema()
 }
 
-/**
- * Start editing
- */
+ 
 const startEditing = () => {
   isEditing.value = true
   validationErrors.value = []

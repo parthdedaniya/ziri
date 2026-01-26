@@ -27,7 +27,7 @@ const sizeClasses = {
   lg: 'max-w-2xl'
 }
 
-// Close on escape key
+ 
 onMounted(() => {
   const handleEscape = (e: KeyboardEvent) => {
     if (e.key === 'Escape' && props.modelValue && props.closable) {

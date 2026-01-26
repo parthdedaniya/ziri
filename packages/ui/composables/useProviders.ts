@@ -1,4 +1,4 @@
-// Provider management composable
+ 
 
 import { ref } from 'vue'
 import { useAdminAuth } from './useAdminAuth'
@@ -43,7 +43,7 @@ export function useProviders() {
         throw new Error('Please login first')
       }
       
-      // Build query string
+ 
       const queryParams = new URLSearchParams()
       if (params?.search) queryParams.set('search', params.search)
       if (params?.limit) queryParams.set('limit', params.limit.toString())
@@ -65,7 +65,7 @@ export function useProviders() {
       }
       
       const data = await response.json()
-      // Handle both formats: { data: [...] } and { providers: [...] }
+ 
       providers.value = data.data || data.providers || []
       return { providers: data.data || data.providers || [], total: data.total || 0 }
     } catch (e: any) {
@@ -105,7 +105,7 @@ export function useProviders() {
       
       const data = await response.json()
       
-      // Refresh list
+ 
       await listProviders()
       
       return data.data
@@ -139,7 +139,7 @@ export function useProviders() {
         throw new Error(errorData.error || `Failed to remove provider: ${response.statusText}`)
       }
       
-      // Refresh list
+ 
       await listProviders()
     } catch (e: any) {
       error.value = e.message || 'Failed to remove provider'
@@ -172,7 +172,7 @@ export function useProviders() {
       }
       
       const data = await response.json()
-      // Handle normalized response format
+ 
       return data.data || { status: data.success ? 'success' : 'failed', message: data.message }
     } catch (e: any) {
       error.value = e.message || 'Failed to test provider'

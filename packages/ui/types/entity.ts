@@ -18,13 +18,13 @@ export interface EntityUid {
 }
 
 export interface EntityAttrs {
-    // User entity attributes
+ 
     user_id?: string
     email?: string
     department?: string
     is_agent?: boolean
     limit_requests_per_minute?: number
-    // UserKey entity attributes
+ 
     current_daily_spend?: CedarDecimal
     current_monthly_spend?: CedarDecimal
     last_daily_reset?: string
@@ -36,7 +36,7 @@ export interface EntityAttrs {
             id: string
         }
     }
-    // Legacy fields (for backward compatibility)
+ 
     name?: string
     role?: string
     security_clearance?: number
@@ -65,19 +65,19 @@ export interface Key {
     currentMonthlySpend: number
     status: 'active' | 'revoked' | 'disabled'
     createdAt: string
-    // User info (from User entity, not UserKey)
+ 
     name?: string
     email?: string
     department?: string
     isAgent?: boolean
     limitRequestsPerMinute?: number
-    // UserKey reset times
+ 
     lastDailyReset?: string
     lastMonthlyReset?: string
 }
 
 export interface CreateKeyInput {
     userId: string
-    // No entity attributes - UserKey is created when user is created
-    // Key creation just links to existing UserKey entity
+ 
+ 
 }

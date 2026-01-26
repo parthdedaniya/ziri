@@ -1,7 +1,7 @@
-// Configuration management
-
-import { readConfig, type ZsAiConfig } from '@zs-ai/config'
-import { getMasterKey } from './utils/master-key.js'
+ 
+ 
+import { readConfig, type ZsAiConfig } from './config/index.js'
+import { getMasterKey, initializeMasterKey } from './utils/master-key.js'
 
 export interface ProxyConfig {
   mode: 'local' | 'live'  // Storage and authorization mode
@@ -46,14 +46,13 @@ export function loadConfig(): ProxyConfig {
   try {
     fileConfig = readConfig()
   } catch (error) {
-    // Config file might not exist yet, that's okay
+ 
     console.warn('[CONFIG] Config file not found, using defaults')
   }
   
-  // Master key is required
-  const masterKey = getMasterKey()
+  let masterKey = getMasterKey()
   if (!masterKey) {
-    throw new Error('Master key not found. Set ZS_AI_MASTER_KEY env var or initialize proxy.')
+    masterKey = initializeMasterKey()
   }
 
   const mode = fileConfig?.mode || DEFAULT_MODE
@@ -61,7 +60,7 @@ export function loadConfig(): ProxyConfig {
   const port = serverConfig.port || (fileConfig as any)?.port || DEFAULT_PORT
   const host = serverConfig.host || DEFAULT_HOST
 
-  // Normalize email config
+ 
   let emailConfig: ProxyConfig['email'] = undefined
   if (fileConfig?.email) {
     emailConfig = {
@@ -78,7 +77,7 @@ export function loadConfig(): ProxyConfig {
     port,
     host,
     publicUrl: fileConfig?.publicUrl,
-    // Live mode credentials (only used in live mode)
+ 
     backendUrl: fileConfig?.backendUrl,
     pdpUrl: fileConfig?.pdpUrl,
     projectId: fileConfig?.projectId,

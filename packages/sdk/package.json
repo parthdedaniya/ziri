@@ -1,24 +1,31 @@
 {
   "name": "@zs-ai/sdk",
   "version": "1.0.0",
+  "description": "ZS AI Gateway User SDK - For end users to make authorized LLM calls",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": "./dist/index.js",
-    "./management": "./dist/management.js",
     "./user": "./dist/user.js"
   },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch"
   },
-  "dependencies": {
-    "@zs-ai/auth-plugin": "file:../auth-plugin",
-    "@zs-ai/config": "file:../config",
-    "@cedar-policy/cedar-wasm": "^4.0.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "typescript": "^5.8.3"
-  }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "llm",
+    "gateway",
+    "ai",
+    "openai",
+    "anthropic"
+  ],
+  "license": "MIT"
 }

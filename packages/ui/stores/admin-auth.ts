@@ -7,7 +7,7 @@ export interface AdminUser {
   name: string
 }
 
-// Cookie helper functions
+ 
 const getCookie = (name: string): string | null => {
   if (typeof document === 'undefined') return null
   const value = `; ${document.cookie}`
@@ -52,12 +52,12 @@ export const useAdminAuthStore = defineStore('adminAuth', {
     setTokens(accessToken: string, refreshToken: string, expiresIn: number, user: AdminUser) {
       this.accessToken = accessToken
       this.refreshToken = refreshToken
-      // Expire 60 seconds early to account for clock skew
+ 
       this.tokenExpiry = new Date(Date.now() + (expiresIn - 60) * 1000)
       this.user = user
       this.error = null
       
-      // Persist to cookie (30 days expiry)
+ 
       if (process.client) {
         const authData = {
           accessToken,
@@ -78,7 +78,7 @@ export const useAdminAuthStore = defineStore('adminAuth', {
       this.serverSessionId = null
       this.error = null
       
-      // Clear cookie
+ 
       if (process.client) {
         removeCookie(COOKIE_NAME)
       }
@@ -93,7 +93,7 @@ export const useAdminAuthStore = defineStore('adminAuth', {
           const data = JSON.parse(stored)
           const expiry = new Date(data.tokenExpiry)
           
-          // Check if token is still valid
+ 
           if (expiry > new Date()) {
             this.accessToken = data.accessToken
             this.refreshToken = data.refreshToken
@@ -101,7 +101,7 @@ export const useAdminAuthStore = defineStore('adminAuth', {
             this.user = data.user
             this.serverSessionId = data.serverSessionId || null
           } else {
-            // Token expired, clear it
+ 
             this.clearAuth()
           }
         }
@@ -120,7 +120,7 @@ export const useAdminAuthStore = defineStore('adminAuth', {
 
     setServerSessionId(sessionId: string | null) {
       this.serverSessionId = sessionId
-      // Update cookie with new session ID
+ 
       if (process.client && this.accessToken && this.refreshToken && this.tokenExpiry && this.user) {
         const authData = {
           accessToken: this.accessToken,
@@ -134,7 +134,7 @@ export const useAdminAuthStore = defineStore('adminAuth', {
     },
 
     async checkServerSession(): Promise<boolean> {
-      // Check if server session changed (server restarted)
+ 
       try {
         const response = await fetch('/api/health')
         if (!response.ok) {
@@ -143,14 +143,14 @@ export const useAdminAuthStore = defineStore('adminAuth', {
         const data = await response.json()
         const currentSessionId = data.sessionId
 
-        // If we have a stored session ID and it changed, server restarted
+ 
         if (this.serverSessionId && currentSessionId && this.serverSessionId !== currentSessionId) {
           console.warn('[AUTH] Server session changed - server restarted, logging out')
           this.clearAuth()
           return false
         }
 
-        // Update stored session ID if we don't have one or if it's new
+ 
         if (currentSessionId && (!this.serverSessionId || this.serverSessionId !== currentSessionId)) {
           this.setServerSessionId(currentSessionId)
         }

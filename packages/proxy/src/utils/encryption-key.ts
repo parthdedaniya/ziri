@@ -1,42 +1,34 @@
-// Encryption key management utility
-// Manages persistent encryption key with multi-source fallback
+ 
+ 
 
 import { randomBytes } from 'crypto'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from 'fs'
 import { join } from 'path'
-import { getConfigDir, readConfig, writeConfig } from '@zs-ai/config'
+import { getConfigDir, readConfig, writeConfig } from '../config/index.js'
 
 const CONFIG_DIR = getConfigDir()
 const ENCRYPTION_KEY_FILE = join(CONFIG_DIR, 'encryption.key')
 
-// Store encryption key in memory
+ 
 let currentEncryptionKey: string | null = null
 
-/**
- * Generate a new encryption key (cryptographically secure)
- */
+ 
 export function generateEncryptionKey(): string {
-  // Generate 32 random bytes (256 bits)
+ 
   const key = randomBytes(32).toString('hex')
   return key
 }
 
-/**
- * Get encryption key from multiple sources (priority order)
- * 1. Environment variable (ZS_AI_ENCRYPTION_KEY)
- * 2. Secure file (~/.zs-ai/encryption.key)
- * 3. Config file (encryptionKey field)
- * 4. Auto-generate and store in config
- */
+ 
 export function getEncryptionKey(): string | null {
-  // Priority 1: Environment variable
+ 
   const envKey = process.env.ZS_AI_ENCRYPTION_KEY
   if (envKey && envKey.trim().length > 0) {
     currentEncryptionKey = envKey.trim()
     return currentEncryptionKey
   }
 
-  // Priority 2: Secure file
+ 
   if (existsSync(ENCRYPTION_KEY_FILE)) {
     try {
       const fileKey = readFileSync(ENCRYPTION_KEY_FILE, 'utf-8').trim()
@@ -49,7 +41,7 @@ export function getEncryptionKey(): string | null {
     }
   }
 
-  // Priority 3: Config file
+ 
   try {
     const config = readConfig()
     if (config && (config as any).encryptionKey && typeof (config as any).encryptionKey === 'string') {
@@ -63,7 +55,7 @@ export function getEncryptionKey(): string | null {
     console.warn('[ENCRYPTION KEY] Failed to read encryption key from config:', error.message)
   }
 
-  // Priority 4: Return in-memory key if set
+ 
   if (currentEncryptionKey) {
     return currentEncryptionKey
   }
@@ -71,23 +63,20 @@ export function getEncryptionKey(): string | null {
   return null
 }
 
-/**
- * Initialize encryption key (called on startup)
- * Generates new key if none exists and stores it
- */
+ 
 export function initializeEncryptionKey(): string {
-  // Check if key already exists
+ 
   const existingKey = getEncryptionKey()
   if (existingKey) {
     console.log('[ENCRYPTION KEY] Using existing encryption key')
     return existingKey
   }
 
-  // Generate new key
+ 
   const newKey = generateEncryptionKey()
   currentEncryptionKey = newKey
 
-  // Try to save to secure file first
+ 
   try {
     if (!existsSync(CONFIG_DIR)) {
       mkdirSync(CONFIG_DIR, { recursive: true })
@@ -96,7 +85,7 @@ export function initializeEncryptionKey(): string {
     chmodSync(ENCRYPTION_KEY_FILE, 0o600) // Ensure permissions
     console.log(`[ENCRYPTION KEY] Generated and saved to secure file: ${ENCRYPTION_KEY_FILE}`)
   } catch (error: any) {
-    // If file write fails, save to config file as fallback
+ 
     console.warn('[ENCRYPTION KEY] Failed to save to secure file, saving to config file instead:', error.message)
     try {
       const config = readConfig() || {}
@@ -116,9 +105,7 @@ export function initializeEncryptionKey(): string {
   return newKey
 }
 
-/**
- * Save encryption key to a specific location
- */
+ 
 export function saveEncryptionKey(key: string, location: 'file' | 'config'): void {
   currentEncryptionKey = key.trim()
 

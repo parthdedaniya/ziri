@@ -10,30 +10,24 @@ definePageMeta({
 
 const { getAuthHeader } = useUnifiedAuth()
 
-// Filters
 const searchQuery = ref('')
 const filterDecision = ref<'' | 'permit' | 'forbid'>('')
 const filterProvider = ref('')
 const filterModel = ref('')
 const dateRange = ref<'today' | '7d' | '30d' | 'all'>('7d')
 
-// Pagination
 const currentPage = ref(1)
-const itemsPerPage = ref(10) // Default to 10 items per page
+const itemsPerPage = ref(10)
 
-// Sorting state
 const sortBy = ref<string | null>(null)
 const sortOrder = ref<'asc' | 'desc' | null>(null)
 
-// Loading state
 const isLoading = ref(true)
 const allLogs = ref<any[]>([])
-const totalLogs = ref<number | undefined>(undefined) // Total count from API for pagination (undefined until loaded)
+const totalLogs = ref<number | undefined>(undefined)
 
-// Debounced search query
 const debouncedSearchQuery = useDebounce(searchQuery, 300)
 
-// Calculate date range
 const getDateRange = () => {
   const now = new Date()
   switch (dateRange.value) {
@@ -60,7 +54,6 @@ const getDateRange = () => {
   }
 }
 
-// Fetch logs from API
 const fetchLogs = async () => {
   try {
     isLoading.value = true
@@ -79,7 +72,7 @@ const fetchLogs = async () => {
     if (dateRangeParams.endDate) params.set('endDate', dateRangeParams.endDate)
     if (searchQuery.value) params.set('search', searchQuery.value)
     
-    // Send sort parameters
+ 
     if (sortBy.value) {
       params.set('sortBy', sortBy.value)
     }
@@ -96,37 +89,30 @@ const fetchLogs = async () => {
     if (response.ok) {
       const data = await response.json()
       allLogs.value = data.data || []
-      totalLogs.value = data.total !== undefined ? data.total : undefined // Use total count from API for pagination
+      totalLogs.value = data.total !== undefined ? data.total : undefined
     }
   } catch (error) {
-    // Error handled silently
+ 
   } finally {
     isLoading.value = false
   }
 }
 
-// Handle sort change
 const handleSort = (newSortBy: string | null, newSortOrder: 'asc' | 'desc' | null) => {
   sortBy.value = newSortBy
   sortOrder.value = newSortOrder
-  // Reset to first page when sorting changes
   currentPage.value = 1
 }
 
-// Watch for filter changes (including debounced search query and sorting)
 watch([filterDecision, filterProvider, filterModel, dateRange, currentPage, itemsPerPage, debouncedSearchQuery, sortBy, sortOrder], () => {
   fetchLogs()
 })
 
-// Real-time updates via SSE
 const { isConnected, error: sseError } = useRealtimeUpdates({
   onAuditLogCreated: (event) => {
-    console.log('[LOGS] Audit log created event received:', event)
-    // Check if new log matches current filters
     const dateRangeParams = getDateRange()
     const eventDate = event.data.timestamp ? new Date(event.data.timestamp) : new Date()
     
-    // Check date range filter
     let matchesDateRange = true
     if (dateRangeParams.startDate) {
       matchesDateRange = eventDate >= new Date(dateRangeParams.startDate)
@@ -135,42 +121,23 @@ const { isConnected, error: sseError } = useRealtimeUpdates({
       matchesDateRange = eventDate <= new Date(dateRangeParams.endDate)
     }
     
-    // Check decision filter
     const matchesDecision = !filterDecision.value || event.data.decision === filterDecision.value
-    
-    // Check provider filter
     const matchesProvider = !filterProvider.value || event.data.provider === filterProvider.value
-    
-    // Check model filter
     const matchesModel = !filterModel.value || event.data.model === filterModel.value
     
-    console.log('[LOGS] Filter match check:', { matchesDateRange, matchesDecision, matchesProvider, matchesModel, currentPage: currentPage.value })
-    
-    // If matches all filters and we're on first page, refetch
     if (matchesDateRange && matchesDecision && matchesProvider && matchesModel) {
-      // Only refetch if we're on the first page (new entries appear at top)
       if (currentPage.value === 1) {
-        console.log('[LOGS] Refetching logs due to new audit log')
         fetchLogs()
       }
     }
   },
   onBatchUpdate: (event) => {
-    console.log('[LOGS] Batch update event received:', event)
-    // For batch updates, always refetch if on first page
     if (currentPage.value === 1) {
-      console.log('[LOGS] Refetching logs due to batch update')
       fetchLogs()
     }
   }
 })
 
-// Debug: Log SSE connection status
-watch([isConnected, sseError], ([connected, err]) => {
-  console.log('[LOGS] SSE connection status:', { connected, error: err })
-})
-
-// Fetch cost data for each log entry
 const getCostForLog = async (requestId: string) => {
   try {
     const authHeader = getAuthHeader()
@@ -187,13 +154,10 @@ const getCostForLog = async (requestId: string) => {
       return data.data?.[0]?.total_cost || 0
     }
   } catch (error) {
-    // Error handled silently
+ 
   }
   return 0
 }
-
-// Note: Search is now handled server-side via API, so filteredLogs is removed
-// The search query is sent to the API which filters results in the database
 
 const uniqueProviders = computed(() => {
   return [...new Set(allLogs.value.map(log => log.provider).filter(Boolean))].sort()

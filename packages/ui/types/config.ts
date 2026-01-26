@@ -1,15 +1,15 @@
 export interface GatewayConfig {
-    // Operation mode
+ 
     mode?: 'local' | 'live'  // Default: 'local'
     
-    // Server settings (for local mode)
+ 
     server?: {
         host?: string  // Default: '127.0.0.1'
         port?: number  // Default: 3100
     }
     publicUrl?: string  // Public URL for sharing (ngrok, Tailscale, etc.)
     
-    // Email settings (for local mode)
+ 
     email?: {
         enabled?: boolean
         provider?: 'smtp' | 'sendgrid' | 'manual'
@@ -28,7 +28,7 @@ export interface GatewayConfig {
         from?: string
     }
     
-    // Legacy fields (kept for backward compatibility, not used in local mode)
+ 
     projectId?: string
     orgId?: string
     clientId?: string

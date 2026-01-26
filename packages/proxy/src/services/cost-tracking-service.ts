@@ -1,4 +1,4 @@
-// Cost tracking service - tracks LLM request costs and updates UserKey spend
+ 
 
 import type Database from 'better-sqlite3'
 import { getDatabase } from '../db/index.js'
@@ -41,7 +41,7 @@ export class CostTrackingService {
   }
 
   async trackCost(entry: CostTrackingEntry): Promise<number> {
-    // Calculate cost
+ 
     const costCalc = await this.pricingService.calculateCost(
       entry.provider,
       entry.modelUsed || entry.modelRequested,
@@ -50,7 +50,7 @@ export class CostTrackingService {
       entry.cachedTokens || 0
     )
 
-    // Insert into cost_tracking table
+ 
     const stmt = this.db.prepare(`
       INSERT INTO cost_tracking (
         request_id, execution_key, audit_log_id,
@@ -92,15 +92,15 @@ export class CostTrackingService {
       entry.errorMessage || null
     )
 
-    // Update UserKey entity spend
-    // Get the UserKey ID from the entities table by looking up via the key
-    // The executionKey is the user_agent_keys.id, we need to find the UserKey entity
+ 
+ 
+ 
     const keyRecord = this.db.prepare(
       'SELECT auth_id FROM user_agent_keys WHERE id = ?'
     ).get(entry.executionKey) as { auth_id: string } | undefined
 
     if (keyRecord) {
-      // Use keyService to find UserKey entity ID
+ 
       const { getUserKeyIdForUser } = await import('./key-service.js')
       const userKeyId = await getUserKeyIdForUser(keyRecord.auth_id)
       
@@ -171,5 +171,5 @@ export class CostTrackingService {
   }
 }
 
-// Export singleton instance
+ 
 export const costTrackingService = new CostTrackingService()

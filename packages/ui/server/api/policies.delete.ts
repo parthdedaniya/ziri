@@ -1,4 +1,4 @@
-// Proxy delete policy API to proxy server
+ 
 
 import { getAuthHeader } from '../utils/auth'
 
@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
     })
   }
   
-  // Always use Authorization header (admin JWT token)
+ 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Authorization': authHeader.startsWith('Bearer ') ? authHeader : `Bearer ${authHeader}`

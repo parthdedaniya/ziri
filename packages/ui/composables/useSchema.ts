@@ -17,7 +17,7 @@ export function useSchema() {
                 throw new Error('Please login first')
             }
             
-            // Call proxy server endpoint (local mode) with auth header
+ 
             const url = format === 'cedar' ? '/api/schema?format=cedar' : '/api/schema'
             const response = await fetch(url, {
                 headers: {
@@ -33,15 +33,15 @@ export function useSchema() {
             const data: SchemaApiResponse = await response.json()
 
             
-            // Store both formats if available
+ 
             if (format === 'cedar') {
-                // Store Cedar text
+ 
                 schemaStore.schemaCedarText = typeof data.data.schema === 'string' 
                     ? data.data.schema 
                     : (data.data.schemaJson ? null : JSON.stringify(data.data.schema, null, 2))
                 schemaStore.schema = data.data.schemaJson || (typeof data.data.schema === 'object' ? data.data.schema : null)
             } else {
-                // Store JSON
+ 
                 schemaStore.schema = typeof data.data.schema === 'object' ? data.data.schema : (data.data.schemaJson || null)
                 schemaStore.schemaCedarText = typeof data.data.schema === 'string' ? data.data.schema : null
             }
@@ -78,7 +78,7 @@ export function useSchema() {
                 throw new Error('Please login first')
             }
             
-            // Call proxy server endpoint (local mode) with auth header
+ 
             const url = format === 'cedar' ? '/api/schema?format=cedar' : '/api/schema'
             const response = await fetch(url, {
                 method: 'POST',
@@ -96,19 +96,19 @@ export function useSchema() {
             
             const data: SchemaApiResponse = await response.json()
             
-            // Store both formats if available
+ 
             if (data.data.schemaJson) {
                 schemaStore.schema = data.data.schemaJson
             } else {
                 schemaStore.schema = typeof data.data.schema === 'object' ? data.data.schema : null
             }
             
-            // Store Cedar text if available
+ 
             if (typeof data.data.schema === 'string') {
                 schemaStore.schemaCedarText = data.data.schema
             } else if (data.data.format === 'cedar' && data.data.schemaJson) {
-                // If format is cedar but schema is JSON, we need to convert
-                // This shouldn't happen, but handle it gracefully
+ 
+ 
                 schemaStore.schemaCedarText = null
             } else {
                 schemaStore.schemaCedarText = null

@@ -1,23 +1,20 @@
-// Config routes - expose configuration (read-only) and allow updates
+ 
 
 import { Router, type Request, type Response } from 'express'
 import { loadConfig } from '../config.js'
 import { getMasterKey } from '../utils/master-key.js'
 import { requireAdmin } from '../middleware/auth.js'
-import { writeConfig } from '@zs-ai/config'
+import { writeConfig } from '../config/index.js'
 
 const router: Router = Router()
 
-/**
- * GET /api/config
- * Get current configuration (read-only, for UI display)
- */
+ 
 router.get('/', (req: Request, res: Response) => {
   try {
     const config = loadConfig()
     
-    // Return config with master key (for display in UI)
-    // Master key is already required for admin operations, so exposing it here is acceptable
+ 
+ 
     res.json({
       mode: config.mode,
       server: {
@@ -37,18 +34,15 @@ router.get('/', (req: Request, res: Response) => {
   }
 })
 
-/**
- * POST /api/config
- * Update configuration (requires admin authentication)
- */
+ 
 router.post('/', requireAdmin, (req: Request, res: Response) => {
   try {
     const { mode, server, publicUrl, email, logLevel } = req.body
     
-    // Read existing config to preserve other fields
+ 
     const existing = loadConfig()
     
-    // Build updated config object
+ 
     const updatedConfig: any = {
       mode: mode || existing.mode || 'local',
       server: server || {
@@ -60,7 +54,7 @@ router.post('/', requireAdmin, (req: Request, res: Response) => {
       logLevel: logLevel || existing.logLevel || 'info'
     }
     
-    // Preserve live mode credentials if they exist
+ 
     if (existing.backendUrl) updatedConfig.backendUrl = existing.backendUrl
     if (existing.orgId) updatedConfig.orgId = existing.orgId
     if (existing.projectId) updatedConfig.projectId = existing.projectId
@@ -68,7 +62,7 @@ router.post('/', requireAdmin, (req: Request, res: Response) => {
     if (existing.clientSecret) updatedConfig.clientSecret = existing.clientSecret
     if (existing.pdpUrl) updatedConfig.pdpUrl = existing.pdpUrl
     
-    // Write config to file
+ 
     writeConfig(updatedConfig)
     
     console.log('[CONFIG] Configuration updated:', {

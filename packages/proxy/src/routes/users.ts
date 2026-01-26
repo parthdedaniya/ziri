@@ -1,4 +1,4 @@
-// User management routes (admin only - requires master key)
+ 
 
 import { Router, type Request, type Response } from 'express'
 import { requireAdmin } from '../middleware/auth.js'
@@ -6,13 +6,10 @@ import * as userService from '../services/user-service.js'
 
 const router: Router = Router()
 
-// All routes require admin authentication
+ 
 router.use(requireAdmin)
 
-/**
- * GET /api/users
- * List all users with optional search, limit, and offset
- */
+ 
 router.get('/', (req: Request, res: Response) => {
   try {
     const {
@@ -44,10 +41,7 @@ router.get('/', (req: Request, res: Response) => {
   }
 })
 
-/**
- * GET /api/users/:userId
- * Get user by userId
- */
+ 
 router.get('/:userId', (req: Request, res: Response) => {
   try {
     const { userId } = req.params
@@ -71,10 +65,7 @@ router.get('/:userId', (req: Request, res: Response) => {
   }
 })
 
-/**
- * POST /api/users
- * Create a new user
- */
+ 
 router.post('/', async (req: Request, res: Response) => {
   try {
     const { email, name, department, isAgent, limitRequestsPerMinute } = req.body
@@ -125,10 +116,7 @@ router.post('/', async (req: Request, res: Response) => {
   }
 })
 
-/**
- * PUT /api/users/:userId
- * Update user
- */
+ 
 router.put('/:userId', async (req: Request, res: Response) => {
   try {
     const { userId } = req.params
@@ -163,10 +151,7 @@ router.put('/:userId', async (req: Request, res: Response) => {
   }
 })
 
-/**
- * DELETE /api/users/:userId
- * Delete user (with cascade: keys → entities → refresh tokens)
- */
+ 
 router.delete('/:userId', async (req: Request, res: Response) => {
   try {
     const { userId } = req.params
@@ -191,10 +176,7 @@ router.delete('/:userId', async (req: Request, res: Response) => {
   }
 })
 
-/**
- * POST /api/users/:userId/reset-password
- * Reset user password
- */
+ 
 router.post('/:userId/reset-password', async (req: Request, res: Response) => {
   try {
     const { userId } = req.params

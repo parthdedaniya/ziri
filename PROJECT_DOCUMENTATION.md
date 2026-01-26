@@ -630,8 +630,13 @@ CREATE INDEX idx_rate_limit_expire ON rate_limit_buckets(expire);
 
 #### `GET /api/users`
 - **Auth:** Admin JWT
-- **Query Params:** `search` (optional), `limit` (optional, default: 100), `offset` (optional, default: 0)
-- **Returns:** `{ users: User[], total: number }` - Paginated list of users with server-side search
+- **Query Params:** 
+  - `search` (optional) - Server-side search
+  - `limit` (optional, default: 100) - Pagination limit
+  - `offset` (optional, default: 0) - Pagination offset
+  - `sortBy` (optional) - Sort column (name, email, userId, department, createdAt, updatedAt, lastSignIn, status)
+  - `sortOrder` (optional: 'asc' | 'desc') - Sort order
+- **Returns:** `{ users: User[], total: number }` - Paginated list of users with server-side search and sorting
 - **Search:** Searches across name, email, and userId fields
 
 #### `POST /api/users`
@@ -674,8 +679,13 @@ CREATE INDEX idx_rate_limit_expire ON rate_limit_buckets(expire);
 
 #### `GET /api/providers`
 - **Auth:** Admin JWT
-- **Query Params:** `search` (optional), `limit` (optional, default: 100), `offset` (optional, default: 0)
-- **Returns:** `{ providers: Provider[], total: number }` - Paginated list of providers with server-side search
+- **Query Params:** 
+  - `search` (optional) - Server-side search
+  - `limit` (optional, default: 100) - Pagination limit
+  - `offset` (optional, default: 0) - Pagination offset
+  - `sortBy` (optional) - Sort column (name, displayName, createdAt, updatedAt)
+  - `sortOrder` (optional: 'asc' | 'desc') - Sort order
+- **Returns:** `{ providers: Provider[], total: number }` - Paginated list of providers with server-side search and sorting
 - **Search:** Searches across name, displayName, and baseUrl fields
 
 #### `POST /api/providers`
@@ -712,7 +722,9 @@ CREATE INDEX idx_rate_limit_expire ON rate_limit_buckets(expire);
   - `limit` (optional, default: 100) - Pagination limit
   - `offset` (optional, default: 0) - Pagination offset
   - `entityType` (optional) - Filter by entity type (e.g., 'UserKey', 'User')
-- **Returns:** `{ data: Entity[], total: number }` - Paginated list of entities with server-side search
+  - `sortBy` (optional) - Sort column (varies by entity type)
+  - `sortOrder` (optional: 'asc' | 'desc') - Sort order
+- **Returns:** `{ data: Entity[], total: number }` - Paginated list of entities with server-side search and sorting
 - **Search:** For UserKey entities, searches userId; for User entities, searches name, email, userId
 
 #### `POST /api/entities`
@@ -745,8 +757,14 @@ CREATE INDEX idx_rate_limit_expire ON rate_limit_buckets(expire);
 
 #### `GET /api/policies`
 - **Auth:** Admin JWT
-- **Query Params:** `search` (optional), `limit` (optional, default: 100), `offset` (optional, default: 0), `effect` (optional: 'permit' | 'forbid')
-- **Returns:** `{ data: { policies: Policy[] }, total: number }` - Paginated list of policies with server-side search
+- **Query Params:** 
+  - `search` (optional) - Server-side search
+  - `limit` (optional, default: 100) - Pagination limit
+  - `offset` (optional, default: 0) - Pagination offset
+  - `effect` (optional: 'permit' | 'forbid') - Filter by effect type
+  - `sortBy` (optional) - Sort column (description, status, effect, createdAt, updatedAt)
+  - `sortOrder` (optional: 'asc' | 'desc') - Sort order
+- **Returns:** `{ data: { policies: Policy[] }, total: number }` - Paginated list of policies with server-side search, filtering, and sorting
 - **Search:** Searches across policy description and policy content
 - **Effect Filter:** Filters policies by effect type (permit/forbid)
 
@@ -777,20 +795,27 @@ CREATE INDEX idx_rate_limit_expire ON rate_limit_buckets(expire);
 #### `POST /api/chat/completions`
 - **Auth:** API Key (X-API-Key header)
 - **Body:** `{ provider, model, messages, ... }`
-- **Returns:** LLM completion response with `_meta.requestId` and `_meta.cost`
+- **Returns:** LLM completion response with `_meta.requestId`, `_meta.cost.estimated`, `_meta.cost.actual`, and `_meta.cost.estimation`
 - **Process:**
   1. Generate unique `requestId`
   2. Validate API key and load UserKey entity
-  3. **Check and reset spend** (daily/monthly boundaries)
-  4. Build Cedar authorization request with `model_provider` in context
-  5. **Log authorization decision** in `audit_logs` (permit/forbid)
-  6. If allowed:
+  3. **Estimate cost** before authorization (using CostEstimatorService)
+  4. **Reserve estimated cost** in UserKey entity (temporarily inflate spend for authorization check)
+  5. **Check and reset spend** (daily/monthly boundaries)
+  6. Build Cedar authorization request with `model_provider` in context
+  7. **Log authorization decision** in `audit_logs` (permit/forbid)
+  8. **Emit audit_log_created event** (for real-time updates)
+  9. If denied: Revert reserved cost and return 403
+  10. If allowed:
+     - Acquire queue slot (if concurrent limit reached, queue request)
      - Forward request to LLM provider
      - Extract token usage from response
-     - **Track cost** in `cost_tracking` table
-     - **Update UserKey entity** spend values
+     - **Track actual cost** in `cost_tracking` table (replaces reserved cost)
+     - **Emit cost_tracked event** (for real-time updates)
+     - **Update UserKey entity** spend values (with actual cost)
      - Update audit log with `provider_request_id` and `cost_tracking_id`
-  7. Return response with metadata
+     - Release queue slot
+  11. Return response with metadata (including estimated and actual cost)
 
 ### Me Routes (`/api/me`)
 
@@ -827,7 +852,9 @@ CREATE INDEX idx_rate_limit_expire ON rate_limit_buckets(expire);
   - `startDate` (optional) - Filter by start date (ISO timestamp)
   - `endDate` (optional) - Filter by end date (ISO timestamp)
   - `search` (optional) - Server-side search across auth_id, model, and request_id
-- **Returns:** `{ data: AuditLog[], count: number, total: number }` - Paginated audit logs with filtering and search
+  - `sortBy` (optional) - Sort column (request_timestamp, auth_id, provider, model, decision, auth_duration_ms)
+  - `sortOrder` (optional: 'asc' | 'desc') - Sort order
+- **Returns:** `{ data: AuditLog[], count: number, total: number }` - Paginated audit logs with filtering, search, and sorting
 
 #### `GET /api/audit/statistics`
 - **Auth:** Admin JWT
@@ -848,6 +875,22 @@ CREATE INDEX idx_rate_limit_expire ON rate_limit_buckets(expire);
 - **Body:** `{ mode, server, publicUrl, email, logLevel }`
 - **Returns:** Updated configuration
 
+### Event Routes (`/api/events`)
+
+#### `GET /api/events`
+- **Auth:** Admin JWT (via query parameter `?token=...` or Authorization header)
+- **Returns:** Server-Sent Events (SSE) stream
+- **Events:**
+  - `audit_log_created` - New audit log entry created
+  - `cost_tracked` - New cost tracked
+  - `batch_update` - Multiple events batched together
+- **Features:**
+  - Real-time updates for Logs, Analytics, and Dashboard pages
+  - Events buffered for 2 seconds (backend) and debounced 500ms (frontend)
+  - Automatic reconnection on disconnect
+  - Pauses when browser tab is hidden (saves resources)
+  - Heartbeat every 30 seconds to keep connection alive
+
 ---
 
 ## Frontend Structure
@@ -861,6 +904,7 @@ CREATE INDEX idx_rate_limit_expire ON rate_limit_buckets(expire);
    - Requests today and average cost per request
    - Recent activity feed from audit logs
    - Quick actions
+   - Real-time updates via SSE (auto-refreshes when new audit logs or costs are created)
 
 2. **`/users`** - `packages/ui/pages/users/index.vue`
    - List all users with server-side search and pagination
@@ -901,10 +945,11 @@ CREATE INDEX idx_rate_limit_expire ON rate_limit_buckets(expire);
    - **Pagination:** Server-side pagination with total count
 
 7. **`/logs`** - `packages/ui/pages/logs.vue`
-   - View comprehensive audit logs with server-side search and pagination
+   - View comprehensive audit logs with server-side search, pagination, and sorting
    - Filter by decision, provider, model, date range
-   - Real-time authorization decision tracking
+   - Real-time updates via SSE (auto-refreshes when new logs match current filters)
    - **Search:** Debounced search (300ms) across auth_id, model, and request_id
+   - **Sorting:** Click column headers to sort (request_timestamp, auth_id, provider, model, decision, auth_duration_ms)
    - **Pagination:** Server-side pagination with total count (default: 10 items per page)
 
 8. **`/analytics`** - `packages/ui/pages/analytics.vue`
@@ -912,6 +957,7 @@ CREATE INDEX idx_rate_limit_expire ON rate_limit_buckets(expire);
    - Daily cost trend charts
    - Cost breakdown by provider and model
    - Usage statistics
+   - Real-time updates via SSE (auto-refreshes when new costs are tracked)
 
 9. **`/schema`** - `packages/ui/pages/schema.vue`
    - View/edit Cedar schema
@@ -1131,7 +1177,21 @@ The service factory provides singleton access to services based on mode (local o
 - Handles partial matching for date-suffixed models
 - Falls back to default rates if pricing not found
 
-#### 10. AuditLogService (`packages/proxy/src/services/audit-log-service.ts`)
+#### 10. EventEmitterService (`packages/proxy/src/services/event-emitter-service.ts`)
+
+**Methods:**
+- `emitEvent(type, data)` - Emit an event (buffered, sent in next batch)
+- `flush()` - Force flush buffer immediately
+- `destroy()` - Cleanup on shutdown
+
+**Key Features:**
+- Buffers events for 2 seconds before sending (prevents server overload)
+- Batches multiple events together when possible
+- Sends events to all connected SSE clients
+- Max buffer size: 1000 events (prevents memory issues)
+- Event types: `audit_log_created`, `cost_tracked`, `batch_update`
+
+#### 11. AuditLogService (`packages/proxy/src/services/audit-log-service.ts`)
 
 **Methods:**
 - `log(entry)` - Log authorization decision
@@ -1147,7 +1207,20 @@ The service factory provides singleton access to services based on mode (local o
 - Links to cost tracking records
 - Supports comprehensive filtering, server-side search, and pagination
 
-#### 11. CostTrackingService (`packages/proxy/src/services/cost-tracking-service.ts`)
+#### 11. CostEstimatorService (`packages/proxy/src/services/cost-estimator-service.ts`)
+
+**Methods:**
+- `estimateCost(provider, model, messages, maxTokens)` - Estimate cost before making request
+
+**Key Features:**
+- Estimates input/output tokens based on message content and model characteristics
+- Uses character-to-token ratios (provider-specific)
+- Applies output token ratios based on model type
+- Includes 30% safety buffer for accuracy
+- Returns full-precision cost estimate (not rounded)
+- Confidence levels: high, medium, low
+
+#### 12. CostTrackingService (`packages/proxy/src/services/cost-tracking-service.ts`)
 
 **Methods:**
 - `trackCost(entry)` - Track LLM request cost
@@ -1158,7 +1231,7 @@ The service factory provides singleton access to services based on mode (local o
 - Updates UserKey entity spend values automatically
 - Links to audit logs and provider request IDs
 
-#### 12. SpendResetService (`packages/proxy/src/services/spend-reset-service.ts`)
+#### 13. SpendResetService (`packages/proxy/src/services/spend-reset-service.ts`)
 
 **Methods:**
 - `checkAndResetSpend(userKeyId)` - Check and reset daily/monthly spend if needed
@@ -1169,7 +1242,7 @@ The service factory provides singleton access to services based on mode (local o
 - Updates UserKey entity in database
 - Called before authorization to ensure accurate spend values
 
-#### 13. SpendUpdateService (`packages/proxy/src/services/spend-update-service.ts`)
+#### 14. SpendUpdateService (`packages/proxy/src/services/spend-update-service.ts`)
 
 **Methods:**
 - `addSpend(userKeyId, cost)` - Update UserKey entity spend values with full precision
@@ -1183,7 +1256,7 @@ The service factory provides singleton access to services based on mode (local o
 - Maintains spend values for policy evaluation
 - Called after successful LLM requests
 
-#### 14. RateLimiterService (`packages/proxy/src/services/rate-limiter-service.ts`)
+#### 15. RateLimiterService (`packages/proxy/src/services/rate-limiter-service.ts`)
 
 **Methods:**
 - `checkRateLimit(keyType, keyId, config)` - Check if request is within rate limit
@@ -1198,7 +1271,7 @@ The service factory provides singleton access to services based on mode (local o
 - Rate limit data persisted in `rate_limit_buckets` table
 - Automatic cleanup of expired entries
 
-#### 15. QueueManagerService (`packages/proxy/src/services/queue-manager-service.ts`)
+#### 16. QueueManagerService (`packages/proxy/src/services/queue-manager-service.ts`)
 
 **Methods:**
 - `acquireSlot(userKeyId, requestId)` - Acquire a slot for a request (queue if needed)
@@ -1526,7 +1599,23 @@ User and UserKey entities are automatically created/updated when:
 - API key is rotated
 - User is deleted (entities cascade deleted)
 
-### 4. Comprehensive Cost Tracking
+### 4. Cost Estimation and Reservation
+
+**Cost Estimation:**
+- Estimates request cost **before** making the LLM request using CostEstimatorService
+- Predicts input/output tokens based on message content and model characteristics
+- Uses provider-specific character-to-token ratios and model-specific output ratios
+- Includes 30% safety buffer for accuracy
+- Returns full-precision cost estimate (not rounded)
+
+**Cost Reservation:**
+- Temporarily inflates UserKey entity spend with estimated cost **before** authorization
+- Ensures Cedar policies evaluate against reserved amount (prevents concurrent request bypass)
+- Uses full-precision values throughout (rounding only when updating entity attributes)
+- If authorization denied: Reserved cost is reverted
+- If authorization allowed: Reserved cost remains until actual cost replaces it
+
+### 5. Comprehensive Cost Tracking
 
 Every LLM request:
 - Calculates cost based on tokens and model pricing (from `model_pricing` table)
@@ -1540,26 +1629,26 @@ Every LLM request:
 - Supports daily/monthly spend limits (enforced by Cedar policies)
 - Links cost records to audit logs and provider request IDs
 
-### 5. Encryption at Rest
+### 6. Encryption at Rest
 
 Sensitive data is encrypted before storage:
 - User emails (PII protection)
 - API keys (credential protection)
 - Provider API keys (credential protection)
 
-### 6. Role-Based Access Control
+### 7. Role-Based Access Control
 
 - **Admin Role**: Full access to all pages and operations
 - **User Role**: Access only to `/me` page (own profile)
 
-### 7. Refresh Token Rotation
+### 8. Refresh Token Rotation
 
 Refresh tokens are rotated on use:
 - Old token marked as used
 - New token generated
 - Prevents token reuse attacks
 
-### 8. Comprehensive Audit Logging
+### 9. Comprehensive Audit Logging
 
 All authorization decisions are logged in `audit_logs` table:
 - Principal, action, resource, provider, model
@@ -1571,7 +1660,7 @@ All authorization decisions are logged in `audit_logs` table:
 - Links to cost tracking records
 - Supports filtering by decision, provider, model, date range
 
-### 9. Model Pricing Management
+### 10. Model Pricing Management
 
 - Pre-seeded pricing data for OpenAI and Anthropic models
 - Model aliases support (e.g., "gpt-4" → "gpt-4-0613")
@@ -1579,30 +1668,74 @@ All authorization decisions are logged in `audit_logs` table:
 - Automatic cost calculation based on token usage
 - Support for cache pricing (write/read costs)
 
-### 10. Policy Status Management
+### 11. Policy Status Management
 
 - Policies can be activated/deactivated by admins
 - Only active policies (status = 1) are evaluated during authorization
 - Status toggle available in create/edit modals
 - Inactive policies remain in database for audit trail
 
-### 11. Server-Side Search and Pagination
+### 11. Server-Side Search, Pagination, and Sorting
 
-All list endpoints support server-side search and pagination:
-- **Users** (`/api/users`): Search across name, email, userId
-- **Providers** (`/api/providers`): Search across name, displayName, baseUrl
-- **Keys/Entities** (`/api/entities`): Search across entity fields (userId, name, email for UserKey/User entities)
-- **Rules/Policies** (`/api/policies`): Search across description and policy content
-- **Logs** (`/api/audit`): Search across auth_id, model, request_id
+All list endpoints support server-side search, pagination, and sorting:
+- **Users** (`/api/users`): Search across name, email, userId; Sort by name, email, userId, department, createdAt, updatedAt, lastSignIn, status
+- **Providers** (`/api/providers`): Search across name, displayName, baseUrl; Sort by name, displayName, createdAt, updatedAt
+- **Keys/Entities** (`/api/entities`): Search across entity fields (userId, name, email for UserKey/User entities); Sort by various fields depending on entity type
+- **Rules/Policies** (`/api/policies`): Search across description and policy content; Sort by description, status, effect, createdAt, updatedAt
+- **Logs** (`/api/audit`): Search across auth_id, model, request_id; Sort by request_timestamp, auth_id, provider, model, decision, auth_duration_ms
 
 **Features:**
 - **Debounced Search:** All search inputs use 300ms debounce to reduce API calls
 - **Server-Side Filtering:** Searches entire database, not just loaded rows
+- **Server-Side Sorting:** Click column headers to sort (sorts entire database, not just loaded rows)
 - **Accurate Pagination:** Total count reflects filtered results
 - **Default Limits:** Logs page defaults to 10 items per page; others use 20
 - **Consistent API:** All endpoints return `{ data: [], total: number }` format
 
-### 12. Rate Limiting and Queue Management
+### 12. Cost Estimation and Reservation
+
+**Cost Estimation:**
+- Estimates request cost **before** making the LLM request
+- Uses CostEstimatorService to predict input/output tokens
+- Applies provider-specific character-to-token ratios
+- Includes model-specific output token ratios
+- Adds 30% safety buffer for accuracy
+- Returns full-precision cost estimate (not rounded)
+
+**Cost Reservation:**
+- Temporarily inflates UserKey entity spend with estimated cost **before** authorization
+- Ensures Cedar policies evaluate against reserved amount (prevents concurrent request bypass)
+- If authorization denied: Reserved cost is reverted
+- If authorization allowed: Reserved cost remains until actual cost replaces it
+- Uses full-precision values throughout (rounding only when updating entity attributes)
+
+**Flow:**
+1. Estimate cost before queueing
+2. Reserve estimated cost in UserKey entity
+3. Check authorization (Cedar evaluates against reserved spend)
+4. If denied: Revert reservation
+5. If allowed: Make LLM request, track actual cost, replace reservation
+
+### 13. Real-Time Updates (Server-Sent Events)
+
+**Implementation:**
+- SSE endpoint: `GET /api/events` (requires admin authentication)
+- Events buffered for 2 seconds (backend) to prevent overload
+- Frontend debounces events by 500ms
+- Automatic reconnection on disconnect (3-second delay)
+- Pauses when browser tab is hidden (saves resources)
+
+**Event Types:**
+- `audit_log_created` - New audit log entry (triggers refetch on Logs page if filters match)
+- `cost_tracked` - New cost tracked (triggers refetch on Analytics and Dashboard pages)
+- `batch_update` - Multiple events batched together
+
+**Pages with Real-Time Updates:**
+- **Logs** (`/logs`): Auto-refreshes when new audit logs match current filters (only on first page)
+- **Analytics** (`/analytics`): Auto-refreshes cost data when new costs are tracked
+- **Dashboard** (`/`): Auto-refreshes overview stats and recent activity
+
+### 14. Rate Limiting and Queue Management
 
 **Rate Limiting:**
 - Per-user and per-API-key rate limiting using `rate-limiter-flexible`
@@ -1617,7 +1750,7 @@ All list endpoints support server-side search and pagination:
 - Automatic slot management (acquire on start, release on completion/failure)
 - Configurable max concurrent requests and max queue size per user
 
-### 13. Database Migrations
+### 15. Database Migrations
 
 The system uses migration-based schema management:
 - **Migration 003** (`003_audit_cost_tracking.ts`): Creates audit_logs, cost_tracking, model_pricing, model_aliases tables
@@ -1717,85 +1850,3 @@ The system uses migration-based schema management:
 ├── QUICKSTART.md                  # Quick start guide
 └── PROJECT_DOCUMENTATION.md      # This file
 ```
-
----
-
-## Recent Updates
-
-### Server-Side Search and Pagination (Latest)
-
-All list pages now support efficient server-side search and pagination:
-
-**Backend Changes:**
-- All list endpoints (`/api/users`, `/api/providers`, `/api/entities`, `/api/policies`, `/api/audit`) now accept `search`, `limit`, and `offset` parameters
-- Services updated to support search filtering and return `{ data: [], total: number }` format
-- Search queries use SQL `LIKE` patterns for efficient database filtering
-
-**Frontend Changes:**
-- All search inputs use 300ms debounce to reduce API calls while typing
-- Removed client-side filtering in favor of server-side search
-- Pagination uses server-side `total` count for accurate page calculations
-- Search bars remain visible even when no results are found (prevents lockout)
-
-**Pages Updated:**
-- **Users**: Server-side search across name, email, userId
-- **Providers**: Server-side search across name, displayName, baseUrl
-- **Keys**: Server-side search across userId, name, email (status filter remains client-side)
-- **Rules**: Server-side search across description and policy content, effect filtering
-- **Logs**: Server-side search across auth_id, model, request_id (default: 10 items per page)
-
-**Benefits:**
-- Searches entire database, not just loaded rows
-- Better performance with database indexes
-- Accurate pagination with correct total counts
-- Reduced API calls through debouncing
-- Consistent behavior across all pages
-
-### Rate Limiting and Queue Management
-
-**Rate Limiting:**
-- Implemented using `rate-limiter-flexible` with SQLite persistence
-- Per-user and per-API-key rate limiting
-- Configurable requests per minute (0 = unlimited)
-- Rate limit state persisted in `rate_limit_buckets` table
-- Automatic cleanup of expired entries
-
-**Queue Management:**
-- Per-user concurrent request limiting (default: 5 concurrent requests)
-- Persistent queue using `better-queue` with SQLite store
-- Requests automatically queued when user exceeds concurrent limit
-- Manual queue length tracking (better-queue doesn't expose getLength)
-- Automatic slot management (acquire on start, release on completion/failure)
-
-### Cost Tracking Improvements
-
-**Full Precision Storage:**
-- Costs stored in `cost_tracking` table with full precision (no rounding)
-- Daily/monthly spend recalculated from all cost entries since last reset
-- Rounded to 4 decimal places only when updating entity attributes
-- Prevents small costs from being lost to rounding errors
-
-**Implementation:**
-- `SpendUpdateService.addSpend()` calculates total from database with full precision
-- Rounding applied only at entity update time
-- Ensures accurate spend accumulation over time
-
-### Database Migrations
-
-**Migration 003** (`003_audit_cost_tracking.ts`):
-- Creates `audit_logs`, `cost_tracking`, `model_pricing`, `model_aliases` tables
-- Data-preserving: Checks for existing tables before creating
-- Prevents data loss on server restarts
-
-**Migration 004** (`004_rate_limiting.ts`):
-- Creates `rate_limit_buckets` table for rate limiting persistence
-- Schema: `key TEXT PRIMARY KEY, points INTEGER, expire INTEGER`
-- Required for `rate-limiter-flexible` SQLite store
-
-### UI/UX Improvements
-
-- **Debounced Search**: All search inputs use 300ms debounce
-- **Persistent Search Bars**: Search bars remain visible even with no results
-- **Clear Buttons**: Search inputs include clear (X) button when text is entered
-- **Accurate Pagination**: All tables show correct total counts and page numbers
-- **Default Limits**: Logs page defaults to 10 items per page for better performance

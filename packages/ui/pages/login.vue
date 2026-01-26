@@ -140,6 +140,6 @@ const form = reactive({
 
 const handleLogin = async () => {
   await login(form.username, form.password)
-  // Navigation is handled in the composable
+ 
 }
 </script>

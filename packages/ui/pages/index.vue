@@ -19,7 +19,6 @@ const { listKeys } = useKeys()
 const { listRules } = useRules()
 const { getAuthHeader } = useUnifiedAuth()
 
-// Loading state for dashboard
 const isLoading = ref(true)
 const overviewStats = ref({
   totalRequests: 0,
@@ -29,7 +28,6 @@ const overviewStats = ref({
 })
 const recentActivity = ref<any[]>([])
 
-// Fetch overview statistics
 const fetchOverviewStats = async () => {
   try {
     const authHeader = getAuthHeader()
@@ -46,11 +44,10 @@ const fetchOverviewStats = async () => {
       overviewStats.value = data
     }
   } catch (error) {
-    // Error handled silently
+ 
   }
 }
 
-// Fetch recent audit logs
 const fetchRecentActivity = async () => {
   try {
     const authHeader = getAuthHeader()
@@ -70,15 +67,14 @@ const fetchRecentActivity = async () => {
         model: log.model || 'N/A',
         provider: log.provider || 'N/A',
         decision: log.decision === 'permit' ? 'Allow' : 'Deny',
-        cost: log.cost_tracking_id ? 0 : 0 // Cost will be fetched separately if needed
+        cost: log.cost_tracking_id ? 0 : 0
       }))
     }
   } catch (error) {
-    // Error handled silently
+ 
   }
 }
 
-// Fetch additional cost statistics
 const costStats = ref({
   totalTokens: 0,
   avgCostPerRequest: 0,
@@ -90,13 +86,11 @@ const fetchCostStats = async () => {
     const authHeader = getAuthHeader()
     if (!authHeader) return
 
-    // Get today's date range
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const tomorrow = new Date(today)
     tomorrow.setDate(tomorrow.getDate() + 1)
 
-    // Fetch cost summary for today
     const todayParams = new URLSearchParams({
       startDate: today.toISOString(),
       endDate: tomorrow.toISOString()
@@ -114,16 +108,14 @@ const fetchCostStats = async () => {
       costStats.value.requestsToday = todayData.request_count || 0
     }
 
-    // Calculate average cost per request
     if (overviewStats.value.totalRequests > 0) {
       costStats.value.avgCostPerRequest = overviewStats.value.totalCost / overviewStats.value.totalRequests
     }
   } catch (error) {
-    // Error handled silently
+ 
   }
 }
 
-// Auto-load data when page mounts (if config is set)
 onMounted(async () => {
   await nextTick()
   
@@ -137,7 +129,7 @@ onMounted(async () => {
         fetchCostStats()
       ])
     } catch (e) {
-      // Error handled by composables
+ 
     } finally {
       isLoading.value = false
     }
@@ -146,33 +138,27 @@ onMounted(async () => {
   }
 })
 
-// Real-time updates via SSE
 useRealtimeUpdates({
   onAuditLogCreated: () => {
-    // Refetch overview stats and recent activity
     fetchOverviewStats()
     fetchRecentActivity()
     fetchCostStats()
   },
   onCostTracked: () => {
-    // Refetch overview stats and cost stats
     fetchOverviewStats()
     fetchCostStats()
   },
   onBatchUpdate: () => {
-    // For batch updates, refetch everything
     fetchOverviewStats()
     fetchRecentActivity()
     fetchCostStats()
   }
 })
 
-// Dashboard stats
 const stats = computed(() => {
   const keys = keysStore.keys || []
   const rules = rulesStore.rules || []
   
-  // Calculate success rate
   const totalRequests = overviewStats.value.totalRequests || 0
   const permitCount = overviewStats.value.permitCount || 0
   const successRate = totalRequests > 0 ? ((permitCount / totalRequests) * 100).toFixed(1) : '0.0'

@@ -1,39 +1,37 @@
-// Entity service - creates entities in Backend API
+ 
 
 import { loadConfig } from '../config.js'
 import { randomBytes } from 'crypto'
 import * as userService from './user-service.js'
 import { getM2MToken } from './m2m-token-cache.js'
 
-// Generate unique IDs for requests
+ 
 function generateOpId(): string {
   return randomBytes(8).toString('hex')
 }
 
-// Generate session ID (persists for the lifetime of the service)
+ 
 const sessionId = randomBytes(8).toString('hex')
 
-// Import Cedar utilities for proper decimal formatting
+ 
 import { toDecimalOne, toDecimalFour, toIp } from '../utils/cedar.js'
 
 export interface CreateEntityInput {
   userId: string
-  // Entity attributes (from key creation, not user)
+ 
   role?: string
   department?: string
   securityClearance?: number
   trainingCompleted?: boolean
   yearsOfService?: number
-  // Spend limits
+ 
   dailySpendLimit?: number
   monthlySpendLimit?: number
 }
 
-/**
- * Create entity in Backend API
- */
+ 
 export async function createEntityInBackend(input: CreateEntityInput): Promise<void> {
-  // Reload config to get latest values (in case config was updated after proxy started)
+ 
   const config = loadConfig()
   
   console.log('[ENTITY SERVICE] Config values:', {
@@ -57,16 +55,16 @@ export async function createEntityInBackend(input: CreateEntityInput): Promise<v
     throw new Error('Backend API credentials not configured. Please configure the gateway in the UI first.')
   }
   
-  // Get user details (only for name and email - role/department come from input)
+ 
   const user = userService.getUserById(input.userId)
   if (!user) {
     throw new Error('User not found')
   }
   
-  // Get M2M token (from cache or fetch new)
+ 
   const token = await getM2MToken(config)
   
-  // Create entity (use fields from input, not from user)
+ 
   const entity = {
     uid: { type: 'User', id: input.userId },
     attrs: {
@@ -91,7 +89,7 @@ export async function createEntityInBackend(input: CreateEntityInput): Promise<v
     parents: []
   }
   
-  // Make request to Backend API
+ 
   const opId = generateOpId()
   const response = await fetch(`${config.backendUrl}/api/v2025-01/projects/${config.projectId}/entity`, {
     method: 'POST',
@@ -111,22 +109,19 @@ export async function createEntityInBackend(input: CreateEntityInput): Promise<v
   }
 }
 
-/**
- * Delete entity from Backend API
- * Now uses Key::"keyHash" instead of User::"userId"
- */
+ 
 export async function deleteEntityInBackend(keyHash: string): Promise<void> {
-  // Reload config to get latest values
+ 
   const config = loadConfig()
   
   if (!config.orgId || !config.projectId || !config.clientId || !config.clientSecret) {
     throw new Error('Backend API credentials not configured')
   }
   
-  // Get M2M token (from cache or fetch new)
+ 
   const token = await getM2MToken(config)
   
-  // Delete entity: DELETE /entity?entityName=Key::"keyHash"
+ 
   const entityName = `Key::"${keyHash}"`
   const opId = generateOpId()
   

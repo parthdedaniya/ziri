@@ -1,4 +1,4 @@
-// Proxy policies API to proxy server
+ 
 
 import { getAuthHeader } from '../utils/auth'
 
@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
     })
   }
   
-  // Always use Authorization header (admin JWT token)
+ 
   const headers: Record<string, string> = {
     'Authorization': authHeader.startsWith('Bearer ') ? authHeader : `Bearer ${authHeader}`
   }
@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
     }
     
     const data = await response.json()
-    // Return in format expected by UI
+ 
     return data
   } catch (error: any) {
     if (error.statusCode) {

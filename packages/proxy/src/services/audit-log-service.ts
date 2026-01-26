@@ -1,5 +1,3 @@
-// Audit log service - logs all authorization requests
-
 import { randomBytes } from 'crypto'
 import { createHash } from 'crypto'
 import type Database from 'better-sqlite3'
@@ -119,7 +117,6 @@ export class AuditLogService {
     sortBy?: string | null
     sortOrder?: 'asc' | 'desc' | null
   }): Promise<{ data: any[]; total: number }> {
-    // Build WHERE clause for both count and data queries
     let whereClause = 'WHERE 1=1'
     const args: any[] = []
 
@@ -151,23 +148,21 @@ export class AuditLogService {
       whereClause += ' AND request_timestamp <= ?'
       args.push(params.endDate)
     }
-    // Generic search across auth_id, model, and request_id
     if (params.search) {
       const searchPattern = `%${params.search}%`
       whereClause += ' AND (auth_id LIKE ? OR model LIKE ? OR request_id LIKE ?)'
       args.push(searchPattern, searchPattern, searchPattern)
     }
 
-    // Get total count
     const countSql = `SELECT COUNT(*) as total FROM audit_logs ${whereClause}`
     const countResult = this.db.prepare(countSql).get(...args) as { total: number }
     const total = countResult.total
 
-    // Build ORDER BY clause
+ 
     let orderByClause = 'ORDER BY request_timestamp DESC' // Default sort
     if (params?.sortBy && params?.sortOrder) {
-      // Map frontend column names to database column names
-      // Frontend uses snake_case keys that match database columns
+ 
+ 
       const columnMap: Record<string, string> = {
         'request_timestamp': 'request_timestamp',
         'auth_id': 'auth_id',
@@ -184,7 +179,6 @@ export class AuditLogService {
       }
     }
 
-    // Get paginated data (use provided limit, or default to 100 if not specified)
     const limit = params.limit || 100
     const offset = params.offset || 0
     const dataSql = `SELECT * FROM audit_logs ${whereClause} ${orderByClause} LIMIT ? OFFSET ?`
@@ -223,5 +217,4 @@ export class AuditLogService {
   }
 }
 
-// Export singleton instance
 export const auditLogService = new AuditLogService()

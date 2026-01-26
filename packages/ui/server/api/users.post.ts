@@ -1,4 +1,4 @@
-// Proxy users API to proxy server
+ 
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()

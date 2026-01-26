@@ -14,42 +14,42 @@ const { getSchema } = useSchema()
 const { validatePolicies, formatPolicy } = useCedarWasm()
 const toast = useToast()
 
-// Modal state
+ 
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
 const showDeleteModal = ref(false)
 const ruleToDelete = ref<Policy | null>(null)
 const ruleToEdit = ref<Policy | null>(null)
 
-// Filter state
+ 
 const searchQuery = ref('')
 const filterEffect = ref<'' | 'permit' | 'forbid'>('')
 
-// Pagination
+ 
 const currentPage = ref(1)
 const itemsPerPage = ref(20)
 const totalRules = ref(0)
 
-// Sorting state
+ 
 const sortBy = ref<string | null>(null)
 const sortOrder = ref<'asc' | 'desc' | null>(null)
 
-// Form state
+ 
 const newRule = reactive<CreatePolicyInput & { isActive: boolean }>({
   policy: '',
   description: '',
   isActive: true // Default to active when creating
 })
 
-// Validation state
+ 
 const validationErrors = ref<ValidationError[]>([])
 const validationWarnings = ref<ValidationError[]>([])
 const isValidating = ref(false)
 
-// Debounced search query
+ 
 const debouncedSearchQuery = useDebounce(searchQuery, 300)
 
-// Fetch rules with server-side search, pagination, and sorting
+ 
 const fetchRules = async () => {
   try {
     const result = await listRules({
@@ -62,27 +62,27 @@ const fetchRules = async () => {
     })
     totalRules.value = result.total || 0
   } catch (e) {
-    // Error already handled in composable
+ 
   }
 }
 
-// Handle sort change
+ 
 const handleSort = (newSortBy: string | null, newSortOrder: 'asc' | 'desc' | null) => {
   sortBy.value = newSortBy
   sortOrder.value = newSortOrder
-  // Reset to first page when sorting changes
+ 
   currentPage.value = 1
 }
 
-// Watch for filter changes
+ 
 watch([debouncedSearchQuery, filterEffect, currentPage, itemsPerPage, sortBy, sortOrder], () => {
   fetchRules()
 })
 
-// Reset form when opening create modal
+ 
 watch(showCreateModal, (isOpen) => {
   if (isOpen) {
-    // Reset form to empty state when opening create modal
+ 
     newRule.policy = ''
     newRule.description = ''
     newRule.isActive = true
@@ -92,7 +92,7 @@ watch(showCreateModal, (isOpen) => {
   }
 })
 
-// Auto-load rules when page mounts (if config is set)
+ 
 onMounted(async () => {
   await nextTick()
   
@@ -108,9 +108,7 @@ const columns = [
   { key: 'actions', header: '', class: 'w-32' }
 ]
 
-/**
- * Validate policy against schema
- */
+ 
 const validatePolicy = async (policyText: string) => {
   if (!policyText.trim()) {
     validationErrors.value = []
@@ -120,7 +118,7 @@ const validatePolicy = async (policyText: string) => {
   
   isValidating.value = true
   try {
-    // Load schema for validation
+ 
     const schemaData = await getSchema('json')
     const schema = schemaData.schemaJson || schemaData.schema
     
@@ -139,9 +137,7 @@ const validatePolicy = async (policyText: string) => {
   }
 }
 
-/**
- * Debounced validation
- */
+ 
 let validationTimer: NodeJS.Timeout | null = null
 const debouncedValidate = (policyText: string) => {
   if (validationTimer) {
@@ -153,9 +149,7 @@ const debouncedValidate = (policyText: string) => {
   }, 500)
 }
 
-/**
- * Format policy text
- */
+ 
 const formatPolicyText = async (policyText: string) => {
   if (!policyText.trim()) return policyText
   
@@ -164,7 +158,7 @@ const formatPolicyText = async (policyText: string) => {
     if ('formatted' in result) {
       return result.formatted
     } else {
-      // Formatting failed - show errors but keep original text
+ 
       if (result.errors && result.errors.length > 0) {
         result.errors.forEach((error) => {
           if (error.sourceLocations && error.sourceLocations.length > 0) {
@@ -180,23 +174,19 @@ const formatPolicyText = async (policyText: string) => {
   }
 }
 
-/**
- * Handle policy text change
- */
+ 
 const onPolicyChange = (value: string) => {
   newRule.policy = value
   debouncedValidate(value)
 }
 
-/**
- * Handle policy text blur - format on blur
- */
+ 
 const onPolicyBlur = async () => {
   if (newRule.policy.trim()) {
     const formatted = await formatPolicyText(newRule.policy)
     if (formatted !== newRule.policy) {
       newRule.policy = formatted
-      // Re-validate after formatting
+ 
       debouncedValidate(formatted)
     }
   }
@@ -215,9 +205,9 @@ const handleCreateRule = async () => {
   
   try {
     await createRule(newRule)
-    // Set status after creation (if disabled)
+ 
     if (!newRule.isActive) {
-      // Use the formatted policy text
+ 
       const policyToUse = newRule.policy.trim()
       await setRuleStatus(policyToUse, false)
     }
@@ -228,7 +218,7 @@ const handleCreateRule = async () => {
     validationErrors.value = []
     validationWarnings.value = []
   } catch (e) {
-    // Error handled by composable
+ 
   }
 }
 
@@ -239,14 +229,14 @@ const handleEditRule = async (rule: Policy) => {
   validationErrors.value = []
   validationWarnings.value = []
   
-  // Format policy text when opening edit modal
+ 
   try {
     const formatted = await formatPolicyText(rule.policy)
     newRule.policy = formatted
-    // Validate the formatted policy
+ 
     validatePolicy(formatted)
   } catch (e) {
-    // If formatting fails, use original policy
+ 
     newRule.policy = rule.policy
     validatePolicy(rule.policy)
   }
@@ -268,12 +258,12 @@ const handleUpdateRule = async () => {
   }
   
   try {
-    // Update status first (using old policy text) if it changed
-    // This ensures we can find the policy even if content changes
+ 
+ 
     if (newRule.isActive !== ruleToEdit.value.isActive) {
       await setRuleStatus(ruleToEdit.value.policy, newRule.isActive)
     }
-    // Then update policy content (if policy text changed)
+ 
     if (ruleToEdit.value.policy !== newRule.policy || ruleToEdit.value.description !== newRule.description) {
       await updateRule(ruleToEdit.value.policy, newRule)
     }
@@ -285,7 +275,7 @@ const handleUpdateRule = async () => {
     validationErrors.value = []
     validationWarnings.value = []
   } catch (e) {
-    // Error handled by composable
+ 
   }
 }
 
@@ -312,7 +302,7 @@ const handleDeleteRule = async () => {
     showDeleteModal.value = false
     ruleToDelete.value = null
   } catch (e) {
-    // Error handled by composable
+ 
   }
 }
 </script>

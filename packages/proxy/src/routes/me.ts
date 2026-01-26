@@ -1,5 +1,5 @@
-// User-specific routes (for authenticated users to access their own data)
-// Uses new auth table and user_agent_keys
+ 
+ 
 
 import { Router, type Request, type Response } from 'express'
 import { requireAuth, type AuthenticatedRequest } from '../middleware/jwt-auth.js'
@@ -9,13 +9,10 @@ import { serviceFactory } from '../services/service-factory.js'
 
 const router: Router = Router()
 
-// All routes require authentication
+ 
 router.use(requireAuth)
 
-/**
- * GET /api/me
- * Get current user info
- */
+ 
 router.get('/', (req: AuthenticatedRequest, res: Response) => {
   try {
     const db = getDatabase()
@@ -29,7 +26,7 @@ router.get('/', (req: AuthenticatedRequest, res: Response) => {
       return
     }
     
-    // Decrypt email
+ 
     let decryptedEmail: string
     try {
       decryptedEmail = decrypt(user.email)
@@ -56,11 +53,7 @@ router.get('/', (req: AuthenticatedRequest, res: Response) => {
   }
 })
 
-/**
- * GET /api/me/keys
- * Get current user's API key (with actual API key from database)
- * Now returns UserKey entity with linked API key
- */
+ 
 router.get('/keys', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.userId
@@ -72,12 +65,12 @@ router.get('/keys', async (req: AuthenticatedRequest, res: Response) => {
       return
     }
     
-    // Get UserKey entity for this user
+ 
     const entityStore = serviceFactory.getEntityStore()
     const allEntitiesResult = await entityStore.getEntities()
     const allEntities = allEntitiesResult.data
     
-    // Find UserKey entity where user.__entity.id matches userId
+ 
     const userKeyEntity = allEntities.find(e =>
       e.uid.type === 'UserKey' &&
       (e.attrs as any).user &&
@@ -92,7 +85,7 @@ router.get('/keys', async (req: AuthenticatedRequest, res: Response) => {
       return
     }
     
-    // Get the active API key linked to this user (from user_agent_keys)
+ 
     const db = getDatabase()
     const dbKey = db.prepare('SELECT key_value FROM user_agent_keys WHERE auth_id = ? ORDER BY created_at DESC LIMIT 1').get(userId) as { key_value: string } | undefined
     
@@ -120,10 +113,7 @@ router.get('/keys', async (req: AuthenticatedRequest, res: Response) => {
   }
 })
 
-/**
- * GET /api/me/usage
- * Get current user's usage stats from UserKey entity
- */
+ 
 router.get('/usage', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.userId
@@ -135,12 +125,12 @@ router.get('/usage', async (req: AuthenticatedRequest, res: Response) => {
       return
     }
     
-    // Get UserKey entity for this user
+ 
     const entityStore = serviceFactory.getEntityStore()
     const allEntitiesResult = await entityStore.getEntities()
     const allEntities = allEntitiesResult.data
     
-    // Find UserKey entity where user.__entity.id matches userId
+ 
     const userKeyEntity = allEntities.find(e =>
       e.uid.type === 'UserKey' &&
       (e.attrs as any).user &&
@@ -160,7 +150,7 @@ router.get('/usage', async (req: AuthenticatedRequest, res: Response) => {
       return
     }
     
-    // Parse decimal values from UserKey entity
+ 
     const parseDecimal = (value: any): number => {
       if (typeof value === 'number') return value
       if (typeof value === 'string') return parseFloat(value) || 0
@@ -172,8 +162,8 @@ router.get('/usage', async (req: AuthenticatedRequest, res: Response) => {
     
     const attrs = userKeyEntity.attrs || {}
     
-    // UserKey doesn't have spend limits, they're on the User entity
-    // For now, return 0 for limits (or fetch from User entity if needed)
+ 
+ 
     res.json({
       currentDailySpend: parseDecimal(attrs.current_daily_spend),
       dailySpendLimit: 0, // TODO: Fetch from User entity if limits are needed

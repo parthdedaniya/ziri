@@ -26,7 +26,7 @@ export function useRules() {
                 throw new Error('Please login first')
             }
             
-            // Build query string
+ 
             const queryParams = new URLSearchParams()
             if (params?.search) queryParams.set('search', params.search)
             if (params?.limit) queryParams.set('limit', params.limit.toString())
@@ -37,7 +37,7 @@ export function useRules() {
             
             const url = `/api/policies${queryParams.toString() ? '?' + queryParams.toString() : ''}`
             
-            // Call proxy server endpoint (local mode) with auth header
+ 
             const response = await fetch(url, {
                 headers: {
                     'Authorization': authHeader
@@ -78,7 +78,7 @@ export function useRules() {
                 throw new Error('Please login first')
             }
             
-            // Call proxy server endpoint (local mode) with auth header
+ 
             const response = await fetch('/api/policies', {
                 method: 'POST',
                 headers: {
@@ -96,7 +96,7 @@ export function useRules() {
                 throw new Error(error.error || 'Failed to create policy')
             }
 
-            // Reload rules to get the updated list
+ 
             await listRules()
             toast.success('Rule created successfully')
         } catch (e: any) {
@@ -117,7 +117,7 @@ export function useRules() {
                 throw new Error('Please login first')
             }
             
-            // Call proxy server endpoint (local mode) with auth header
+ 
             const response = await fetch('/api/policies', {
                 method: 'PUT',
                 headers: {
@@ -136,7 +136,7 @@ export function useRules() {
                 throw new Error(error.error || 'Failed to update policy')
             }
 
-            // Reload rules to get the updated list
+ 
             await listRules()
             toast.success('Rule updated successfully')
         } catch (e: any) {
@@ -157,7 +157,7 @@ export function useRules() {
                 throw new Error('Please login first')
             }
             
-            // Call proxy server endpoint (local mode) with auth header
+ 
             const response = await fetch('/api/policies', {
                 method: 'DELETE',
                 headers: {
@@ -172,7 +172,7 @@ export function useRules() {
                 throw new Error(error.error || 'Failed to delete policy')
             }
 
-            // Reload rules to get the updated list
+ 
             await listRules()
             toast.success('Rule deleted successfully')
         } catch (e: any) {

@@ -1,4 +1,4 @@
-// Cost routes - query cost tracking data
+ 
 
 import { Router, type Request, type Response } from 'express'
 import { requireAdmin } from '../middleware/auth.js'
@@ -6,13 +6,10 @@ import { costTrackingService } from '../services/cost-tracking-service.js'
 
 const router: Router = Router()
 
-// All routes require admin authentication
+ 
 router.use(requireAdmin)
 
-/**
- * GET /api/costs/summary
- * Get cost summary with optional grouping
- */
+ 
 router.get('/summary', async (req: Request, res: Response) => {
   try {
     const {

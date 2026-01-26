@@ -1,59 +1,50 @@
-// Master key generation and management
+ 
 
 import { randomBytes } from 'crypto'
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
 import { join } from 'path'
-import { getConfigDir } from '@zs-ai/config'
+import { getConfigDir } from '../config/index.js'
 
 const CONFIG_DIR = getConfigDir()
 const MASTER_KEY_FILE = join(CONFIG_DIR, 'master-key.txt')
 
-// Store the generated master key in memory (regenerated on each restart)
+ 
 let currentMasterKey: string | null = null
 
-/**
- * Generate a new master key (cryptographically secure)
- */
+ 
 export function generateMasterKey(): string {
-  // Generate 32 random bytes (256 bits)
+ 
   const key = randomBytes(32).toString('hex')
   return key
 }
 
-/**
- * Get master key from environment variable or in-memory storage
- * Master key is regenerated on each restart (no file persistence)
- */
+ 
 export function getMasterKey(): string | null {
-  // Check environment variable first (optional override)
+ 
   const envKey = process.env.ZS_AI_MASTER_KEY
   if (envKey) {
     return envKey
   }
 
-  // Return the in-memory master key (set by initializeMasterKey)
+ 
   return currentMasterKey
 }
 
-/**
- * Save master key to file
- */
+ 
 export function saveMasterKey(key: string): void {
-  // Ensure config directory exists
+ 
   if (!existsSync(CONFIG_DIR)) {
     mkdirSync(CONFIG_DIR, { recursive: true })
   }
 
-  // Save to file
+ 
   writeFileSync(MASTER_KEY_FILE, key, { mode: 0o600 }) // Read/write for owner only
   console.log(`[MASTER KEY] Master key saved to: ${MASTER_KEY_FILE}`)
 }
 
-/**
- * Initialize master key (always generate new on each restart)
- */
+ 
 export function initializeMasterKey(): string {
-  // Check environment variable first (optional override for persistent key)
+ 
   const envKey = process.env.ZS_AI_MASTER_KEY
   if (envKey) {
     currentMasterKey = envKey
@@ -61,7 +52,7 @@ export function initializeMasterKey(): string {
     return envKey
   }
 
-  // Always generate new master key on each restart
+ 
   const newKey = generateMasterKey()
   currentMasterKey = newKey // Store in memory for getMasterKey() to access
   

@@ -1,4 +1,4 @@
-// Email service - supports SMTP, SendGrid, and manual mode
+ 
 
 import { loadConfig, type ProxyConfig } from '../config.js'
 import nodemailer from 'nodemailer'
@@ -11,9 +11,7 @@ export interface EmailOptions {
   text?: string
 }
 
-/**
- * Send email using configured provider
- */
+ 
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
   const config = loadConfig()
   const emailConfig = config.email
@@ -33,7 +31,7 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
       
       case 'manual':
       default:
-        // Manual mode: just log the email content
+ 
         console.log('[EMAIL] Manual mode - email content:')
         console.log('='.repeat(70))
         console.log(`To: ${options.to}`)
@@ -49,9 +47,7 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
   }
 }
 
-/**
- * Send email via SMTP
- */
+ 
 async function sendViaSMTP(
   options: EmailOptions,
   smtpConfig: NonNullable<ProxyConfig['email']>['smtp'],
@@ -61,22 +57,22 @@ async function sendViaSMTP(
     throw new Error('SMTP configuration not provided')
   }
   
-  // Port 465 uses SSL/TLS from the start (secure: true)
-  // Port 587 uses STARTTLS (secure: false, but requiresTLS: true)
-  // Other ports use the configured secure setting
+ 
+ 
+ 
   let secure = smtpConfig.secure || false
   let requireTLS = false
   
   if (smtpConfig.port === 465) {
-    // Port 465 always uses SSL/TLS from the start
+ 
     secure = true
     requireTLS = false
   } else if (smtpConfig.port === 587) {
-    // Port 587 uses STARTTLS (upgrade from plain to TLS)
+ 
     secure = false
     requireTLS = true
   } else {
-    // For other ports, use the configured secure setting
+ 
     secure = smtpConfig.secure || false
     requireTLS = smtpConfig.secure || false
   }
@@ -103,9 +99,7 @@ async function sendViaSMTP(
   return true
 }
 
-/**
- * Send email via SendGrid
- */
+ 
 async function sendViaSendGrid(
   options: EmailOptions,
   apiKey: string,
@@ -128,9 +122,7 @@ async function sendViaSendGrid(
   return true
 }
 
-/**
- * Generate user credentials email HTML
- */
+ 
 export function generateUserCredentialsEmail(data: {
   name: string
   userId: string
@@ -198,10 +190,10 @@ const client = new ZsAiClient({
   password: '${data.password}'
 })
 
-// Authenticate
+ 
 await client.authenticate()
 
-// Make a request
+ 
 const response = await client.chat.completions({
   provider: 'openai',
   model: 'gpt-4',
@@ -249,10 +241,10 @@ const client = new ZsAiClient({
   password: '${data.password}'
 })
 
-// Authenticate
+ 
 await client.authenticate()
 
-// Make a request
+ 
 const response = await client.chat.completions({
   provider: 'openai',
   model: 'gpt-4',
@@ -267,9 +259,7 @@ If you have any questions, please contact your administrator.
   return { html, text }
 }
 
-/**
- * Generate password reset email HTML
- */
+ 
 export function generatePasswordResetEmail(data: {
   name: string
   userId: string

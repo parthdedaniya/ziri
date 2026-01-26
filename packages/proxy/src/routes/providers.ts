@@ -1,18 +1,11 @@
-// Provider management routes (admin only - requires master key)
-
 import { Router, type Request, type Response } from 'express'
 import { requireAdmin } from '../middleware/auth.js'
 import * as providerService from '../services/provider-service.js'
 
 const router: Router = Router()
 
-// All routes require admin authentication
 router.use(requireAdmin)
 
-/**
- * GET /api/providers
- * List all providers with optional search, limit, and offset
- */
 router.get('/', (req: Request, res: Response) => {
   try {
     const {
@@ -44,10 +37,6 @@ router.get('/', (req: Request, res: Response) => {
   }
 })
 
-/**
- * GET /api/providers/:name
- * Get provider by name
- */
 router.get('/:name', (req: Request, res: Response) => {
   try {
     const { name } = req.params
@@ -71,10 +60,6 @@ router.get('/:name', (req: Request, res: Response) => {
   }
 })
 
-/**
- * POST /api/providers
- * Create or update a provider
- */
 router.post('/', (req: Request, res: Response) => {
   try {
     const { name, apiKey, metadata } = req.body
@@ -108,10 +93,6 @@ router.post('/', (req: Request, res: Response) => {
   }
 })
 
-/**
- * DELETE /api/providers/:name
- * Delete provider
- */
 router.delete('/:name', (req: Request, res: Response) => {
   try {
     const { name } = req.params
@@ -136,10 +117,6 @@ router.delete('/:name', (req: Request, res: Response) => {
   }
 })
 
-/**
- * POST /api/providers/:name/test
- * Test provider connection
- */
 router.post('/:name/test', async (req: Request, res: Response) => {
   try {
     const { name } = req.params
