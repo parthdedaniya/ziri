@@ -83,6 +83,18 @@ export default defineNuxtRouteMiddleware(async (to) => {
     const isUserPage = userPages.some(page => to.path === page || to.path.startsWith(page + '/'))
 
  
+    // Handle redirect from root with create policy params
+    if (to.path === '/' && to.query.create === 'true' && to.query.policy) {
+        // Preserve query params when redirecting to rules page
+        return navigateTo({
+            path: '/rules',
+            query: {
+                create: to.query.create,
+                policy: to.query.policy
+            }
+        })
+    }
+
     if (isAdminPage && userRole !== 'admin') {
         const toast = useToast()
         toast.warning('Admin access required')

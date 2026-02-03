@@ -82,9 +82,10 @@ temp/
 *_implementation_plan.md
 RATE_LIMITING_QUEUEING_PLAN.md
 *_PLAN.md
+DESIGN_*.md
 
 # Cursor rules
-.cursor/rules/
+.cursor/
 
 # scripts
 **/scripts/drop-tables.js

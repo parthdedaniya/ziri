@@ -52,25 +52,55 @@ export async function chatCompletions(request: ChatCompletionRequest): Promise<C
   if (provider.baseUrl.includes('anthropic')) {
  
     endpoint = `${provider.baseUrl}/messages`
+    
+    // Separate system messages from user/assistant messages for Anthropic
+    const systemMessages: string[] = []
+    const conversationMessages: Array<{ role: 'user' | 'assistant'; content: string }> = []
+    
+    for (const msg of request.messages) {
+      if (msg.role === 'system') {
+        systemMessages.push(msg.content)
+      } else {
+        conversationMessages.push({
+          role: msg.role === 'assistant' ? 'assistant' : 'user',
+          content: msg.content
+        })
+      }
+    }
+    
     requestBody = {
       model: request.model,
-      max_tokens: request.max_tokens || 1024,
-      messages: request.messages.map(msg => ({
-        role: msg.role === 'assistant' ? 'assistant' : 'user',
-        content: msg.content
-      }))
+      max_completion_tokens: request.max_tokens || 2048,
+      messages: conversationMessages
+    }
+    
+    // Add system parameter if there are system messages
+    if (systemMessages.length > 0) {
+      requestBody.system = systemMessages.join('\n\n')
+    }
+    
+    // Add temperature if provided
+    if (request.temperature !== undefined) {
+      requestBody.temperature = request.temperature
     }
   } else {
  
     endpoint = `${provider.baseUrl}/chat/completions`
+    
+    // Check if model requires max_completion_tokens (newer OpenAI models like GPT-5.1)
+    const requiresMaxCompletionTokens = request.model.includes('gpt-5') || request.model.includes('o1') || request.model.includes('o3')
+    
     requestBody = {
       model: request.model,
       messages: request.messages,
       temperature: request.temperature,
-      max_tokens: request.max_tokens,
+      ...(requiresMaxCompletionTokens 
+        ? { max_completion_tokens: request.max_tokens || 2048 }
+        : { max_tokens: request.max_tokens || 2048 }
+      ),
       ...Object.fromEntries(
         Object.entries(request).filter(([key]) => 
-          !['provider', 'model', 'messages'].includes(key)
+          !['provider', 'model', 'messages', 'max_tokens'].includes(key)
         )
       )
     }

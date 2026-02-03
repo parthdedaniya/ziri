@@ -89,6 +89,9 @@ export async function createServer(): Promise<Express> {
   const eventsRoutes = (await import('./routes/events.js')).default
   app.use('/api/events', eventsRoutes)
 
+  const aiPolicyRoutes = (await import('./routes/ai-policy.js')).default
+  app.use('/api/ai-policy', aiPolicyRoutes)
+
   const possibleUiPaths = [
     path.resolve(__dirname, '../ui'),
     path.resolve(__dirname, './ui'),

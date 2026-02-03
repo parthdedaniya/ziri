@@ -2,13 +2,15 @@
 interface Props {
   modelValue: boolean
   title?: string
-  size?: 'sm' | 'md' | 'lg'
+  size?: 'sm' | 'md' | 'lg' | 'xl'
   closable?: boolean
+  noPadding?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   size: 'md',
-  closable: true
+  closable: true,
+  noPadding: false
 })
 
 const emit = defineEmits<{
@@ -24,7 +26,8 @@ const close = () => {
 const sizeClasses = {
   sm: 'max-w-md',
   md: 'max-w-lg',
-  lg: 'max-w-2xl'
+  lg: 'max-w-2xl',
+  xl: 'max-w-5xl'
 }
 
  
@@ -53,11 +56,12 @@ onMounted(() => {
         
         <!-- Modal content -->
         <div 
-          class="relative w-full card animate-scale-in"
+          class="relative w-full animate-scale-in border-2 border-[rgb(var(--border))]"
           :class="sizeClasses[size]"
+          :style="{ background: 'rgb(var(--surface))', borderRadius: '8px', overflow: 'hidden' }"
         >
           <!-- Header -->
-          <div v-if="title || closable" class="flex items-center justify-between mb-5">
+          <div v-if="title && closable" class="flex items-center justify-between px-5 pt-5 border-b-2 border-[rgb(var(--border))] pb-5">
             <h3 v-if="title" class="text-base font-bold text-[rgb(var(--text))]">
               {{ title }}
             </h3>
@@ -73,7 +77,9 @@ onMounted(() => {
           </div>
           
           <!-- Body -->
-          <slot />
+          <div :class="noPadding ? '' : 'p-5'">
+            <slot />
+          </div>
         </div>
       </div>
     </Transition>
