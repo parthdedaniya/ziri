@@ -334,3 +334,101 @@ If you did not request this password reset, please contact your administrator im
   
   return { html, text }
 }
+
+// Dashboard user credentials email template
+export function generateDashboardUserCredentialsEmail(data: {
+  name: string
+  email: string
+  password: string
+  dashboardUrl: string
+}): { html: string; text: string } {
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your ZIRI Dashboard Credentials</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+    <h1 style="color: white; margin: 0; font-size: 24px;">ZIRI Dashboard</h1>
+  </div>
+  
+  <div style="background: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+    <h2 style="color: #1f2937; margin-top: 0;">Welcome, ${data.name}!</h2>
+    
+    <p>Your ZIRI dashboard account has been created. Here are your login credentials:</p>
+    
+    <div style="background: white; border: 2px solid #e5e7eb; border-radius: 6px; padding: 20px; margin: 20px 0;">
+      <div style="margin-bottom: 15px;">
+        <strong style="color: #6b7280; display: block; margin-bottom: 5px; font-size: 12px; text-transform: uppercase;">Email</strong>
+        <code style="background: #f3f4f6; padding: 8px 12px; border-radius: 4px; font-size: 14px; display: inline-block;">${data.email}</code>
+      </div>
+      
+      <div style="margin-bottom: 15px;">
+        <strong style="color: #6b7280; display: block; margin-bottom: 5px; font-size: 12px; text-transform: uppercase;">Password</strong>
+        <code style="background: #f3f4f6; padding: 8px 12px; border-radius: 4px; font-size: 14px; display: inline-block;">${data.password}</code>
+      </div>
+      
+      <div>
+        <strong style="color: #6b7280; display: block; margin-bottom: 5px; font-size: 12px; text-transform: uppercase;">Dashboard URL</strong>
+        <code style="background: #f3f4f6; padding: 8px 12px; border-radius: 4px; font-size: 14px; display: inline-block; word-break: break-all;">${data.dashboardUrl}</code>
+      </div>
+    </div>
+    
+    <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 4px;">
+      <strong style="color: #92400e; display: block; margin-bottom: 5px;">⚠️ Important</strong>
+      <p style="color: #78350f; margin: 0; font-size: 14px;">Save these credentials securely. Your password will not be shown again.</p>
+    </div>
+    
+    <h3 style="color: #1f2937; margin-top: 30px;">Getting Started</h3>
+    
+    <p>To access the dashboard:</p>
+    
+    <ol style="padding-left: 20px;">
+      <li style="margin-bottom: 10px;">Navigate to <a href="${data.dashboardUrl}" style="color: #667eea; text-decoration: none;">${data.dashboardUrl}</a></li>
+      <li style="margin-bottom: 10px;">Enter your email and password and hit enter</li>
+      <li style="margin-bottom: 10px;">You'll be redirected to the dashboard</li>
+    </ol>
+    
+    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 15px; margin: 20px 0;">
+      <strong style="color: #1e40af; display: block; margin-bottom: 5px;">Need Help?</strong>
+      <p style="color: #1e3a8a; margin: 0; font-size: 14px;">If you have any questions or need assistance, please contact your administrator.</p>
+    </div>
+    
+    <p style="color: #6b7280; font-size: 14px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+      Welcome to ZIRI!
+    </p>
+  </div>
+</body>
+</html>
+  `.trim()
+  
+  const text = `
+ZIRI Dashboard - Your Credentials
+
+Welcome, ${data.name}!
+
+Your ZIRI dashboard account has been created. Here are your login credentials:
+
+Email: ${data.email}
+Password: ${data.password}
+Dashboard URL: ${data.dashboardUrl}
+
+⚠️ Important: Save these credentials securely. Your password will not be shown again.
+
+Getting Started:
+
+1. Navigate to ${data.dashboardUrl}
+3. Enter your email and password and hit enter
+4. You'll be redirected to the dashboard
+
+Need Help?
+If you have any questions or need assistance, please contact your administrator.
+
+Welcome to ZIRI!
+  `.trim()
+  
+  return { html, text }
+}

@@ -3,6 +3,7 @@ import { useKeys } from '~/composables/useKeys'
 import { useConfigStore } from '~/stores/config'
 import { useToast } from '~/composables/useToast'
 import { useUnifiedAuth } from '~/composables/useUnifiedAuth'
+import { useInternalAuth } from '~/composables/useInternalAuth'
 import { formatCurrency, formatDate, formatPercent, maskApiKey } from '~/utils/formatters'
 import type { Key } from '~/types/entity'
 import KeysSpendChart from '~/components/keys/SpendChart.vue'
@@ -13,6 +14,7 @@ const configStore = useConfigStore()
 const { getKey, getKeyByUserId, revokeKey, currentKey, loading } = useKeys()
 const { getAuthHeader } = useUnifiedAuth()
 const toast = useToast()
+const { checkAction } = useInternalAuth()
 
 const routeId = route.params.id as string
  
@@ -183,6 +185,18 @@ const goBack = () => {
 onMounted(async () => {
   await nextTick()
   
+  // Check permission to access key detail page
+  const check = await checkAction('get_key', 'keys')
+  if (!check.allowed) {
+    toast.error('You do not have permission to view key details')
+    router.push('/keys')
+    return
+  }
+  
+  // Check permission for copy button (requires create_key permission)
+  const createCheck = await checkAction('create_key', 'keys')
+  canCreateKey.value = createCheck.allowed
+  
   if (configStore.isConfigured) {
     try {
  
@@ -265,7 +279,7 @@ watch(() => key.value.executionKey, () => {
           <div class="pt-4 border-t-2 border-[rgb(var(--border))]">
             <div class="flex items-center justify-between mb-2">
               <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider">API Key</p>
-              <UiCopyButton :text="key.apiKey" size="sm" />
+              <UiCopyButton v-if="canCreateKey" :text="key.apiKey" size="sm" />
             </div>
             <code class="block p-3 rounded-lg bg-[rgb(var(--surface-elevated))] text-xs font-mono break-all text-[rgb(var(--text))]">
               {{ maskApiKey(key.apiKey) }}

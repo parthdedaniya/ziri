@@ -6,6 +6,7 @@ import { useSchema } from '~/composables/useSchema'
 import { useCedarWasm } from '~/composables/useCedarWasm'
 import { useDebounce } from '~/composables/useDebounce'
 import { useAdminAuth } from '~/composables/useAdminAuth'
+import { useInternalAuth } from '~/composables/useInternalAuth'
 import AIPolicyChatModal from '~/components/AIPolicyChatModal.vue'
 import type { Policy, CreatePolicyInput } from '~/types/cedar'
 import type { ValidationError } from '~/composables/useCedarWasm'
@@ -15,6 +16,14 @@ const { listRules, createRule, updateRule, deleteRule, setRuleStatus, rules, loa
 const { getSchema } = useSchema()
 const { validatePolicies, formatPolicy } = useCedarWasm()
 const toast = useToast()
+const { checkActions, checkAction } = useInternalAuth()
+
+// Permission states
+const canCreatePolicy = ref(false)
+const canUpdatePolicy = ref(false)
+const canDeletePolicy = ref(false)
+const canPatchPolicyStatus = ref(false)
+const canGeneratePolicyWithAI = ref(false)
 
  
 const showCreateModal = ref(false)
@@ -202,6 +211,21 @@ const groupedTemplates = computed(() => {
 
  
 onMounted(async () => {
+  // Check permissions for sensitive actions
+  const permissions = await checkActions([
+    { action: 'create_policy', resourceType: 'policies' },
+    { action: 'update_policy', resourceType: 'policies' },
+    { action: 'delete_policy', resourceType: 'policies' },
+    { action: 'patch_policy_status', resourceType: 'policies' },
+    { action: 'generate_policy_with_ai', resourceType: 'policies' }
+  ])
+  
+  canCreatePolicy.value = permissions.results.find(r => r.action === 'create_policy')?.allowed || false
+  canUpdatePolicy.value = permissions.results.find(r => r.action === 'update_policy')?.allowed || false
+  canDeletePolicy.value = permissions.results.find(r => r.action === 'delete_policy')?.allowed || false
+  canPatchPolicyStatus.value = permissions.results.find(r => r.action === 'patch_policy_status')?.allowed || false
+  canGeneratePolicyWithAI.value = permissions.results.find(r => r.action === 'generate_policy_with_ai')?.allowed || false
+  
   await nextTick()
   
   // Check for URL parameters to open create modal with policy
@@ -330,6 +354,13 @@ const onPolicyBlur = async () => {
 }
 
 const handleCreateRule = async () => {
+  // Pre-action check (Layer 2)
+  const check = await checkAction('create_policy', 'policies')
+  if (!check.allowed) {
+    toast.error('You do not have permission to create policies')
+    return
+  }
+  
   if (!newRule.policy.trim() || !newRule.description.trim()) {
     toast.warning('Please fill in all fields')
     return
@@ -344,7 +375,12 @@ const handleCreateRule = async () => {
     await createRule(newRule)
  
     if (!newRule.isActive) {
- 
+      // Check permission for status change
+      const statusCheck = await checkAction('patch_policy_status', 'policies')
+      if (!statusCheck.allowed) {
+        toast.error('You do not have permission to change policy status')
+        return
+      }
       const policyToUse = newRule.policy.trim()
       await setRuleStatus(policyToUse, false)
     }
@@ -384,6 +420,13 @@ const handleEditRule = async (rule: Policy) => {
 const handleUpdateRule = async () => {
   if (!ruleToEdit.value) return
   
+  // Pre-action check (Layer 2)
+  const check = await checkAction('update_policy', 'policies')
+  if (!check.allowed) {
+    toast.error('You do not have permission to update policies')
+    return
+  }
+  
   if (!newRule.policy.trim() || !newRule.description.trim()) {
     toast.warning('Please fill in all fields')
     return
@@ -398,6 +441,12 @@ const handleUpdateRule = async () => {
  
  
     if (newRule.isActive !== ruleToEdit.value.isActive) {
+      // Check permission for status change
+      const statusCheck = await checkAction('patch_policy_status', 'policies')
+      if (!statusCheck.allowed) {
+        toast.error('You do not have permission to change policy status')
+        return
+      }
       await setRuleStatus(ruleToEdit.value.policy, newRule.isActive)
     }
  
@@ -426,7 +475,14 @@ const handleCancelEdit = () => {
   validationWarnings.value = []
 }
 
-const confirmDelete = (rule: Policy) => {
+const confirmDelete = async (rule: Policy) => {
+  // Pre-action check (Layer 2)
+  const check = await checkAction('delete_policy', 'policies')
+  if (!check.allowed) {
+    toast.error('You do not have permission to delete policies')
+    return
+  }
+  
   ruleToDelete.value = rule
   showDeleteModal.value = true
 }
@@ -443,7 +499,13 @@ const handleDeleteRule = async () => {
   }
 }
 
-const handleUseAIPolicy = (policy: string) => {
+const handleUseAIPolicy = async (policy: string) => {
+  // Pre-action check (Layer 2)
+  const check = await checkAction('generate_policy_with_ai', 'policies')
+  if (!check.allowed) {
+    toast.error('You do not have permission to generate policies with AI')
+    return
+  }
   // This is handled in the component itself now, keeping for compatibility
 }
 </script>
@@ -490,13 +552,13 @@ const handleUseAIPolicy = (policy: string) => {
           </svg>
           Templates
         </UiButton>
-        <UiButton variant="outline" @click="showAIChatModal = true">
+        <UiButton v-if="canGeneratePolicyWithAI" variant="outline" @click="showAIChatModal = true">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
           </svg>
           Create with AI
         </UiButton>
-        <UiButton @click="showCreateModal = true">
+        <UiButton v-if="canCreatePolicy" @click="showCreateModal = true">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
@@ -513,13 +575,13 @@ const handleUseAIPolicy = (policy: string) => {
         </svg>
         Templates
       </UiButton>
-      <UiButton variant="outline" @click="showAIChatModal = true">
+      <UiButton v-if="canGeneratePolicyWithAI" variant="outline" @click="showAIChatModal = true">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
         </svg>
         Create with AI
       </UiButton>
-      <UiButton @click="showCreateModal = true">
+      <UiButton v-if="canCreatePolicy" @click="showCreateModal = true">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
         </svg>
@@ -544,11 +606,17 @@ const handleUseAIPolicy = (policy: string) => {
       @update:sort="handleSort"
     >
       <template #empty-action>
-        <UiButton @click="showCreateModal = true">
+        <UiButton v-if="canCreatePolicy && !searchQuery" @click="showCreateModal = true">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
           Create Rule
+        </UiButton>
+        <UiButton v-if="canGeneratePolicyWithAI && !searchQuery" @click="showAIChatModal = true">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+          </svg>
+          Create with AI
         </UiButton>
       </template>
       <template #effect="{ row }">
@@ -585,6 +653,7 @@ const handleUseAIPolicy = (policy: string) => {
       <template #actions="{ row }">
         <div class="flex gap-1">
           <button 
+            v-if="canUpdatePolicy"
             @click="handleEditRule(row)"
             class="icon-btn text-[rgb(var(--text-muted))] hover:text-indigo-500"
             title="Edit rule"
@@ -594,6 +663,7 @@ const handleUseAIPolicy = (policy: string) => {
             </svg>
           </button>
           <button 
+            v-if="canDeletePolicy"
             @click="confirmDelete(row)"
             class="icon-btn text-[rgb(var(--text-muted))] hover:text-red-500"
             title="Delete rule"
@@ -727,6 +797,7 @@ const handleUseAIPolicy = (policy: string) => {
                 </div>
                 <div class="flex justify-end pt-2 border-t border-[rgb(var(--border))]">
                   <UiButton 
+                    v-if="canCreatePolicy"
                     size="sm" 
                     @click="useTemplate(template)"
                   >

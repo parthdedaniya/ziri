@@ -44,6 +44,12 @@ export async function createServer(): Promise<Express> {
   const authRoutes = (await import('./routes/auth.js')).default
   app.use('/api/auth', authRoutes)
   
+  const authzRoutes = (await import('./routes/authz.js')).default
+  app.use('/api/authz', authzRoutes)
+  
+  const dashboardUserRoutes = (await import('./routes/dashboard-users.js')).default
+  app.use('/api/dashboard-users', dashboardUserRoutes)
+  
   const configRoutes = (await import('./routes/config.js')).default
   app.use('/api/config', configRoutes)
   
@@ -142,9 +148,15 @@ async function ensureInitialization() {
   const sessionId = initializeServerSession()
   console.log(`[PROXY] Server session initialized: ${sessionId}`)
   
-  const { initializeAdminUser } = await import('./db/index.js')
+  const { initializeAdminUser, initializeInternalAuth } = await import('./db/index.js')
   await initializeAdminUser().catch((error) => {
     console.warn('[PROXY] Failed to initialize admin user:', error)
+  })
+  
+  // Step 6.5: Initialize internal authorization synchronously
+  await initializeInternalAuth().catch((error) => {
+    console.error('[PROXY] Failed to initialize internal authorization:', error)
+    throw error // This is critical, so we should fail startup if it fails
   })
   
   const config = loadConfig()

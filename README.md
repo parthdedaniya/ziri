@@ -1,7 +1,5 @@
 # ZIRI
 
-ZIRI is a production-grade LLM gateway that sits between your applications and providers like OpenAI and Anthropic. It adds authorization, rate limiting, cost tracking, and audit logging on top of standard LLM APIs.
-
 This repository contains:
 - A proxy server, delivered to end users as a Docker image
 - A lightweight SDK, delivered as the `@ziri/sdk` npm package
@@ -16,6 +14,7 @@ This repository contains:
 - **Cost tracking** with daily/monthly summaries
 - **Audit logs** for every authorization decision
 - **Web-based admin UI** bundled with the proxy server
+- **Role-based dashboard access** (Admin, Viewer, User Admin, Policy Admin)
 - **SDK** for simple, type-safe integration from Node.js/TypeScript
 
 You run the proxy wherever you like (laptop, VM, container host), then share its URL with your end users or services. They talk to ZIRI directly over HTTP or via the SDK.
@@ -89,6 +88,7 @@ From the UI you can:
 - Add LLM providers (OpenAI, Anthropic, etc.)
 - Create users and manage their API keys
 - Define Cedar policies (rules)
+- Manage dashboard users and roles (Admin only)
 - Inspect logs, costs, and statistics
 
 ## First-Time Setup

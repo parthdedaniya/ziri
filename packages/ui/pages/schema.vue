@@ -5,11 +5,15 @@ import { useCedarWasm } from '~/composables/useCedarWasm'
 import { useToast } from '~/composables/useToast'
 import { formatDate } from '~/utils/formatters'
 import type { ValidationError } from '~/composables/useCedarWasm'
+import { useInternalAuth } from '~/composables/useInternalAuth'
 
 const configStore = useConfigStore()
 const { getSchema, updateSchema, lastSyncedAt, loading } = useSchema()
 const { schemaToJson, schemaToText, validateCedarSchema, validateJsonSchema } = useCedarWasm()
 const toast = useToast()
+const { checkAction } = useInternalAuth()
+
+const canUpdateSchema = ref(false)
 
  
 const viewMode = ref<'json' | 'cedar'>('cedar')
@@ -23,6 +27,10 @@ const validationDebounceTimer = ref<NodeJS.Timeout | null>(null)
 
  
 onMounted(async () => {
+  // Check permission to update schema
+  const check = await checkAction('update_schema', 'schema')
+  canUpdateSchema.value = check.allowed
+  
   await nextTick()
   
   if (configStore.isConfigured) {
@@ -184,6 +192,13 @@ const onModeSwitch = async (newMode: 'json' | 'cedar') => {
 
  
 const handleSave = async () => {
+  // Pre-action check (Layer 2)
+  const check = await checkAction('update_schema', 'schema')
+  if (!check.allowed) {
+    toast.error('You do not have permission to update the schema')
+    return
+  }
+  
   if (validationErrors.value.length > 0) {
     toast.warning('Please fix validation errors before saving')
     return
@@ -245,7 +260,14 @@ const handleCancel = async () => {
 }
 
  
-const startEditing = () => {
+const startEditing = async () => {
+  // Check permission before allowing edit
+  const check = await checkAction('update_schema', 'schema')
+  if (!check.allowed) {
+    toast.error('You do not have permission to edit the schema')
+    return
+  }
+  
   isEditing.value = true
   validationErrors.value = []
 }
@@ -302,12 +324,12 @@ const displayLastSynced = computed(() => lastSyncedAt.value || new Date())
             </svg>
             Refresh
           </UiButton>
-          <!-- <UiButton size="sm" @click="startEditing">
+          <UiButton v-if="canUpdateSchema" size="sm" @click="startEditing">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
             </svg>
             Edit
-          </UiButton> -->
+          </UiButton>
         </template>
         
         <template v-else>
@@ -316,9 +338,9 @@ const displayLastSynced = computed(() => lastSyncedAt.value || new Date())
           </UiButton>
           <UiButton 
             size="sm" 
-            @click="handleSave" 
+            @click="handleSave"
+            :disabled="!canUpdateSchema || validationErrors.length > 0" 
             :loading="isSaving"
-            :disabled="validationErrors.length > 0"
           >
             Save
           </UiButton>

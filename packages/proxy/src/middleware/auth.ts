@@ -3,6 +3,7 @@
 import type { Request, Response, NextFunction } from 'express'
 import { verifyAccessToken } from '../utils/jwt.js'
 import { getRootKey } from '../utils/root-key.js'
+import { requireInternalAuthz } from './internal-authz.js'
 
 export interface AdminRequest extends Request {
   admin?: {
@@ -23,14 +24,16 @@ export function requireAdmin(
     const token = authHeader.substring(7)
     try {
       const payload = verifyAccessToken(token)
-      if (payload.role === 'admin') {
+      // Allow any dashboard user (role !== 'user') - admin, viewer, user_admin, policy_admin
+      if (payload.role && payload.role !== 'user') {
         req.admin = {
           userId: payload.userId,
           email: payload.email || 'admin@ziri.local',
-          role: payload.role || 'admin',
+          role: payload.role,
           name: payload.name
         }
-        next()
+        // Chain internal authorization check
+        requireInternalAuthz(req, res, next)
         return
       }
     } catch (error: any) {
@@ -48,7 +51,8 @@ export function requireAdmin(
         role: 'admin',
         name: 'Administrator'
       }
-      next()
+      // Chain internal authorization check
+      requireInternalAuthz(req, res, next)
       return
     }
   }

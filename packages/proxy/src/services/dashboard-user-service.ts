@@ -1,0 +1,387 @@
+import { getDatabase } from '../db/index.js'
+import { generatePassword, hashPassword } from '../utils/password.js'
+import { encrypt, decrypt, hash as hashEmail } from '../utils/encryption.js'
+import { randomBytes } from 'crypto'
+import { internalEntityStore } from './internal/internal-entity-store.js'
+import type { InternalEntity } from './internal/internal-entity-store.js'
+
+export interface CreateDashboardUserInput {
+  email: string
+  name: string
+  role: 'admin' | 'viewer' | 'user_admin' | 'policy_admin'
+}
+
+export interface DashboardUser {
+  id: string
+  userId: string
+  email: string
+  name: string
+  role: string
+  status: number
+  createdAt: string
+  updatedAt: string
+  lastSignIn?: string
+}
+
+function generateDashboardUserId(): string {
+  const random = randomBytes(8).toString('hex')
+  return `dash-${random}`
+}
+
+function mapDbUserToDashboardUser(dbUser: any): DashboardUser {
+  let email = ''
+  try {
+    email = decrypt(dbUser.email)
+  } catch {
+    email = dbUser.email || ''
+  }
+  
+  return {
+    id: dbUser.id,
+    userId: dbUser.id,
+    email,
+    name: dbUser.name || '',
+    role: dbUser.role || '',
+    status: dbUser.status || 0,
+    createdAt: dbUser.created_at || '',
+    updatedAt: dbUser.updated_at || '',
+    lastSignIn: dbUser.last_sign_in || undefined
+  }
+}
+
+export async function createDashboardUser(input: CreateDashboardUserInput): Promise<{ user: DashboardUser; password?: string; emailSent: boolean }> {
+  const db = getDatabase()
+  
+  const emailHash = hashEmail(input.email)
+  const existing = db.prepare('SELECT * FROM auth WHERE email_hash = ?').get(emailHash) as any
+  if (existing) {
+    // Check if this is an orphaned user (exists but role is NULL - likely from a failed transaction)
+    if (existing.role === null || existing.role === undefined) {
+      console.warn(`[DASHBOARD USER SERVICE] Found orphaned user with email ${input.email} (role is NULL). Cleaning up and recreating...`)
+      // Delete the orphaned user and recreate
+      db.prepare('DELETE FROM auth WHERE id = ?').run(existing.id)
+      // Also clean up any orphaned internal entity if it exists
+      try {
+        db.prepare('DELETE FROM internal_entities WHERE etype = ? AND eid = ?').run('DashboardUser', existing.id)
+      } catch {
+        // Ignore if entity doesn't exist
+      }
+    } else {
+      // User exists and has a role - this is a real duplicate
+      throw new Error('User with this email already exists')
+    }
+  }
+  
+  const userId = generateDashboardUserId()
+  const password = generatePassword(16)
+  const passwordHash = await hashPassword(password)
+  const encryptedEmail = encrypt(input.email)
+  
+  // BEGIN TRANSACTION - SQLite transactions are atomic, so if any step fails, everything rolls back
+  const transaction = db.transaction(() => {
+    // Insert into auth table
+    const authResult = db.prepare(`
+      INSERT INTO auth (id, email, email_hash, name, password, role, status, is_agent, "group")
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      userId,
+      encryptedEmail,
+      emailHash,
+      input.name,
+      passwordHash,
+      input.role,
+      1, // status = active
+      0, // is_agent = false
+      null // group = null
+    )
+    
+    if (authResult.changes !== 1) {
+      throw new Error(`Failed to insert auth row for user ${userId}`)
+    }
+    
+    // Create internal entity
+    const entity: InternalEntity = {
+      uid: {
+        type: 'DashboardUser',
+        id: userId
+      },
+      attrs: {
+        user_id: userId,
+        role: input.role,
+        status: 'active',
+        email: input.email,
+        name: input.name
+      },
+      parents: []
+    }
+    
+    // Insert into internal_entities table
+    const ejson = JSON.stringify(entity)
+    const entityResult = db.prepare(`
+      INSERT INTO internal_entities (etype, eid, ejson, status)
+      VALUES (?, ?, ?, ?)
+    `).run('DashboardUser', userId, ejson, 1)
+    
+    if (entityResult.changes !== 1) {
+      throw new Error(`Failed to insert internal entity for user ${userId}`)
+    }
+  })
+  
+  try {
+    transaction()
+    console.log(`[DASHBOARD USER SERVICE] Successfully created dashboard user ${userId} with role ${input.role}`)
+  } catch (error: any) {
+    // Transaction automatically rolls back on error, but log for debugging
+    console.error(`[DASHBOARD USER SERVICE] Transaction failed for user ${userId}:`, error.message)
+    throw new Error(`Failed to create dashboard user: ${error.message}`)
+  }
+  
+  // Verify the user was created correctly
+  const dbUser = db.prepare('SELECT * FROM auth WHERE id = ?').get(userId) as any
+  if (!dbUser) {
+    throw new Error(`Failed to verify user creation: user ${userId} not found after transaction`)
+  }
+  if (dbUser.role !== input.role) {
+    console.error(`[DASHBOARD USER SERVICE] WARNING: User ${userId} created with role mismatch. Expected: ${input.role}, Got: ${dbUser.role}`)
+    throw new Error(`Data integrity error: user role mismatch`)
+  }
+  
+  // Verify internal entity exists
+  const entityCheck = db.prepare('SELECT * FROM internal_entities WHERE etype = ? AND eid = ?').get('DashboardUser', userId) as any
+  if (!entityCheck) {
+    console.error(`[DASHBOARD USER SERVICE] WARNING: User ${userId} created but internal entity not found`)
+    // Clean up orphaned auth row
+    db.prepare('DELETE FROM auth WHERE id = ?').run(userId)
+    throw new Error(`Data integrity error: internal entity not created`)
+  }
+  
+  const user = mapDbUserToDashboardUser(dbUser)
+  
+  // Try to send email
+  const { sendEmail, generateDashboardUserCredentialsEmail } = await import('./email-service.js')
+  const { loadConfig } = await import('../config.js')
+  
+  const config = loadConfig()
+  const dashboardUrl = config.publicUrl || `http://${config.host || 'localhost'}:${config.port}`
+  
+  let emailSent = false
+  try {
+    const emailContent = generateDashboardUserCredentialsEmail({
+      name: user.name,
+      email: user.email,
+      password,
+      dashboardUrl
+    })
+    
+    emailSent = await sendEmail({
+      to: user.email,
+      subject: 'Your ZIRI Dashboard Credentials',
+      html: emailContent.html,
+      text: emailContent.text
+    })
+    
+    if (emailSent) {
+      console.log(`[DASHBOARD USER SERVICE] Credentials email sent to ${user.email}`)
+    }
+  } catch (error: any) {
+    console.warn(`[DASHBOARD USER SERVICE] Failed to send email to ${user.email}:`, error.message)
+  }
+  
+  return {
+    user,
+    password: emailSent ? undefined : password,
+    emailSent
+  }
+}
+
+export function listDashboardUsers(params?: {
+  search?: string
+  limit?: number
+  offset?: number
+}): { data: DashboardUser[]; total: number } {
+  const db = getDatabase()
+  
+  let whereClause = 'WHERE role IS NOT NULL'
+  const args: any[] = []
+  
+  if (params?.search) {
+    const searchLower = params.search.toLowerCase()
+    whereClause += ' AND (LOWER(name) LIKE ? OR LOWER(email) LIKE ? OR LOWER(id) LIKE ?)'
+    const searchPattern = `%${searchLower}%`
+    args.push(searchPattern, searchPattern, searchPattern)
+  }
+  
+  const countSql = `SELECT COUNT(*) as total FROM auth ${whereClause}`
+  const countResult = db.prepare(countSql).get(...args) as { total: number }
+  const total = countResult.total
+  
+  const limit = params?.limit || 100
+  const offset = params?.offset || 0
+  const dataSql = `SELECT * FROM auth ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+  const rows = db.prepare(dataSql).all(...args, limit, offset) as any[]
+  
+  const users = rows.map(mapDbUserToDashboardUser)
+  
+  return { data: users, total }
+}
+
+export function getDashboardUser(userId: string): DashboardUser | null {
+  const db = getDatabase()
+  
+  const dbUser = db.prepare('SELECT * FROM auth WHERE id = ? AND role IS NOT NULL').get(userId) as any
+  
+  if (!dbUser) {
+    return null
+  }
+  
+  return mapDbUserToDashboardUser(dbUser)
+}
+
+export async function updateDashboardUser(userId: string, updates: {
+  name?: string
+  email?: string
+  role?: 'admin' | 'viewer' | 'user_admin' | 'policy_admin'
+}): Promise<DashboardUser> {
+  const db = getDatabase()
+  
+  const existing = db.prepare('SELECT * FROM auth WHERE id = ? AND role IS NOT NULL').get(userId) as any
+  if (!existing) {
+    throw new Error('Dashboard user not found')
+  }
+  
+  const updateFields: string[] = []
+  const updateValues: any[] = []
+  
+  if (updates.name !== undefined) {
+    updateFields.push('name = ?')
+    updateValues.push(updates.name)
+  }
+  
+  if (updates.email !== undefined) {
+    const emailHash = hashEmail(updates.email)
+    const encryptedEmail = encrypt(updates.email)
+    updateFields.push('email = ?')
+    updateFields.push('email_hash = ?')
+    updateValues.push(encryptedEmail, emailHash)
+  }
+  
+  if (updates.role !== undefined) {
+    updateFields.push('role = ?')
+    updateValues.push(updates.role)
+  }
+  
+  if (updateFields.length === 0) {
+    return mapDbUserToDashboardUser(existing)
+  }
+  
+  updateFields.push('updated_at = datetime(\'now\')')
+  updateValues.push(userId)
+  
+  db.prepare(`
+    UPDATE auth 
+    SET ${updateFields.join(', ')}
+    WHERE id = ?
+  `).run(...updateValues)
+  
+  // Update internal entity if role changed
+  if (updates.role !== undefined) {
+    const entityUpdates: any = { role: updates.role }
+    if (updates.email !== undefined) {
+      entityUpdates.email = updates.email
+    }
+    if (updates.name !== undefined) {
+      entityUpdates.name = updates.name
+    }
+    await internalEntityStore.updateEntity(userId, entityUpdates)
+  } else {
+    // Update email/name only
+    const entityUpdates: any = {}
+    if (updates.email !== undefined) {
+      entityUpdates.email = updates.email
+    }
+    if (updates.name !== undefined) {
+      entityUpdates.name = updates.name
+    }
+    if (Object.keys(entityUpdates).length > 0) {
+      await internalEntityStore.updateEntity(userId, entityUpdates)
+    }
+  }
+  
+  const updated = db.prepare('SELECT * FROM auth WHERE id = ?').get(userId) as any
+  return mapDbUserToDashboardUser(updated)
+}
+
+export async function deleteDashboardUser(userId: string): Promise<void> {
+  if (userId === 'ziri') {
+    throw new Error('Cannot delete the initial admin user (ziri)')
+  }
+  
+  const db = getDatabase()
+  
+  const existing = db.prepare('SELECT * FROM auth WHERE id = ? AND role IS NOT NULL').get(userId) as any
+  if (!existing) {
+    throw new Error('Dashboard user not found')
+  }
+  
+  // BEGIN TRANSACTION
+  const transaction = db.transaction(() => {
+    // Delete internal entity
+    db.prepare(`
+      DELETE FROM internal_entities
+      WHERE etype = ? AND eid = ?
+    `).run('DashboardUser', userId)
+    
+    // Delete auth row
+    db.prepare('DELETE FROM auth WHERE id = ?').run(userId)
+  })
+  
+  transaction()
+}
+
+export async function disableDashboardUser(userId: string): Promise<DashboardUser> {
+  if (userId === 'ziri') {
+    throw new Error('Cannot disable the initial admin user (ziri)')
+  }
+  
+  const db = getDatabase()
+  
+  const existing = db.prepare('SELECT * FROM auth WHERE id = ? AND role IS NOT NULL').get(userId) as any
+  if (!existing) {
+    throw new Error('Dashboard user not found')
+  }
+  
+  // Update auth table
+  db.prepare(`
+    UPDATE auth 
+    SET status = 0, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(userId)
+  
+  // Update internal entity status
+  await internalEntityStore.updateEntity(userId, { status: 'disabled' })
+  
+  const updated = db.prepare('SELECT * FROM auth WHERE id = ?').get(userId) as any
+  return mapDbUserToDashboardUser(updated)
+}
+
+export async function enableDashboardUser(userId: string): Promise<DashboardUser> {
+  const db = getDatabase()
+  
+  const existing = db.prepare('SELECT * FROM auth WHERE id = ? AND role IS NOT NULL').get(userId) as any
+  if (!existing) {
+    throw new Error('Dashboard user not found')
+  }
+  
+  // Update auth table
+  db.prepare(`
+    UPDATE auth 
+    SET status = 1, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(userId)
+  
+  // Update internal entity status
+  await internalEntityStore.updateEntity(userId, { status: 'active' })
+  
+  const updated = db.prepare('SELECT * FROM auth WHERE id = ?').get(userId) as any
+  return mapDbUserToDashboardUser(updated)
+}

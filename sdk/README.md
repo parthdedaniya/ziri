@@ -1,63 +1,54 @@
 # @ziri/sdk
 
-**ZIRI User SDK** - Lightweight client library for end users to make authorized LLM calls through the gateway.
-
-## ✨ Features
-
-- **Zero Dependencies** - No external dependencies, minimal bundle size
-- **TypeScript Support** - Full TypeScript types included
-- **Simple API** - Easy-to-use interface for making LLM requests
-- **Environment Variable Support** - Configure via `ZIRI_PROXY_URL` env var
-
-## 📦 Installation
+## Installation
 
 ```bash
 npm install @ziri/sdk
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
-```javascript
+```typescript
 import { UserSDK } from '@ziri/sdk'
 
 const sdk = new UserSDK({
   apiKey: 'sk-zs-your-api-key-here',
-  proxyUrl: 'http://localhost:3100' // Optional, defaults to process.env.ZIRI_PROXY_URL || 'http://localhost:3100'
+  proxyUrl: 'http://localhost:3100'
 })
 
 const response = await sdk.chatCompletions({
   provider: 'openai',
-  model: 'gpt-4',
+  model: 'gpt-4o-mini',
   messages: [
-    { role: 'user', content: 'Hello!' }
+    { role: 'user', content: 'Hello, ZIRI!' }
   ]
 })
 
 console.log(response.choices[0].message.content)
 ```
 
-## 📖 Configuration
+## Configuration
 
-### UserSDKConfig
+### Basic Setup
 
 ```typescript
-interface UserSDKConfig {
-  apiKey: string
-  proxyUrl?: string
-}
+const sdk = new UserSDK({
+  apiKey: 'sk-zs-your-api-key-here',  // Required
+  proxyUrl: 'http://localhost:3100'   // Optional, defaults to process.env.ZIRI_PROXY_URL
+})
 ```
 
 ### Environment Variables
 
-You can configure the proxy URL via environment variable:
+You can set the proxy URL via environment variable:
 
 ```bash
-export ZS_AI_PROXY_URL=http://your-proxy-server.com:3100
+export ZIRI_PROXY_URL=http://your-proxy-server.com:3100
 ```
 
-If not provided, defaults to `http://localhost:3100`.
+If not provided, it defaults to `http://localhost:3100`.
 
-## 📚 API Reference
+## API Reference
 
 ### `chatCompletions(options)`
 
@@ -77,30 +68,51 @@ const response = await sdk.chatCompletions({
 })
 ```
 
-**Returns:** Promise with the LLM provider's response format.
+Returns a Promise with the LLM provider's response format (same as OpenAI/Anthropic APIs).
 
-## 🔒 Security
+### `embeddings(options)`
 
-- API keys are sent via `X-API-Key` header
-- All requests are validated through Cedar authorization policies
-- Rate limiting and cost tracking are handled server-side
+Generate embeddings.
 
-## 📝 Examples
+```typescript
+const response = await sdk.embeddings({
+  provider: 'openai',
+  model: 'text-embedding-3-small',
+  input: 'Your text here'
+})
+```
 
-### Basic Usage
+### `images(options)`
 
-```javascript
+Generate images (OpenAI DALL-E compatible).
+
+```typescript
+const response = await sdk.images({
+  provider: 'openai',
+  model: 'dall-e-3',
+  prompt: 'A cat wearing a hat',
+  size?: '1024x1024' | '1792x1024' | '1024x1792',
+  quality?: 'standard' | 'hd',
+  n?: number
+})
+```
+
+## Examples
+
+### Basic Chat Completion
+
+```typescript
 import { UserSDK } from '@ziri/sdk'
 
 const sdk = new UserSDK({
-  apiKey: process.env.ZS_AI_API_KEY,
-  proxyUrl: process.env.ZS_AI_PROXY_URL
+  apiKey: process.env.ZIRI_API_KEY!,
+  proxyUrl: process.env.ZIRI_PROXY_URL
 })
 
-async function askQuestion(question) {
+async function askQuestion(question: string) {
   const response = await sdk.chatCompletions({
     provider: 'openai',
-    model: 'gpt-4',
+    model: 'gpt-4o-mini',
     messages: [
       { role: 'user', content: question }
     ]
@@ -108,18 +120,21 @@ async function askQuestion(question) {
   
   return response.choices[0].message.content
 }
+
+const answer = await askQuestion('What is ZIRI?')
+console.log(answer)
 ```
 
 ### Error Handling
 
-```javascript
+```typescript
 try {
   const response = await sdk.chatCompletions({
     provider: 'openai',
     model: 'gpt-4',
     messages: [{ role: 'user', content: 'Hello!' }]
   })
-} catch (error) {
+} catch (error: any) {
   if (error.status === 401) {
     console.error('Invalid API key')
   } else if (error.status === 403) {
@@ -132,16 +147,50 @@ try {
 }
 ```
 
-## 🛠️ Development
+### Streaming (if supported)
+
+The SDK supports streaming responses when the proxy supports it:
+
+```typescript
+const stream = await sdk.chatCompletions({
+  provider: 'openai',
+  model: 'gpt-4',
+  messages: [{ role: 'user', content: 'Tell me a story' }],
+  stream: true
+})
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.choices[0]?.delta?.content || '')
+}
+```
+
+## How It Works
+
+The SDK is a thin wrapper around HTTP requests to the ZIRI proxy server. It:
+
+1. Sends requests to the proxy's API endpoints (`/api/chat/completions`, etc.)
+2. Includes your API key in the `X-API-Key` header
+3. Returns the provider's response (same format as calling OpenAI/Anthropic directly)
+
+All authorization, rate limiting, and cost tracking happens on the proxy server. The SDK just makes it easier to call the proxy from your code.
+
+## TypeScript Support
+
+The SDK is written in TypeScript and includes full type definitions. All methods and options are typed, so you'll get autocomplete and type checking in your IDE.
+
+## Security
+
+- API keys are sent via the `X-API-Key` header
+- All requests are validated through Cedar authorization policies on the proxy
+- Rate limiting and cost tracking are handled server-side
+- Never commit API keys to version control - use environment variables
+
+## Development
 
 ```bash
 # Build
 npm run build
 
-# Watch mode
+# Watch mode (for development)
 npm run dev
 ```
-
-## 📄 License
-
-MIT

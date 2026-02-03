@@ -68,7 +68,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
         '/schema',
         '/logs',
         '/analytics',
-        '/config'
+        '/config',
+        '/settings/manage-users'
     ]
 
  
@@ -95,19 +96,31 @@ export default defineNuxtRouteMiddleware(async (to) => {
         })
     }
 
-    if (isAdminPage && userRole !== 'admin') {
+    // Role-based access control
+    // Only dashboard users (non-null role, not 'user') can access admin pages
+    const isDashboardUser = userRole && userRole !== 'user'
+    
+    // Settings section pages are admin-only (Config and Manage Users)
+    if ((to.path === '/config' || to.path === '/settings/manage-users') && userRole !== 'admin') {
         const toast = useToast()
         toast.warning('Admin access required')
+        return navigateTo('/')
+    }
+    
+    // Other admin pages: allow dashboard users (admin, viewer, user_admin, policy_admin)
+    if (isAdminPage && !isDashboardUser) {
+        const toast = useToast()
+        toast.warning('Dashboard access required')
         return navigateTo('/me')
     }
 
- 
+    // User pages: allow all authenticated users
     if (isUserPage) {
         return
     }
 
- 
-    if (isAdminAuthenticated && userRole === 'admin' && isAdminPage) {
+    // Dashboard pages: allow all dashboard users (already checked above)
+    if (isAdminAuthenticated && isDashboardUser && isAdminPage) {
         return
     }
 })

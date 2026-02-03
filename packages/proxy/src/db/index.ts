@@ -105,6 +105,21 @@ async function initializeSchema(database: Database.Database): Promise<void> {
       throw error
     }
   }
+
+  try {
+    const { up: migrationUp } = await import('./migrations/007_add_role_and_internal_auth.js')
+    migrationUp(database)
+    console.log('[DB] ✅ Migration 007 applied: add_role_and_internal_auth')
+  } catch (error: any) {
+    if (error.message?.includes('already exists') || error.message?.includes('duplicate column name')) {
+      console.log('[DB] Migration 007: schema already updated, skipping')
+    } else if (error.message?.includes('Cannot find module')) {
+      console.warn('[DB] Migration 007: module not found')
+    } else {
+      console.error('[DB] Migration 007 failed:', error.message)
+      throw error
+    }
+  }
   
   const schemasToApply = ALL_SCHEMAS.filter(schema => !schema.includes('CREATE TABLE IF NOT EXISTS audit_logs'))
   
@@ -166,8 +181,8 @@ export async function initializeAdminUser(): Promise<void> {
   if (!adminUser) {
     console.log(`[DB] Creating new admin user: ${adminId}`)
     db.prepare(`
-      INSERT INTO auth (id, email, email_hash, name, password, "group", is_agent, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO auth (id, email, email_hash, name, password, "group", is_agent, status, role)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       adminId,
       encryptedEmail,
@@ -176,19 +191,117 @@ export async function initializeAdminUser(): Promise<void> {
       rootKeyHash,
       null,
       0,
-      1
+      1,
+      'admin'
     )
     console.log('[DB] ✓ Admin user ziri created with root key as password')
   } else {
-    console.log(`[DB] Admin user exists, updating password hash...`)
+    console.log(`[DB] Admin user exists, updating password hash and role...`)
     db.prepare(`
       UPDATE auth 
-      SET email = ?, email_hash = ?, password = ?, status = 1, updated_at = datetime('now')
+      SET email = ?, email_hash = ?, password = ?, status = 1, role = ?, updated_at = datetime('now')
       WHERE id = ?
-    `).run(encryptedEmail, emailHash, rootKeyHash, adminId)
-    console.log('[DB] ✓ Admin user ziri password updated to match current root key')
+    `).run(encryptedEmail, emailHash, rootKeyHash, 'admin', adminId)
+    console.log('[DB] ✓ Admin user ziri password and role updated to match current root key')
   }
   console.log(`[DB] Admin user initialization complete`)
+}
+
+export async function initializeInternalAuth(): Promise<void> {
+  console.log('[INTERNAL AUTH] Initializing internal authorization...')
+  
+  const db = getDatabase()
+  const { internalSchemaStore } = await import('../services/internal/internal-schema-store.js')
+  const { internalPolicyStore } = await import('../services/internal/internal-policy-store.js')
+  const { internalEntityStore } = await import('../services/internal/internal-entity-store.js')
+  const { internalCedarTextSchema } = await import('../authorization/internal/internal-schema.js')
+  const { internalPolicies } = await import('../authorization/internal/internal-policies.js')
+  
+  // Check if schema needs updating
+  const schemaCheck = await internalSchemaStore.shouldUpdateSchema()
+  if (schemaCheck.shouldUpdate) {
+    console.log('[INTERNAL AUTH] Schema changed, updating...')
+    await internalSchemaStore.updateSchema(schemaCheck.fileSchema)
+    console.log('[INTERNAL AUTH] ✓ Schema updated')
+  } else {
+    console.log('[INTERNAL AUTH] Schema is up to date')
+  }
+  
+  // Check if policies need updating
+  const policyCheck = await internalPolicyStore.shouldUpdatePolicies()
+  if (policyCheck.shouldUpdate) {
+    console.log('[INTERNAL AUTH] Policies changed, updating...')
+    await internalPolicyStore.updatePolicies(policyCheck.filePolicies)
+    console.log('[INTERNAL AUTH] ✓ Policies updated')
+  } else {
+    console.log('[INTERNAL AUTH] Policies are up to date')
+  }
+  
+  // Ensure ziri's internal entity exists
+  const ziriEntity = await internalEntityStore.getEntity('ziri')
+  if (!ziriEntity) {
+    console.log('[INTERNAL AUTH] Creating internal entity for ziri...')
+    const ziriUser = db.prepare('SELECT * FROM auth WHERE id = ?').get('ziri') as any
+    if (ziriUser) {
+      const { decrypt } = await import('../utils/encryption.js')
+      let email = 'ziri@ziri.local'
+      try {
+        email = decrypt(ziriUser.email)
+      } catch {
+        email = ziriUser.email || 'ziri@ziri.local'
+      }
+      
+      const entity = {
+        uid: {
+          type: 'DashboardUser',
+          id: 'ziri'
+        },
+        attrs: {
+          user_id: 'ziri',
+          role: 'admin',
+          status: 'active',
+          email: email,
+          name: ziriUser.name || 'Administrator'
+        },
+        parents: []
+      }
+      
+      await internalEntityStore.createEntity(entity)
+      console.log('[INTERNAL AUTH] ✓ Ziri internal entity created')
+    } else {
+      console.warn('[INTERNAL AUTH] ⚠️ Ziri user not found in auth table, skipping entity creation')
+    }
+  } else {
+    // Sync name/email from auth table if needed
+    const ziriUser = db.prepare('SELECT * FROM auth WHERE id = ?').get('ziri') as any
+    if (ziriUser) {
+      const { decrypt } = await import('../utils/encryption.js')
+      let email = 'ziri@ziri.local'
+      try {
+        email = decrypt(ziriUser.email)
+      } catch {
+        email = ziriUser.email || 'ziri@ziri.local'
+      }
+      
+      const updates: any = {}
+      if (ziriEntity.attrs.email !== email) {
+        updates.email = email
+      }
+      if (ziriEntity.attrs.name !== (ziriUser.name || 'Administrator')) {
+        updates.name = ziriUser.name || 'Administrator'
+      }
+      if (ziriEntity.attrs.role !== (ziriUser.role || 'admin')) {
+        updates.role = ziriUser.role || 'admin'
+      }
+      
+      if (Object.keys(updates).length > 0) {
+        await internalEntityStore.updateEntity('ziri', updates)
+        console.log('[INTERNAL AUTH] ✓ Ziri internal entity synced')
+      }
+    }
+  }
+  
+  console.log('[INTERNAL AUTH] ✅ Internal authorization initialization complete')
 }
 
 export { DB_PATH }

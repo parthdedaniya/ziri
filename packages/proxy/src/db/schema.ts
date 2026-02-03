@@ -136,6 +136,40 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_decision ON audit_logs(decision);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_execution_time ON audit_logs(execution_time);
 `;
 
+export const CREATE_INTERNAL_ENTITIES_TABLE = `
+CREATE TABLE IF NOT EXISTS internal_entities (
+  etype TEXT NOT NULL,
+  eid TEXT NOT NULL,
+  ejson TEXT NOT NULL,
+  status INTEGER NOT NULL DEFAULT 1 CHECK (status IN (0, 1, 2)),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (etype, eid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_internal_entities_status ON internal_entities(status);
+CREATE INDEX IF NOT EXISTS idx_internal_entities_etype ON internal_entities(etype);
+CREATE INDEX IF NOT EXISTS idx_internal_entities_created_at ON internal_entities(created_at);
+`;
+
+export const CREATE_INTERNAL_SCHEMA_POLICY_TABLE = `
+CREATE TABLE IF NOT EXISTS internal_schema_policy (
+  id TEXT PRIMARY KEY,
+  obj_type TEXT NOT NULL CHECK (obj_type IN ('schema', 'policy')),
+  version TEXT,
+  content TEXT NOT NULL,
+  description TEXT,
+  status INTEGER NOT NULL DEFAULT 1 CHECK (status IN (0, 1, 2)),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_internal_schema_policy_obj_type ON internal_schema_policy(obj_type);
+CREATE INDEX IF NOT EXISTS idx_internal_schema_policy_status ON internal_schema_policy(status);
+CREATE INDEX IF NOT EXISTS idx_internal_schema_policy_version ON internal_schema_policy(version);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_internal_schema_policy_unique_schema ON internal_schema_policy(obj_type) WHERE obj_type = 'schema';
+`;
+
 export const ALL_SCHEMAS = [
   CREATE_AUTH_TABLE,
   CREATE_USER_AGENT_KEYS_TABLE,
@@ -144,7 +178,9 @@ export const ALL_SCHEMAS = [
   CREATE_REFRESH_TOKENS_TABLE,
   CREATE_ENTITIES_TABLE,
   CREATE_COST_TRACKING_TABLE,
-  CREATE_AUDIT_LOGS_TABLE
+  CREATE_AUDIT_LOGS_TABLE,
+  CREATE_INTERNAL_ENTITIES_TABLE,
+  CREATE_INTERNAL_SCHEMA_POLICY_TABLE
 ];
 
 export const LEGACY_TABLES = [

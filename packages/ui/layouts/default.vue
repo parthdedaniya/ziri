@@ -133,7 +133,8 @@ const pageTitle = computed(() => {
     '/users': 'Users',
     '/keys': 'API Keys',
     '/providers': 'LLM Providers',
-    '/me': 'My Profile'
+    '/me': 'My Profile',
+    '/settings/manage-users': 'Manage Users'
   }
   
  

@@ -14,8 +14,8 @@ function authenticateSSE(
     const token = authHeader.substring(7)
     try {
       const payload = verifyAccessToken(token)
-      if (payload.role === 'admin') {
- 
+      // Allow any dashboard user (role !== 'user') - admin, viewer, user_admin, policy_admin
+      if (payload.role && payload.role !== 'user') {
         (req as any).admin = {
           userId: payload.userId,
           email: payload.email,
@@ -26,7 +26,7 @@ function authenticateSSE(
         return
       }
     } catch (error) {
- 
+      // Token invalid, continue to check query param
     }
   }
 
@@ -34,7 +34,8 @@ function authenticateSSE(
   if (token) {
     try {
       const payload = verifyAccessToken(token)
-      if (payload.role === 'admin') {
+      // Allow any dashboard user (role !== 'user') - admin, viewer, user_admin, policy_admin
+      if (payload.role && payload.role !== 'user') {
         (req as any).admin = {
           userId: payload.userId,
           email: payload.email,
@@ -45,13 +46,13 @@ function authenticateSSE(
         return
       }
     } catch (error) {
- 
+      // Token invalid
     }
   }
 
   res.status(401).json({
-    error: 'Admin authentication required',
-    code: 'ADMIN_AUTH_REQUIRED'
+    error: 'Dashboard authentication required',
+    code: 'DASHBOARD_AUTH_REQUIRED'
   })
 }
 

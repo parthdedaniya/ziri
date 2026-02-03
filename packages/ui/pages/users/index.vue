@@ -3,9 +3,17 @@ import { useUsers, type User, type CreateUserInput } from '~/composables/useUser
 import { useToast } from '~/composables/useToast'
 import { useDebounce } from '~/composables/useDebounce'
 import { formatDate } from '~/utils/formatters'
+import { useInternalAuth } from '~/composables/useInternalAuth'
 
 const { users, loading, loadUsers, createUser, updateUser, deleteUser, resetPassword } = useUsers()
 const toast = useToast()
+const { checkActions, checkAction } = useInternalAuth()
+
+// Permission states
+const canCreateUser = ref(false)
+const canUpdateUser = ref(false)
+const canDeleteUser = ref(false)
+const canResetPassword = ref(false)
 
  
 const showCreateModal = ref(false)
@@ -75,12 +83,32 @@ watch([debouncedSearchQuery, currentPage, itemsPerPage, sortBy, sortOrder], () =
 })
 
 onMounted(async () => {
+  // Check permissions for sensitive actions
+  const permissions = await checkActions([
+    { action: 'create_user', resourceType: 'users' },
+    { action: 'update_user', resourceType: 'users' },
+    { action: 'delete_user', resourceType: 'users' },
+    { action: 'reset_user_password', resourceType: 'users' }
+  ])
+  
+  canCreateUser.value = permissions.results.find(r => r.action === 'create_user')?.allowed || false
+  canUpdateUser.value = permissions.results.find(r => r.action === 'update_user')?.allowed || false
+  canDeleteUser.value = permissions.results.find(r => r.action === 'delete_user')?.allowed || false
+  canResetPassword.value = permissions.results.find(r => r.action === 'reset_user_password')?.allowed || false
+  
   await fetchUsers()
 })
 
 const handleCreateUser = async () => {
   if (!newUser.email.trim() || !newUser.name.trim()) {
     toast.warning('Email and name are required')
+    return
+  }
+  
+  // Pre-action check (Layer 2)
+  const check = await checkAction('create_user', 'users')
+  if (!check.allowed) {
+    toast.error('You do not have permission to create users')
     return
   }
   
@@ -117,12 +145,26 @@ const handleCreateUser = async () => {
   }
 }
 
-const confirmDelete = (user: User) => {
+const confirmDelete = async (user: User) => {
+  // Pre-action check (Layer 2)
+  const check = await checkAction('delete_user', 'users')
+  if (!check.allowed) {
+    toast.error('You do not have permission to delete users')
+    return
+  }
+  
   userToDelete.value = user
   showDeleteModal.value = true
 }
 
-const confirmResetPassword = (user: User) => {
+const confirmResetPassword = async (user: User) => {
+  // Pre-action check (Layer 2)
+  const check = await checkAction('reset_user_password', 'users')
+  if (!check.allowed) {
+    toast.error('You do not have permission to reset user passwords')
+    return
+  }
+  
   userToResetPassword.value = user
   showResetPasswordModal.value = true
 }
@@ -206,7 +248,7 @@ const copyPassword = () => {
           </button>
         </div>
       </div>
-      <UiButton @click="showCreateModal = true">
+      <UiButton v-if="canCreateUser" @click="showCreateModal = true">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
         </svg>
@@ -216,7 +258,7 @@ const copyPassword = () => {
 
     <!-- Empty state toolbar (when no users at all) -->
     <div class="flex items-center justify-end gap-4" v-if="users.length === 0 && !loading && !searchQuery">
-      <UiButton @click="showCreateModal = true">
+      <UiButton v-if="canCreateUser" @click="showCreateModal = true">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
         </svg>
@@ -272,6 +314,7 @@ const copyPassword = () => {
         <template #actions="{ row }">
           <div class="flex gap-2">
             <UiButton
+              v-if="canResetPassword"
               variant="ghost"
               size="sm"
               @click="confirmResetPassword(row)"
@@ -284,6 +327,7 @@ const copyPassword = () => {
               </svg>
             </UiButton>
             <UiButton
+              v-if="canDeleteUser"
               variant="ghost"
               size="sm"
               @click="confirmDelete(row)"
@@ -298,7 +342,7 @@ const copyPassword = () => {
           </div>
         </template>
         <template #empty-action>
-          <UiButton @click="showCreateModal = true">
+          <UiButton v-if="canCreateUser && !searchQuery" @click="showCreateModal = true">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
             </svg>

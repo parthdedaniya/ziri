@@ -4,15 +4,18 @@ import { useToast } from '~/composables/useToast'
 import { useSchema } from '~/composables/useSchema'
 import { useRules } from '~/composables/useRules'
 import { useKeys } from '~/composables/useKeys'
+import { useInternalAuth } from '~/composables/useInternalAuth'
 
 const configStore = useConfigStore()
 const toast = useToast()
 const { getSchema } = useSchema()
 const { listRules } = useRules()
 const { listKeys } = useKeys()
+const { checkAction } = useInternalAuth()
 
 const isSaving = ref(false)
 const showRootKey = ref(false)
+const canUpdateConfig = ref(false)
 
  
 const form = reactive({
@@ -43,6 +46,9 @@ const form = reactive({
 })
 
 onMounted(async () => {
+  // Check permission to update config
+  const check = await checkAction('update_config', 'config')
+  canUpdateConfig.value = check.allowed
  
   try {
     const response = await fetch('/api/config')
@@ -93,6 +99,13 @@ onMounted(async () => {
 })
 
 const saveConfig = async () => {
+  // Pre-action check (Layer 2)
+  const check = await checkAction('update_config', 'config')
+  if (!check.allowed) {
+    toast.error('You do not have permission to update configuration')
+    return
+  }
+  
   isSaving.value = true
   try {
     await configStore.updateConfig(form)
@@ -135,7 +148,7 @@ const copyRootKey = () => {
 <template>
   <form @submit.prevent="saveConfig" class="max-w-2xl space-y-6">
     <!-- Mode Display (Read-only for now) -->
-    <section class="card">
+    <!-- <section class="card">
       <div class="flex items-center gap-3 mb-5">
         <div class="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
           <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -168,7 +181,7 @@ const copyRootKey = () => {
           </p>
         </div>
       </div>
-    </section>
+    </section> -->
 
     <!-- Server Settings -->
     <section class="card">
@@ -183,27 +196,27 @@ const copyRootKey = () => {
       <div class="space-y-4">
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <UiInput v-model="form.server.host" label="Host" placeholder="127.0.0.1" />
+            <UiInput v-model="form.server.host" label="Host" placeholder="127.0.0.1" :disabled="!canUpdateConfig" />
             <p class="text-xs text-[rgb(var(--text-secondary))] mt-1.5">
               Use <code class="font-mono">0.0.0.0</code> for network access
             </p>
           </div>
           <div>
-            <UiInput v-model.number="form.server.port" label="Port" type="number" />
+            <UiInput v-model.number="form.server.port" label="Port" type="number" :disabled="!canUpdateConfig" />
             <p class="text-xs text-[rgb(var(--text-secondary))] mt-1.5">
               Auto-increments if port is in use
             </p>
           </div>
         </div>
         <div>
-          <UiInput v-model="form.publicUrl" label="Public URL" type="url" placeholder="https://your-ngrok-url.ngrok.io" />
+          <UiInput v-model="form.publicUrl" label="Public URL" type="url" placeholder="https://your-ngrok-url.ngrok.io" :disabled="!canUpdateConfig" />
           <p class="text-xs text-[rgb(var(--text-secondary))] mt-1.5">
             Optional: Public URL for sharing with users (ngrok, Tailscale, etc.)
           </p>
         </div>
         <div>
           <label class="block text-xs font-semibold text-[rgb(var(--text-secondary))] mb-1.5">Log Level</label>
-          <select v-model="form.logLevel" class="input">
+          <select v-model="form.logLevel" class="input" :disabled="!canUpdateConfig">
             <option value="debug">Debug</option>
             <option value="info">Info</option>
             <option value="warn">Warn</option>
@@ -230,6 +243,7 @@ const copyRootKey = () => {
             id="emailEnabled"
             v-model="form.email.enabled"
             class="w-4 h-4 rounded border-[rgb(var(--border))]"
+            :disabled="!canUpdateConfig"
           />
           <label for="emailEnabled" class="text-sm font-semibold text-[rgb(var(--text))]">
             Enable Email Service
@@ -239,7 +253,7 @@ const copyRootKey = () => {
         <div v-if="form.email.enabled" class="space-y-4 pl-6 border-l-2 border-[rgb(var(--border))]">
           <div>
             <label class="block text-xs font-semibold text-[rgb(var(--text-secondary))] mb-1.5">Provider</label>
-            <select v-model="form.email.provider" class="input">
+            <select v-model="form.email.provider" class="input" :disabled="!canUpdateConfig">
               <option value="manual">Manual (Log to Console)</option>
               <option value="smtp">SMTP</option>
               <option value="sendgrid">SendGrid</option>
@@ -249,8 +263,8 @@ const copyRootKey = () => {
           <!-- SMTP Settings -->
           <div v-if="form.email.provider === 'smtp'" class="space-y-3">
             <div class="grid grid-cols-2 gap-4">
-              <UiInput v-model="form.email.smtp.host" label="SMTP Host" placeholder="smtp.gmail.com" />
-              <UiInput v-model.number="form.email.smtp.port" label="SMTP Port" type="number" />
+              <UiInput v-model="form.email.smtp.host" label="SMTP Host" placeholder="smtp.gmail.com" :disabled="!canUpdateConfig" />
+              <UiInput v-model.number="form.email.smtp.port" label="SMTP Port" type="number" :disabled="!canUpdateConfig" />
             </div>
             <div class="flex items-center gap-2">
               <input
@@ -258,6 +272,7 @@ const copyRootKey = () => {
                 id="smtpSecure"
                 v-model="form.email.smtp.secure"
                 class="w-4 h-4 rounded border-[rgb(var(--border))]"
+                :disabled="!canUpdateConfig"
               />
               <label for="smtpSecure" class="text-sm text-[rgb(var(--text-secondary))]">
                 Use TLS/SSL (for port 465 only)
@@ -267,19 +282,19 @@ const copyRootKey = () => {
               <strong>Note:</strong> Port 587 uses STARTTLS (leave unchecked). Port 465 uses SSL/TLS (check this box).
             </p>
             <div class="grid grid-cols-2 gap-4">
-              <UiInput v-model="form.email.smtp.auth.user" label="SMTP Username" />
-              <UiInput v-model="form.email.smtp.auth.pass" label="SMTP Password" type="password" />
+              <UiInput v-model="form.email.smtp.auth.user" label="SMTP Username" :disabled="!canUpdateConfig" />
+              <UiInput v-model="form.email.smtp.auth.pass" label="SMTP Password" type="password" :disabled="!canUpdateConfig" />
             </div>
           </div>
 
           <!-- SendGrid Settings -->
           <div v-if="form.email.provider === 'sendgrid'" class="space-y-3">
-            <UiInput v-model="form.email.sendgrid.apiKey" label="SendGrid API Key" type="password" />
+            <UiInput v-model="form.email.sendgrid.apiKey" label="SendGrid API Key" type="password" :disabled="!canUpdateConfig" />
           </div>
 
           <!-- From Address (for all providers) -->
           <div>
-            <UiInput v-model="form.email.from" label="From Address" type="email" placeholder="noreply@example.com" />
+            <UiInput v-model="form.email.from" label="From Address" type="email" placeholder="noreply@example.com" :disabled="!canUpdateConfig" />
             <p class="text-xs text-[rgb(var(--text-secondary))] mt-1.5">
               Email address to send from (required for SendGrid)
             </p>
@@ -331,10 +346,10 @@ const copyRootKey = () => {
 
     <!-- Actions -->
     <div class="flex gap-3">
-      <UiButton type="submit" :loading="isSaving">
+      <UiButton type="submit" :loading="isSaving" :disabled="!canUpdateConfig">
         Save Configuration
       </UiButton>
-      <UiButton type="button" variant="ghost" @click="resetToDefaults">
+      <UiButton type="button" variant="ghost" @click="resetToDefaults" :disabled="!canUpdateConfig">
         Reset
       </UiButton>
     </div>

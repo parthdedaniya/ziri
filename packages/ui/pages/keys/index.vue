@@ -5,6 +5,7 @@ import { useConfigStore } from '~/stores/config'
 import { useToast } from '~/composables/useToast'
 import { useCedarWasm } from '~/composables/useCedarWasm'
 import { useAdminAuth } from '~/composables/useAdminAuth'
+import { useInternalAuth } from '~/composables/useInternalAuth'
 import { formatCurrency, formatPercent, maskApiKey } from '~/utils/formatters'
 import { toDecimal, toDecimalOne, toDecimalFour, toIp, normalizeDecimal } from '~/utils/cedar'
 import type { Key, CreateKeyInput, Entity } from '~/types/entity'
@@ -16,9 +17,29 @@ const { listKeys, getKey, getKeyByUserId, createKey, updateKey, rotateKey, keys,
 const { users, loadUsers } = useUsers()
 const { validateEntities } = useCedarWasm()
 const toast = useToast()
+const { checkActions, checkAction } = useInternalAuth()
+
+// Permission states
+const canCreateKey = ref(false)
+const canRotateKey = ref(false)
+const canDeleteKey = ref(false)
+const canUpdateKeyStatus = ref(false)
 
  
 onMounted(async () => {
+  // Check permissions for sensitive actions
+  const permissions = await checkActions([
+    { action: 'create_key', resourceType: 'keys' },
+    { action: 'rotate_key', resourceType: 'keys' },
+    { action: 'delete_key_by_id', resourceType: 'keys' },
+    { action: 'update_key_status', resourceType: 'keys' }
+  ])
+  
+  canCreateKey.value = permissions.results.find(r => r.action === 'create_key')?.allowed || false
+  canRotateKey.value = permissions.results.find(r => r.action === 'rotate_key')?.allowed || false
+  canDeleteKey.value = permissions.results.find(r => r.action === 'delete_key_by_id')?.allowed || false
+  canUpdateKeyStatus.value = permissions.results.find(r => r.action === 'update_key_status')?.allowed || false
+  
   await nextTick()
   
   if (configStore.isConfigured) {
@@ -149,8 +170,14 @@ const columns = [
   { key: 'actions', header: '', class: 'w-32' }
 ]
 
-const viewKeyDetail = (row: Key) => {
- 
+const viewKeyDetail = async (row: Key) => {
+  // Check permission before navigating to detail page
+  const check = await checkAction('create_key', 'keys')
+  if (!check.allowed) {
+    toast.error('You do not have permission to view key details')
+    return
+  }
+  
   const identifier = row.userKeyId || row.userId
   router.push(`/keys/${identifier}`)
 }
@@ -255,6 +282,13 @@ const isUpdating = ref(false)
 const handleUpdateKey = async () => {
   if (!keyToEdit.value || !originalEntity.value || !keyToEdit.value.userKeyId || isUpdating.value) return
   
+  // Pre-action check (Layer 2)
+  const check = await checkAction('update_key_status', 'keys')
+  if (!check.allowed) {
+    toast.error('You do not have permission to update key status')
+    return
+  }
+  
   try {
     isUpdating.value = true
  
@@ -303,6 +337,13 @@ const handleCreateKey = async () => {
     return
   }
   
+  // Pre-action check (Layer 2)
+  const check = await checkAction('create_key', 'keys')
+  if (!check.allowed) {
+    toast.error('You do not have permission to create API keys')
+    return
+  }
+  
   if (isCreating.value) return
   
   try {
@@ -327,6 +368,13 @@ const handleCreateKey = async () => {
 
 const handleRotateKey = async (userId: string) => {
   if (isRotating.value === userId) return
+  
+  // Pre-action check (Layer 2)
+  const check = await checkAction('rotate_key', 'keys')
+  if (!check.allowed) {
+    toast.error('You do not have permission to rotate API keys')
+    return
+  }
   
   try {
     isRotating.value = userId
@@ -387,7 +435,7 @@ const { getAuthHeader } = useAdminAuth()
           <option value="disabled">Disabled</option>
         </select>
       </div>
-      <UiButton @click="showCreateModal = true">
+      <UiButton v-if="canCreateKey" @click="showCreateModal = true">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
         </svg>
@@ -397,7 +445,7 @@ const { getAuthHeader } = useAdminAuth()
 
     <!-- Empty state toolbar (when no keys at all) -->
     <div class="flex items-center justify-end gap-4" v-if="keys.length === 0 && !loading && !searchQuery && !filterStatus">
-      <UiButton @click="showCreateModal = true">
+      <UiButton v-if="canCreateKey" @click="showCreateModal = true">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
         </svg>
@@ -424,7 +472,7 @@ const { getAuthHeader } = useAdminAuth()
       @update:sort="handleSort"
     >
       <template #empty-action>
-        <UiButton @click="showCreateModal = true">
+        <UiButton @click="showCreateModal = true" v-if="!canCreateKey && !searchQuery">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
@@ -444,7 +492,7 @@ const { getAuthHeader } = useAdminAuth()
       <template #apiKey="{ row }">
         <div class="flex items-center gap-2">
           <code class="text-xs font-mono text-[rgb(var(--text-muted))]">{{ maskApiKey(row.apiKey) }}</code>
-          <UiCopyButton :text="row.apiKey" size="sm" />
+          <UiCopyButton v-if="canCreateKey" :text="row.apiKey" size="sm" />
         </div>
       </template>
       
@@ -476,6 +524,7 @@ const { getAuthHeader } = useAdminAuth()
       <template #actions="{ row }">
         <div class="flex gap-1">
           <UiButton 
+            v-if="canUpdateKeyStatus"
             size="sm" 
             variant="ghost"
             class="text-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
@@ -488,7 +537,7 @@ const { getAuthHeader } = useAdminAuth()
             </svg>
           </UiButton>
           <UiButton 
-            v-if="row.status === 'active' || row.status === 1"
+            v-if="(row.status === 'active' || row.status === 1) && canRotateKey"
             size="sm" 
             variant="ghost"
             class="text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20"

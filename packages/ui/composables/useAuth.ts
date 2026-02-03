@@ -16,55 +16,59 @@ export function useAuth() {
   }
 
   const login = async (username: string, password: string): Promise<boolean> => {
- 
     adminAuthStore.setLoading(true)
     userAuthStore.setLoading(true)
     adminAuthStore.setError(null)
     userAuthStore.setError(null)
     
     try {
- 
- 
-      
- 
-      const isAdminUsername = username === 'admin' || username === 'ziri' || username === 'ziri@ziri.local'
-      if (isAdminUsername) {
-        try {
-          const adminResponse = await fetch('/api/auth/admin/login', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ username, password })
-          })
+      // 1) Try admin/dashboard login first (for any username).
+      // This covers:
+      // - Built-in admin (ziri, root key)
+      // - New dashboard users (admin, viewer, user_admin, policy_admin)
+      try {
+        const adminResponse = await fetch('/api/auth/admin/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          // Backend accepts either id or email via "username" or "email" (we pass both as username)
+          body: JSON.stringify({ username, email: username, password })
+        })
+        
+        if (adminResponse.ok) {
+          const adminData = await adminResponse.json()
           
-          if (adminResponse.ok) {
-            const adminData = await adminResponse.json()
-            
- 
-            adminAuthStore.setTokens(
-              adminData.accessToken,
-              adminData.refreshToken,
-              adminData.expiresIn,
-              adminData.user
-            )
-            
-            toast.success('Admin login successful!')
-            
- 
-            if (process.client) {
-              await navigateTo('/config')
-            }
-            
-            return true
+          adminAuthStore.setTokens(
+            adminData.accessToken,
+            adminData.refreshToken,
+            adminData.expiresIn,
+            adminData.user
+          )
+          
+          toast.success('Admin login successful!')
+          
+          if (process.client) {
+            await navigateTo('/config')
           }
-        } catch (error: any) {
- 
+          
+          return true
+        } else {
+          // If it's a hard admin failure (e.g. disabled account), surface that and don't fall back.
+          const errorBody = await adminResponse.json().catch(() => ({}))
+          const code = errorBody.code as string | undefined
+          if (adminResponse.status === 403 || code === 'ACCOUNT_DISABLED') {
+            throw new Error(errorBody.error || 'Admin account is disabled')
+          }
+          // For 401 INVALID_CREDENTIALS and other soft failures, we fall through to user login.
         }
+      } catch (error: any) {
+        // Network or unexpected error during admin login: fall through to user login,
+        // unless you want to treat it as fatal. For now, we just log and continue.
+        console.error('[AUTH] Admin login attempt failed:', error)
       }
       
- 
- 
+      // 2) Fallback: gateway user login (access-management users).
       const userResponse = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {

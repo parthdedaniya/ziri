@@ -22,6 +22,8 @@ const userRole = computed(() => {
 
 const isAdmin = computed(() => userRole.value === 'admin')
 const isUser = computed(() => userRole.value === 'user' || userRole.value === undefined)
+// Dashboard users are any users with a role that's not 'user' (admin, viewer, user_admin, policy_admin)
+const isDashboardUser = computed(() => userRole.value && userRole.value !== 'user')
 
 const toggleSidebar = () => {
   isCollapsed.value = !isCollapsed.value
@@ -70,50 +72,51 @@ const dashboardItem = { name: 'Dashboard', path: '/', icon: 'dashboard', adminOn
 const navSections = computed(() => {
   const sections = []
   
- 
-  if (isAdmin.value) {
+  // Show sections for all dashboard users (admin, viewer, user_admin, policy_admin)
+  if (isDashboardUser.value) {
     sections.push(
       {
         title: 'Analytics & Monitoring',
         icon: 'chart',
-        adminOnly: true,
+        adminOnly: false,
         items: [
-          { name: 'Analytics', path: '/analytics', icon: 'analytics', adminOnly: true },
-          { name: 'Logs', path: '/logs', icon: 'logs', adminOnly: true }
+          { name: 'Analytics', path: '/analytics', icon: 'analytics', adminOnly: false },
+          { name: 'Logs', path: '/logs', icon: 'logs', adminOnly: false }
         ]
       },
       {
         title: 'Authorization',
         icon: 'lock',
-        adminOnly: true,
+        adminOnly: false,
         items: [
-          { name: 'Schema', path: '/schema', icon: 'schema', adminOnly: true },
-          { name: 'Rules', path: '/rules', icon: 'rules', adminOnly: true }
+          { name: 'Schema', path: '/schema', icon: 'schema', adminOnly: false },
+          { name: 'Rules', path: '/rules', icon: 'rules', adminOnly: false }
         ]
       },
       {
         title: 'Access Management',
         icon: 'key',
-        adminOnly: true,
+        adminOnly: false,
         items: [
-          { name: 'Users', path: '/users', icon: 'users', adminOnly: true },
-          { name: 'API Keys', path: '/keys', icon: 'keys', adminOnly: true }
+          { name: 'Users', path: '/users', icon: 'users', adminOnly: false },
+          { name: 'API Keys', path: '/keys', icon: 'keys', adminOnly: false }
         ]
       },
       {
         title: 'LLM Providers',
         icon: 'providers',
-        adminOnly: true,
+        adminOnly: false,
         items: [
-          { name: 'Providers', path: '/providers', icon: 'providers', adminOnly: true }
+          { name: 'Providers', path: '/providers', icon: 'providers', adminOnly: false }
         ]
       },
       {
         title: 'Settings',
         icon: 'settings',
-        adminOnly: true,
+        adminOnly: true, // Only admins can see Settings section (includes Config and Manage Users)
         items: [
-          { name: 'Configuration', path: '/config', icon: 'config', adminOnly: true }
+          { name: 'Configuration', path: '/config', icon: 'config', adminOnly: true },
+          { name: 'Manage Users', path: '/settings/manage-users', icon: 'users', adminOnly: true, requiresAdmin: true }
         ]
       }
     )
@@ -190,8 +193,8 @@ const getIcon = (iconName: string) => {
     
     <!-- Navigation -->
     <nav class="flex-1 p-2 overflow-y-auto overflow-x-hidden flex flex-col min-w-0" style="scrollbar-width: none; -ms-overflow-style: none;">
-      <!-- Dashboard (independent, always at top) - Admin only -->
-      <div v-if="isAdmin" class="mb-4 min-w-0">
+      <!-- Dashboard (independent, always at top) - Dashboard users only -->
+      <div v-if="isDashboardUser" class="mb-4 min-w-0">
         <NuxtLink
           :to="dashboardItem.path"
           class="nav-item group relative min-w-0 w-full"
@@ -211,7 +214,7 @@ const getIcon = (iconName: string) => {
 
       <!-- Sections -->
       <div class="flex-1">
-        <div v-for="(section, sectionIdx) in navSections" :key="section.title" class="mb-4 last:mb-0">
+        <div v-for="(section, sectionIdx) in navSections" :key="section.title" v-show="!section.adminOnly || isAdmin" class="mb-4 last:mb-0">
           <!-- Separator line when collapsed (before each section) -->
           <div 
             v-if="isCollapsed"
@@ -238,6 +241,7 @@ const getIcon = (iconName: string) => {
             <NuxtLink
               v-for="item in section.items"
               :key="item.path"
+              v-show="!(item.requiresAdmin && userRole !== 'admin')"
               :to="item.path"
               class="nav-item group relative min-w-0 w-full"
               :class="{ 

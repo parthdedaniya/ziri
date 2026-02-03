@@ -174,21 +174,6 @@ onMounted(() => {
 
 <template>
   <div class="space-y-4">
-    <!-- Header -->
-    <div class="flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-bold text-[rgb(var(--text))]">Logs</h1>
-        <p class="text-sm text-[rgb(var(--text-muted))] mt-1">Monitor API requests and authorization decisions</p>
-      </div>
-      <div class="flex items-center gap-3">
-        <select v-model="dateRange" class="input w-32" @change="fetchLogs">
-          <option value="today">Today</option>
-          <option value="7d">Last 7 days</option>
-          <option value="30d">Last 30 days</option>
-          <option value="all">All time</option>
-        </select>
-      </div>
-    </div>
 
     <!-- Filters -->
     <div class="flex items-center gap-3 flex-wrap">
@@ -216,6 +201,12 @@ onMounted(() => {
         <option value="">All Models</option>
         <option v-for="model in uniqueModels" :key="model" :value="model">{{ model }}</option>
       </select>
+      <select v-model="dateRange" class="input w-32" @change="fetchLogs">
+          <option value="today">Today</option>
+          <option value="7d">Last 7 days</option>
+          <option value="30d">Last 30 days</option>
+          <option value="all">All time</option>
+        </select>
     </div>
 
     <!-- Loading State -->

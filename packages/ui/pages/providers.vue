@@ -3,11 +3,18 @@ import { useProviders } from '~/composables/useProviders'
 import { useConfigStore } from '~/stores/config'
 import { useToast } from '~/composables/useToast'
 import { useDebounce } from '~/composables/useDebounce'
+import { useInternalAuth } from '~/composables/useInternalAuth'
 import type { Provider, CreateProviderInput } from '~/composables/useProviders'
 
 const configStore = useConfigStore()
 const { providers, loading, listProviders, addProvider, removeProvider, testProvider } = useProviders()
 const toast = useToast()
+const { checkActions, checkAction } = useInternalAuth()
+
+// Permission states
+const canCreateProvider = ref(false)
+const canDeleteProvider = ref(false)
+const canTestProvider = ref(false)
 
  
 const PROVIDER_TEMPLATES: Record<string, { displayName: string; baseUrl: string; models: string[] }> = {
@@ -25,6 +32,17 @@ const PROVIDER_TEMPLATES: Record<string, { displayName: string; baseUrl: string;
 
  
 onMounted(async () => {
+  // Check permissions for sensitive actions
+  const permissions = await checkActions([
+    { action: 'create_provider', resourceType: 'providers' },
+    { action: 'delete_provider', resourceType: 'providers' },
+    { action: 'test_provider', resourceType: 'providers' }
+  ])
+  
+  canCreateProvider.value = permissions.results.find(r => r.action === 'create_provider')?.allowed || false
+  canDeleteProvider.value = permissions.results.find(r => r.action === 'delete_provider')?.allowed || false
+  canTestProvider.value = permissions.results.find(r => r.action === 'test_provider')?.allowed || false
+  
   try {
     await listProviders()
   } catch (e: any) {
@@ -96,6 +114,13 @@ const paginatedProviders = computed(() => {
 })
 
 const handleAddProvider = async () => {
+  // Pre-action check (Layer 2)
+  const check = await checkAction('create_provider', 'providers')
+  if (!check.allowed) {
+    toast.error('You do not have permission to create providers')
+    return
+  }
+  
   try {
     if (!newProvider.apiKey || !newProvider.providerType) {
       toast.error('Please provide provider type and API key')
@@ -124,6 +149,13 @@ const handleAddProvider = async () => {
 const handleRemoveProvider = async () => {
   if (!providerToDelete.value) return
   
+  // Pre-action check (Layer 2)
+  const check = await checkAction('delete_provider', 'providers')
+  if (!check.allowed) {
+    toast.error('You do not have permission to delete providers')
+    return
+  }
+  
   try {
     await removeProvider(providerToDelete.value.name)
     toast.success(`Provider '${providerToDelete.value.name}' removed successfully`)
@@ -135,6 +167,13 @@ const handleRemoveProvider = async () => {
 }
 
 const handleTestProvider = async (provider: Provider) => {
+  // Pre-action check (Layer 2)
+  const check = await checkAction('test_provider', 'providers')
+  if (!check.allowed) {
+    toast.error('You do not have permission to test providers')
+    return
+  }
+  
   testingProvider.value = provider.name
   try {
     const result = await testProvider(provider.name)
@@ -155,14 +194,21 @@ const handleOpenCreateModal = () => {
   showCreateModal.value = true
 }
 
-const columns = [
-  { key: 'name', header: 'Provider', sortable: true },
-  { key: 'displayName', header: 'Display Name', sortable: true },
-  { key: 'baseUrl', header: 'Base URL', sortable: true },
- 
-  { key: 'hasCredentials', header: 'Status' },
-  { key: 'actions', header: 'Actions' }
-]
+const columns = computed(() => {
+  const baseColumns = [
+    { key: 'name', header: 'Provider', sortable: true },
+    { key: 'displayName', header: 'Display Name', sortable: true },
+    { key: 'baseUrl', header: 'Base URL', sortable: true },
+    { key: 'hasCredentials', header: 'Status' }
+  ]
+  
+  // Only show actions column if user has any action permissions
+  if (canCreateProvider.value || canDeleteProvider.value || canTestProvider.value) {
+    baseColumns.push({ key: 'actions', header: 'Actions' })
+  }
+  
+  return baseColumns
+})
 </script>
 
 <template>
@@ -192,7 +238,7 @@ const columns = [
           </button>
         </div>
       </div>
-      <UiButton @click="handleOpenCreateModal">
+      <UiButton v-if="canCreateProvider" @click="handleOpenCreateModal">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
         </svg>
@@ -202,7 +248,7 @@ const columns = [
 
     <!-- Empty state toolbar (when no providers at all) -->
     <div class="flex items-center justify-end gap-4" v-if="providers.length === 0 && !loading && !searchQuery">
-      <UiButton @click="handleOpenCreateModal">
+      <UiButton v-if="canCreateProvider" @click="handleOpenCreateModal">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
         </svg>
@@ -227,7 +273,7 @@ const columns = [
       @update:sort="handleSort"
     >
       <template #empty-action>
-        <UiButton @click="handleOpenCreateModal">
+        <UiButton v-if="canCreateProvider && !searchQuery" @click="handleOpenCreateModal">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
@@ -284,6 +330,7 @@ const columns = [
       <template #actions="{ row }">
         <div class="flex items-center gap-2">
           <UiButton
+            v-if="canTestProvider"
             size="sm"
             variant="ghost"
             :disabled="testingProvider === row.name"
@@ -296,6 +343,7 @@ const columns = [
             Test
           </UiButton>
           <UiButton
+            v-if="canDeleteProvider"
             size="sm"
             variant="ghost"
             @click="providerToDelete = row; showDeleteModal = true"
