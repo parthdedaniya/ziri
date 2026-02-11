@@ -29,7 +29,7 @@ export interface EntityAttrs {
     current_monthly_spend?: CedarDecimal
     last_daily_reset?: string
     last_monthly_reset?: string
-    status?: 'active' | 'revoked' | 'disabled'
+    status?: 'active' | 'disabled' | 'deleted'
     user?: {
         __entity: {
             type: string
@@ -60,18 +60,19 @@ export interface Key {
     userId: string
     userKeyId?: string
     executionKey?: string
-    apiKey: string
+    apiKey?: string
+    keySuffix?: string
     currentDailySpend: number
     currentMonthlySpend: number
-    status: 'active' | 'revoked' | 'disabled'
+    status: 'active' | 'disabled' | 'deleted'
     createdAt: string
- 
+
     name?: string
     email?: string
     group?: string
     isAgent?: boolean
     limitRequestsPerMinute?: number
- 
+
     lastDailyReset?: string
     lastMonthlyReset?: string
 }

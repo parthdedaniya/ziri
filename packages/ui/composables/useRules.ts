@@ -1,6 +1,7 @@
 import { useRulesStore } from '~/stores/rules'
 import { useToast } from './useToast'
 import { useAdminAuth } from './useAdminAuth'
+import { useApiError } from './useApiError'
 import type { Policy, CreatePolicyInput } from '~/types/cedar'
 import type { PoliciesResponse } from '~/types/api'
 import { extractPolicyEffect } from '~/utils/cedar'
@@ -8,6 +9,7 @@ import { extractPolicyEffect } from '~/utils/cedar'
 export function useRules() {
     const rulesStore = useRulesStore()
     const toast = useToast()
+    const { getUserMessage } = useApiError()
     const { getAuthHeader } = useAdminAuth()
 
     const listRules = async (params?: {
@@ -62,7 +64,7 @@ export function useRules() {
             return { rules, total: (data as any).total || rules.length }
         } catch (e: any) {
             rulesStore.error = e.message
-            toast.error('Failed to load rules')
+            toast.error(getUserMessage(e))
             throw e
         } finally {
             rulesStore.loading = false
@@ -101,7 +103,7 @@ export function useRules() {
             toast.success('Rule created successfully')
         } catch (e: any) {
             rulesStore.error = e.message
-            toast.error('Failed to create rule')
+            toast.error(getUserMessage(e))
             throw e
         } finally {
             rulesStore.loading = false
@@ -141,7 +143,7 @@ export function useRules() {
             toast.success('Rule updated successfully')
         } catch (e: any) {
             rulesStore.error = e.message
-            toast.error('Failed to update rule')
+            toast.error(getUserMessage(e))
             throw e
         } finally {
             rulesStore.loading = false
@@ -177,7 +179,7 @@ export function useRules() {
             toast.success('Rule deleted successfully')
         } catch (e: any) {
             rulesStore.error = e.message
-            toast.error('Failed to delete rule')
+            toast.error(getUserMessage(e))
             throw e
         } finally {
             rulesStore.loading = false
@@ -211,7 +213,7 @@ export function useRules() {
             toast.success(`Rule ${isActive ? 'activated' : 'deactivated'} successfully`)
         } catch (e: any) {
             rulesStore.error = e.message
-            toast.error('Failed to update rule status')
+            toast.error(getUserMessage(e))
             throw e
         } finally {
             rulesStore.loading = false

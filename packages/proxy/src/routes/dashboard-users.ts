@@ -1,9 +1,10 @@
 import { Router, type Request, type Response } from 'express'
 import { requireAdmin, type AdminRequest } from '../middleware/auth.js'
 import * as dashboardUserService from '../services/dashboard-user-service.js'
+import * as keyService from '../services/key-service.js'
 import { internalEntityStore } from '../services/internal/internal-entity-store.js'
 import { internalAuthorizationService } from '../services/internal/internal-authorization-service.js'
-import { logInternalOutcome } from '../utils/internal-audit-helpers.js'
+import { logInternalAction } from '../utils/internal-audit-helpers.js'
 
 const router: Router = Router()
 
@@ -30,29 +31,17 @@ router.get('/', async (req: Request, res: Response) => {
       sortOrder: (sortOrder === 'asc' || sortOrder === 'desc') ? sortOrder as 'asc' | 'desc' : undefined
     })
     
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: '200',
-      message: `Retrieved ${result.data.length} dashboard users`,
-      actionDurationMs: Date.now() - actionStart
-    })
-    
     res.json({
       users: result.data,
       total: result.total
     })
   } catch (error: any) {
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: '500',
-      message: error.message || 'Failed to list dashboard users',
-      actionDurationMs: Date.now() - actionStart
-    })
     
     console.error('[DASHBOARD USERS] List error:', error)
     res.status(500).json({
       error: 'Failed to list dashboard users',
-      code: 'LIST_ERROR'
+      code: 'LIST_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })
@@ -65,14 +54,6 @@ router.get('/:userId', async (req: Request, res: Response) => {
     const user = dashboardUserService.getDashboardUser(userId)
     
     if (!user) {
-      await logInternalOutcome(req, {
-        status: 'failed',
-        code: '404',
-        message: 'Dashboard user not found',
-        resourceId: userId,
-        actionDurationMs: Date.now() - actionStart
-      })
-      
       res.status(404).json({
         error: 'Dashboard user not found',
         code: 'USER_NOT_FOUND'
@@ -80,28 +61,14 @@ router.get('/:userId', async (req: Request, res: Response) => {
       return
     }
     
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: '200',
-      message: 'Retrieved dashboard user',
-      resourceId: userId,
-      actionDurationMs: Date.now() - actionStart
-    })
-    
     res.json({ user })
   } catch (error: any) {
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: '500',
-      message: error.message || 'Failed to get dashboard user',
-      resourceId: req.params.userId,
-      actionDurationMs: Date.now() - actionStart
-    })
     
     console.error('[DASHBOARD USERS] Get error:', error)
     res.status(500).json({
       error: 'Failed to get dashboard user',
-      code: 'GET_ERROR'
+      code: 'GET_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })
@@ -179,17 +146,10 @@ router.post('/', async (req: AdminRequest, res: Response) => {
       })
     }
 
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: 'DASHBOARD_USER_CREATED',
+    logInternalAction(req, {
+      action: 'create_dashboard_user',
+      resourceType: 'dashboard_user',
       resourceId: result.user.userId,
-      resourceDetails: {
-        userId: result.user.userId,
-        email: result.user.email,
-        name: result.user.name,
-        role: result.user.role,
-        status: result.user.status
-      },
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
@@ -201,27 +161,15 @@ router.post('/', async (req: AdminRequest, res: Response) => {
         code: 'USER_EXISTS'
       })
 
-      await logInternalOutcome(req, {
-        status: 'failed',
-        code: 'DASHBOARD_USER_CREATE_EXISTS',
-        message: error.message,
-        actionDurationMs: Date.now() - actionStart
-      })
       return
     }
     
     res.status(500).json({
       error: 'Failed to create dashboard user',
       code: 'CREATE_ERROR',
-      message: error.message
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
 
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: 'DASHBOARD_USER_CREATE_ERROR',
-      message: error.message,
-      actionDurationMs: Date.now() - actionStart
-    })
   }
 })
 
@@ -305,17 +253,10 @@ router.put('/:userId', async (req: AdminRequest, res: Response) => {
     
     res.json({ user })
 
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: 'DASHBOARD_USER_UPDATED',
+    logInternalAction(req, {
+      action: 'update_dashboard_user',
+      resourceType: 'dashboard_user',
       resourceId: user.userId,
-      resourceDetails: {
-        userId: user.userId,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        status: user.status
-      },
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
@@ -327,12 +268,6 @@ router.put('/:userId', async (req: AdminRequest, res: Response) => {
         code: 'USER_NOT_FOUND'
       })
 
-      await logInternalOutcome(req, {
-        status: 'failed',
-        code: 'DASHBOARD_USER_UPDATE_NOT_FOUND',
-        message: error.message,
-        actionDurationMs: Date.now() - actionStart
-      })
       return
     }
     
@@ -341,27 +276,15 @@ router.put('/:userId', async (req: AdminRequest, res: Response) => {
         error: error.message,
         code: 'EMAIL_EXISTS'
       })
-      await logInternalOutcome(req, {
-        status: 'failed',
-        code: 'DASHBOARD_USER_UPDATE_EMAIL_EXISTS',
-        message: error.message,
-        actionDurationMs: Date.now() - actionStart
-      })
       return
     }
     
     res.status(500).json({
       error: 'Failed to update dashboard user',
       code: 'UPDATE_ERROR',
-      message: error.message
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
 
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: 'DASHBOARD_USER_UPDATE_ERROR',
-      message: error.message,
-      actionDurationMs: Date.now() - actionStart
-    })
   }
 })
 
@@ -423,18 +346,46 @@ router.delete('/:userId', async (req: AdminRequest, res: Response) => {
         }
       }
     }
-    
+
+    const keysBeforeDelete = keyService.getKeysByUserId(userId)
+    const hadKeys = keysBeforeDelete.length > 0
+
+    if (hadKeys && req.admin) {
+      const principalUid = `DashboardUser::"${req.admin.userId}"`
+      const authzResult = await internalAuthorizationService.authorize({
+        principal: principalUid,
+        action: 'Action::"delete_keys_by_user"',
+        resourceType: 'keys',
+        context: {}
+      })
+      if (!authzResult.allowed) {
+        res.status(403).json({
+          error: 'Access denied',
+          code: 'ACCESS_DENIED',
+          reason: authzResult.reason
+        })
+        return
+      }
+    }
+
     await dashboardUserService.deleteDashboardUser(userId)
-    
+
     res.json({ success: true })
 
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: 'DASHBOARD_USER_DELETED',
+    logInternalAction(req, {
+      action: 'delete_dashboard_user',
+      resourceType: 'dashboard_user',
       resourceId: userId,
-      resourceDetails: { userId },
       actionDurationMs: Date.now() - actionStart
     })
+    if (hadKeys) {
+      logInternalAction(req, {
+        action: 'delete_keys',
+        resourceType: 'api_key',
+        resourceId: userId,
+        actionDurationMs: Date.now() - actionStart
+      })
+    }
   } catch (error: any) {
     console.error('[DASHBOARD USERS] Delete error:', error)
     
@@ -443,29 +394,15 @@ router.delete('/:userId', async (req: AdminRequest, res: Response) => {
         error: error.message,
         code: error.message.includes('Cannot delete') ? 'CANNOT_DELETE' : 'USER_NOT_FOUND'
       })
-      await logInternalOutcome(req, {
-        status: 'failed',
-        code: error.message.includes('Cannot delete')
-          ? 'DASHBOARD_USER_DELETE_FORBIDDEN'
-          : 'DASHBOARD_USER_DELETE_NOT_FOUND',
-        message: error.message,
-        actionDurationMs: Date.now() - actionStart
-      })
       return
     }
     
     res.status(500).json({
       error: 'Failed to delete dashboard user',
       code: 'DELETE_ERROR',
-      message: error.message
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
 
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: 'DASHBOARD_USER_DELETE_ERROR',
-      message: error.message,
-      actionDurationMs: Date.now() - actionStart
-    })
   }
 })
 
@@ -532,17 +469,10 @@ router.post('/:userId/disable', async (req: AdminRequest, res: Response) => {
     
     res.json({ user })
 
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: 'DASHBOARD_USER_DISABLED',
+    logInternalAction(req, {
+      action: 'disable_dashboard_user',
+      resourceType: 'dashboard_user',
       resourceId: user.userId,
-      resourceDetails: {
-        userId: user.userId,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        status: user.status
-      },
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
@@ -553,29 +483,15 @@ router.post('/:userId/disable', async (req: AdminRequest, res: Response) => {
         error: error.message,
         code: error.message.includes('Cannot disable') ? 'CANNOT_DISABLE' : 'USER_NOT_FOUND'
       })
-      await logInternalOutcome(req, {
-        status: 'failed',
-        code: error.message.includes('Cannot disable')
-          ? 'DASHBOARD_USER_DISABLE_FORBIDDEN'
-          : 'DASHBOARD_USER_DISABLE_NOT_FOUND',
-        message: error.message,
-        actionDurationMs: Date.now() - actionStart
-      })
       return
     }
     
     res.status(500).json({
       error: 'Failed to disable dashboard user',
       code: 'DISABLE_ERROR',
-      message: error.message
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
 
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: 'DASHBOARD_USER_DISABLE_ERROR',
-      message: error.message,
-      actionDurationMs: Date.now() - actionStart
-    })
   }
 })
 
@@ -642,17 +558,10 @@ router.post('/:userId/enable', async (req: AdminRequest, res: Response) => {
     
     res.json({ user })
 
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: 'DASHBOARD_USER_ENABLED',
+    logInternalAction(req, {
+      action: 'enable_dashboard_user',
+      resourceType: 'dashboard_user',
       resourceId: user.userId,
-      resourceDetails: {
-        userId: user.userId,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        status: user.status
-      },
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
@@ -663,27 +572,15 @@ router.post('/:userId/enable', async (req: AdminRequest, res: Response) => {
         error: error.message,
         code: 'USER_NOT_FOUND'
       })
-      await logInternalOutcome(req, {
-        status: 'failed',
-        code: 'DASHBOARD_USER_ENABLE_NOT_FOUND',
-        message: error.message,
-        actionDurationMs: Date.now() - actionStart
-      })
       return
     }
     
     res.status(500).json({
       error: 'Failed to enable dashboard user',
       code: 'ENABLE_ERROR',
-      message: error.message
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
 
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: 'DASHBOARD_USER_ENABLE_ERROR',
-      message: error.message,
-      actionDurationMs: Date.now() - actionStart
-    })
   }
 })
 

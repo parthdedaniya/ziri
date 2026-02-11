@@ -1,5 +1,3 @@
- 
-
 import * as providerService from './provider-service.js'
 
 export interface ChatCompletionRequest {
@@ -31,32 +29,30 @@ export interface ChatCompletionResponse {
   }
 }
 
- 
 export async function chatCompletions(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
- 
+
   const provider = providerService.getProvider(request.provider)
+
   if (!provider) {
     throw new Error(`Provider '${request.provider}' not configured`)
   }
-  
- 
+
   const apiKey = providerService.getProviderApiKey(request.provider)
   if (!apiKey) {
     throw new Error(`Provider API key not found for '${request.provider}'`)
   }
-  
- 
+
   let endpoint: string
   let requestBody: any
-  
+
   if (provider.baseUrl.includes('anthropic')) {
- 
+
     endpoint = `${provider.baseUrl}/messages`
-    
+
 
     const systemMessages: string[] = []
     const conversationMessages: Array<{ role: 'user' | 'assistant'; content: string }> = []
-    
+
     for (const msg of request.messages) {
       if (msg.role === 'system') {
         systemMessages.push(msg.content)
@@ -67,46 +63,42 @@ export async function chatCompletions(request: ChatCompletionRequest): Promise<C
         })
       }
     }
-    
+
     requestBody = {
       model: request.model,
       max_completion_tokens: request.max_tokens || 2048,
       messages: conversationMessages
     }
-    
 
     if (systemMessages.length > 0) {
       requestBody.system = systemMessages.join('\n\n')
     }
-    
 
     if (request.temperature !== undefined) {
       requestBody.temperature = request.temperature
     }
   } else {
- 
+
     endpoint = `${provider.baseUrl}/chat/completions`
-    
 
     const requiresMaxCompletionTokens = request.model.includes('gpt-5') || request.model.includes('o1') || request.model.includes('o3')
-    
+
     requestBody = {
       model: request.model,
       messages: request.messages,
       temperature: request.temperature,
-      ...(requiresMaxCompletionTokens 
+      ...(requiresMaxCompletionTokens
         ? { max_completion_tokens: request.max_tokens || 2048 }
         : { max_tokens: request.max_tokens || 2048 }
       ),
       ...Object.fromEntries(
-        Object.entries(request).filter(([key]) => 
+        Object.entries(request).filter(([key]) =>
           !['provider', 'model', 'messages', 'max_tokens'].includes(key)
         )
       )
     }
   }
-  
- 
+
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -119,17 +111,16 @@ export async function chatCompletions(request: ChatCompletionRequest): Promise<C
     },
     body: JSON.stringify(requestBody)
   })
-  
+
   if (!response.ok) {
     const errorText = await response.text()
     throw new Error(`LLM provider error: ${response.status} ${errorText}`)
   }
-  
+
   const result = await response.json() as any
-  
- 
+
   if (provider.baseUrl.includes('anthropic')) {
- 
+
     const anthropicResult = result as {
       id?: string
       model: string
@@ -160,7 +151,7 @@ export async function chatCompletions(request: ChatCompletionRequest): Promise<C
       }
     } as ChatCompletionResponse
   }
-  
+
   return result as ChatCompletionResponse
 }
 

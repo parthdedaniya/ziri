@@ -35,7 +35,7 @@ export interface EntityAttrs {
   current_monthly_spend?: CedarDecimal
   last_daily_reset?: string
   last_monthly_reset?: string
-  status?: 'active' | 'revoked' | 'disabled'
+  status?: 'active' | 'disabled' | 'deleted'
   user?: {
     __entity: {
       type: string

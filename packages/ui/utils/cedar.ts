@@ -68,7 +68,8 @@ export function toIp(value: string): CedarIp {
 }
 
 export function extractPolicyEffect(policy: string): 'permit' | 'forbid' {
-    const trimmed = policy.trim().toLowerCase()
+    const body = stripPolicyId(policy) || policy.trim()
+    const trimmed = body.trim().toLowerCase()
     if (trimmed.startsWith('permit')) return 'permit'
     if (trimmed.startsWith('forbid')) return 'forbid'
     return 'permit'
@@ -76,4 +77,17 @@ export function extractPolicyEffect(policy: string): 'permit' | 'forbid' {
 
 export function formatSchemaForDisplay(schema: any): string {
     return JSON.stringify(schema, null, 2)
+}
+
+export function parsePolicyId(content: string): string | null {
+    const match = content.trim().match(/^\s*@id\s*\(\s*"([^"]+)"\s*\)/)
+    return match ? match[1] : null
+}
+
+export function stripPolicyId(content: string): string {
+    return content.trim().replace(/^\s*@id\s*\(\s*"[^"]+"\s*\)\s*\n?/, '')
+}
+
+export function formatPolicyWithId(policyId: string, body: string): string {
+    return `@id("${policyId}")\n${body.trim()}`
 }

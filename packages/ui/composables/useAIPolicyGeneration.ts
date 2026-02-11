@@ -1,5 +1,6 @@
 import { useAdminAuth } from './useAdminAuth'
 import { useToast } from './useToast'
+import { useApiError } from './useApiError'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
@@ -25,6 +26,7 @@ export interface GeneratePolicyResponse {
 export function useAIPolicyGeneration() {
   const { getAuthHeader } = useAdminAuth()
   const toast = useToast()
+  const { getUserMessage } = useApiError()
 
   const generatePolicy = async (request: GeneratePolicyRequest): Promise<GeneratePolicyResponse> => {
     try {
@@ -50,7 +52,7 @@ export function useAIPolicyGeneration() {
       const data: GeneratePolicyResponse = await response.json()
       return data
     } catch (e: any) {
-      toast.error(e.message || 'Failed to generate policy')
+      toast.error(getUserMessage(e))
       throw e
     }
   }

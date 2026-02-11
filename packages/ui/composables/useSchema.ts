@@ -1,12 +1,14 @@
 import { useSchemaStore } from '~/stores/schema'
 import { useToast } from './useToast'
 import { useAdminAuth } from './useAdminAuth'
+import { useApiError } from './useApiError'
 import type { SchemaApiResponse } from '~/types/api'
 
 export function useSchema() {
     const schemaStore = useSchemaStore()
     const toast = useToast()
     const { getAuthHeader } = useAdminAuth()
+    const { getUserMessage } = useApiError()
 
     const getSchema = async (format: 'json' | 'cedar' = 'json') => {
         schemaStore.loading = true
@@ -57,7 +59,7 @@ export function useSchema() {
             }
         } catch (e: any) {
             schemaStore.error = e.message
-            toast.error('Failed to load schema')
+            toast.error(getUserMessage(e))
             throw e
         } finally {
             schemaStore.loading = false
@@ -127,7 +129,7 @@ export function useSchema() {
             }
         } catch (e: any) {
             schemaStore.error = e.message
-            toast.error('Failed to update schema')
+            toast.error(getUserMessage(e))
             throw e
         } finally {
             schemaStore.loading = false

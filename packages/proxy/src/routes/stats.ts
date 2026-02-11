@@ -5,8 +5,6 @@ import { requireAdmin } from '../middleware/auth.js'
 import { getDatabase } from '../db/index.js'
 import { auditLogService } from '../services/audit-log-service.js'
 import { costTrackingService } from '../services/cost-tracking-service.js'
-import { logInternalOutcome } from '../utils/internal-audit-helpers.js'
-
 const router: Router = Router()
 
  
@@ -34,24 +32,11 @@ router.get('/overview', (req: Request, res: Response) => {
       forbidCount: forbidCount.count || 0,
       totalCost: totalCost.sum || 0,
     })
-
-    void logInternalOutcome(req, {
-      status: 'success',
-      code: 'STATS_VIEWED',
-      actionDurationMs: Date.now() - actionStart
-    })
   } catch (error: any) {
     console.error('[STATS] Overview error:', error)
     res.status(500).json({
       error: 'Failed to get overview statistics',
       code: 'STATS_ERROR'
-    })
-
-    void logInternalOutcome(req, {
-      status: 'failed',
-      code: 'STATS_VIEW_ERROR',
-      message: error.message,
-      actionDurationMs: Date.now() - actionStart
     })
   }
 })

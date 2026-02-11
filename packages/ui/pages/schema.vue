@@ -3,6 +3,7 @@ import { useSchema } from '~/composables/useSchema'
 import { useConfigStore } from '~/stores/config'
 import { useCedarWasm } from '~/composables/useCedarWasm'
 import { useToast } from '~/composables/useToast'
+import { useApiError } from '~/composables/useApiError'
 import { formatDate } from '~/utils/formatters'
 import type { ValidationError } from '~/composables/useCedarWasm'
 import { useInternalAuth } from '~/composables/useInternalAuth'
@@ -14,6 +15,7 @@ const { getSchema, updateSchema, lastSyncedAt, loading } = useSchema()
 const { schemaToJson, schemaToText, validateCedarSchema, validateJsonSchema } = useCedarWasm()
 const toast = useToast()
 const { checkAction } = useInternalAuth()
+const { getUserMessage } = useApiError()
 
 const permissionsLoading = ref(true)
 const canUpdateSchema = ref(false)
@@ -82,7 +84,7 @@ const loadSchema = async () => {
     isEditing.value = false
     validationErrors.value = []
   } catch (e: any) {
-    toast.error(`Failed to load schema: ${e.message}`)
+    toast.error(getUserMessage(e))
   }
 }
 
@@ -216,7 +218,7 @@ const onModeSwitch = async (newMode: 'json' | 'cedar') => {
       viewMode.value = newMode
       await validateSchema()
     } catch (e: any) {
-      toast.error(`Failed to convert schema: ${e.message}`)
+      toast.error(getUserMessage(e))
       return
     }
   } else {
@@ -282,7 +284,7 @@ const handleSave = async () => {
     isEditing.value = false
     toast.success('Schema saved successfully')
   } catch (e: any) {
-    toast.error(`Failed to save schema: ${e.message}`)
+    toast.error(getUserMessage(e))
   } finally {
     isSaving.value = false
   }
@@ -418,6 +420,10 @@ const monitorSchemaMarkerChanges = async (editor: Monaco.editor.IStandaloneCodeE
         });
     }
 }
+
+const formatValidationMessage = (message: string) => {
+  return getUserMessage({ message })
+}
 </script>
 
 <template>
@@ -537,7 +543,7 @@ const monitorSchemaMarkerChanges = async (editor: Monaco.editor.IStandaloneCodeE
           </svg>
           <div class="flex-1">
             <p class="text-sm font-medium text-red-700 dark:text-red-300">
-              {{ error.message }}
+              {{ formatValidationMessage(error.message) }}
             </p>
             <p v-if="error.help" class="text-xs text-red-600 dark:text-red-400 mt-1">
               {{ error.help }}

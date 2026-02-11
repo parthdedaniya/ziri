@@ -2,6 +2,7 @@ import { computed } from 'vue'
 import { useAdminAuth } from './useAdminAuth'
 import { useKeysStore } from '~/stores/keys'
 import { useToast } from './useToast'
+import { useApiError } from './useApiError'
 import type { Key, Entity, CreateKeyInput } from '~/types/entity'
 import type { EntitiesResponse } from '~/types/api'
 import { parseDecimal } from '~/utils/cedar'
@@ -9,28 +10,30 @@ import { parseDecimal } from '~/utils/cedar'
 export function useKeys() {
     const keysStore = useKeysStore()
     const toast = useToast()
+    const { getUserMessage } = useApiError()
 
-    const mapEntityToKey = (entity: Entity & { apiKey?: string | null; userKeyId?: string; executionKey?: string | null }, allEntities?: Entity[]): Key => {
+    const mapEntityToKey = (entity: Entity & { apiKey?: string | null; keySuffix?: string; userKeyId?: string; executionKey?: string | null }, allEntities?: Entity[]): Key => {
         const userKeyId = entity.uid.type === 'UserKey' ? entity.uid.id : (entity as any).userKeyId
         const userEntityRef = entity.attrs.user && (entity.attrs.user as any).__entity ? (entity.attrs.user as any).__entity : null
         const userId = userEntityRef ? userEntityRef.id : (entity.attrs as any).user_id || ''
-        
-        const apiKey = entity.apiKey || `ziri-${userId}-...`
-        
+
+        const keySuffix = entity.keySuffix ?? (entity as any).keySuffix
+        const apiKey = entity.apiKey ?? undefined
+
         let userEntity: Entity | null = null
         if (allEntities && userEntityRef) {
-            userEntity = allEntities.find(e => 
-                e.uid.type === userEntityRef.type && 
+            userEntity = allEntities.find(e =>
+                e.uid.type === userEntityRef.type &&
                 e.uid.id === userEntityRef.id
             ) || null
         }
-        
+
         const name = userEntity ? (userEntity.attrs as any).name || '' : ''
         const email = userEntity ? (userEntity.attrs as any).email || '' : ''
         const group = userEntity ? (userEntity.attrs as any).group || '' : ''
         const isAgent = userEntity ? (userEntity.attrs as any).is_agent || false : false
         const limitRequestsPerMinute = userEntity ? (userEntity.attrs as any).limit_requests_per_minute || 0 : 0
-        
+
         return {
             userId: userId,
             userKeyId: userKeyId,
@@ -41,11 +44,12 @@ export function useKeys() {
             isAgent: isAgent,
             limitRequestsPerMinute: limitRequestsPerMinute,
             apiKey: apiKey,
+            keySuffix: keySuffix,
             currentDailySpend: parseDecimal(entity.attrs.current_daily_spend),
             currentMonthlySpend: parseDecimal(entity.attrs.current_monthly_spend),
             lastDailyReset: entity.attrs.last_daily_reset as string | undefined,
             lastMonthlyReset: entity.attrs.last_monthly_reset as string | undefined,
-            status: (entity.attrs.status as 'active' | 'revoked' | 'disabled') || 'active',
+            status: (entity.attrs.status as 'active' | 'disabled' | 'deleted') || 'active',
             createdAt: new Date().toISOString()
         }
     }
@@ -102,7 +106,7 @@ export function useKeys() {
             return { keys, total: data.total || 0 }
         } catch (e: any) {
             keysStore.error = e.message
-            toast.error('Failed to load keys')
+            toast.error(getUserMessage(e))
             throw e
         } finally {
             keysStore.loading = false
@@ -145,7 +149,7 @@ export function useKeys() {
             throw new Error('Key not found')
         } catch (e: any) {
             keysStore.error = e.message
-            toast.error('Failed to load key details')
+            toast.error(getUserMessage(e))
             throw e
         } finally {
             keysStore.loading = false
@@ -188,7 +192,7 @@ export function useKeys() {
             throw new Error('Key not found for user')
         } catch (e: any) {
             keysStore.error = e.message
-            toast.error('Failed to load key details')
+            toast.error(getUserMessage(e))
             throw e
         } finally {
             keysStore.loading = false
@@ -227,7 +231,39 @@ export function useKeys() {
             return { userId: result.userId, apiKey: result.apiKey }
         } catch (e: any) {
             keysStore.error = e.message
-            toast.error(`Failed to create key: ${e.message}`)
+            toast.error(getUserMessage(e))
+            throw e
+        } finally {
+            keysStore.loading = false
+        }
+    }
+
+    const deleteKeyById = async (keyId: string) => {
+        keysStore.loading = true
+        try {
+            const { getAuthHeader } = useAdminAuth()
+            const authHeader = getAuthHeader()
+            if (!authHeader) {
+                throw new Error('Please login first')
+            }
+
+            const response = await fetch(`/api/keys/id/${keyId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': authHeader
+                }
+            })
+
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({ error: response.statusText }))
+                throw new Error(error.error || 'Failed to delete key')
+            }
+
+            await listKeys()
+            toast.success('Key deleted successfully')
+        } catch (e: any) {
+            keysStore.error = e.message
+            toast.error(getUserMessage(e))
             throw e
         } finally {
             keysStore.loading = false
@@ -259,7 +295,7 @@ export function useKeys() {
             toast.success('Keys deleted successfully')
         } catch (e: any) {
             keysStore.error = e.message
-            toast.error('Failed to delete key')
+            toast.error(getUserMessage(e))
             throw e
         } finally {
             keysStore.loading = false
@@ -294,7 +330,7 @@ export function useKeys() {
             return { apiKey: result.apiKey }
         } catch (e: any) {
             keysStore.error = e.message
-            toast.error(`Failed to rotate key: ${e.message}`)
+            toast.error(getUserMessage(e))
             throw e
         } finally {
             keysStore.loading = false
@@ -310,8 +346,7 @@ export function useKeys() {
                 throw new Error('Please login first')
             }
             
-            const statusValue = entity.attrs.status === 'active' ? 1 : 
-                               entity.attrs.status === 'revoked' ? 2 : 0
+            const statusValue = entity.attrs.status === 'active' ? 1 : 2
             const response = await fetch('/api/entities', {
                 method: 'PUT',
                 headers: {
@@ -333,7 +368,7 @@ export function useKeys() {
             toast.success('Key updated successfully')
         } catch (e: any) {
             keysStore.error = e.message
-            toast.error(`Failed to update key: ${e.message}`)
+            toast.error(getUserMessage(e))
             throw e
         } finally {
             keysStore.loading = false
@@ -346,6 +381,7 @@ export function useKeys() {
         getKeyByUserId,
         createKey,
         deleteKey,
+        deleteKeyById,
         rotateKey,
         updateKey,
         loading: computed(() => keysStore.loading),

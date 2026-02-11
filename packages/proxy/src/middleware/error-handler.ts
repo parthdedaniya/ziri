@@ -1,10 +1,12 @@
  
 
 import type { Request, Response, NextFunction } from 'express'
+import { mapToUserMessage } from '../utils/error-messages.js'
 
 export interface ApiError extends Error {
   statusCode?: number
   code?: string
+  detail?: string
 }
 
 export function errorHandler(
@@ -14,7 +16,7 @@ export function errorHandler(
   next: NextFunction
 ): void {
   const statusCode = error.statusCode || 500
-  const message = error.message || 'Internal server error'
+  const message = mapToUserMessage(error.message) || error.message || 'Internal server error'
   
   console.error(`[ERROR] ${req.method} ${req.path}:`, {
     statusCode,
@@ -26,6 +28,7 @@ export function errorHandler(
   res.status(statusCode).json({
     error: message,
     code: error.code,
+    ...(error.detail && process.env.NODE_ENV !== 'production' && { detail: error.detail }),
     ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
   })
 }
@@ -36,6 +39,7 @@ export function notFoundHandler(
   next: NextFunction
 ): void {
   res.status(404).json({
-    error: `Route not found: ${req.method} ${req.path}`
+    error: `Route not found: ${req.method} ${req.path}`,
+    code: 'ROUTE_NOT_FOUND'
   })
 }

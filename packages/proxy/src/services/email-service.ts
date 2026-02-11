@@ -3,6 +3,7 @@
 import { loadConfig, type ProxyConfig } from '../config.js'
 import nodemailer from 'nodemailer'
 import sgMail from '@sendgrid/mail'
+import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses'
 
 export interface EmailOptions {
   to: string
@@ -28,6 +29,12 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
       
       case 'sendgrid':
         return await sendViaSendGrid(options, emailConfig.sendgrid!.apiKey, emailConfig.from)
+      
+      case 'mailgun':
+        return await sendViaMailgun(options, emailConfig.mailgun!, emailConfig.from)
+      
+      case 'ses':
+        return await sendViaSES(options, emailConfig.ses!, emailConfig.from)
       
       case 'manual':
       default:
@@ -119,6 +126,105 @@ async function sendViaSendGrid(
     text: options.text
   })
   
+  return true
+}
+
+ 
+async function sendViaMailgun(
+  options: EmailOptions,
+  mailgunConfig: NonNullable<ProxyConfig['email']>['mailgun'],
+  from?: string
+): Promise<boolean> {
+  if (!mailgunConfig) {
+    throw new Error('Mailgun configuration not provided')
+  }
+  if (!mailgunConfig.domain) {
+    throw new Error('Mailgun domain is required')
+  }
+  if (!from) {
+    throw new Error('From address required for Mailgun')
+  }
+
+  const apiUrl = mailgunConfig.apiUrl || 'https://api.mailgun.net'
+  const url = `${apiUrl.replace(/\/$/, '')}/v3/${mailgunConfig.domain}/messages`
+
+  const formData = new URLSearchParams()
+  formData.append('from', from)
+  formData.append('to', options.to)
+  formData.append('subject', options.subject)
+  formData.append('html', options.html)
+  if (options.text) {
+    formData.append('text', options.text)
+  }
+
+  const auth = Buffer.from(`api:${mailgunConfig.apiKey}`).toString('base64')
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${auth}`,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: formData.toString()
+  })
+
+  if (!response.ok) {
+    const errText = await response.text()
+    throw new Error(`Mailgun API error (${response.status}): ${errText}`)
+  }
+
+  return true
+}
+
+async function sendViaSES(
+  options: EmailOptions,
+  sesConfig: NonNullable<ProxyConfig['email']>['ses'],
+  from?: string
+): Promise<boolean> {
+  if (!sesConfig) {
+    throw new Error('AWS SES configuration not provided')
+  }
+  if (!sesConfig.accessKeyId?.trim() || !sesConfig.secretAccessKey?.trim() || !sesConfig.region?.trim()) {
+    throw new Error('AWS SES requires accessKeyId, secretAccessKey, and region')
+  }
+  if (!from?.trim()) {
+    throw new Error('From address required for AWS SES (must be verified in SES)')
+  }
+
+  const client = new SESClient({
+    region: sesConfig.region,
+    credentials: {
+      accessKeyId: sesConfig.accessKeyId,
+      secretAccessKey: sesConfig.secretAccessKey
+    }
+  })
+
+  const command = new SendEmailCommand({
+    Source: from,
+    Destination: {
+      ToAddresses: [options.to]
+    },
+    Message: {
+      Subject: {
+        Data: options.subject,
+        Charset: 'UTF-8'
+      },
+      Body: {
+        Html: {
+          Data: options.html,
+          Charset: 'UTF-8'
+        },
+        ...(options.text && {
+          Text: {
+            Data: options.text,
+            Charset: 'UTF-8'
+          }
+        })
+      }
+    }
+  })
+
+  await client.send(command)
   return true
 }
 

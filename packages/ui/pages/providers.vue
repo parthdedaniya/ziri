@@ -4,12 +4,14 @@ import { useConfigStore } from '~/stores/config'
 import { useToast } from '~/composables/useToast'
 import { useDebounce } from '~/composables/useDebounce'
 import { useInternalAuth } from '~/composables/useInternalAuth'
+import { useApiError } from '~/composables/useApiError'
 import type { Provider, CreateProviderInput } from '~/composables/useProviders'
 
 const configStore = useConfigStore()
 const { providers, loading, listProviders, addProvider, removeProvider, testProvider } = useProviders()
 const toast = useToast()
 const { checkActions, checkAction } = useInternalAuth()
+const { getUserMessage } = useApiError()
 
 
 const permissionsLoading = ref(true)
@@ -28,6 +30,46 @@ const PROVIDER_TEMPLATES: Record<string, { displayName: string; baseUrl: string;
     displayName: 'Anthropic',
     baseUrl: 'https://api.anthropic.com/v1',
     models: ['claude-3-opus', 'claude-3-sonnet', 'claude-3-haiku']
+  },
+  google: {
+    displayName: 'Google (Gemini)',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash']
+  },
+  xai: {
+    displayName: 'xAI (Grok)',
+    baseUrl: 'https://api.x.ai/v1',
+    models: ['grok-4', 'grok-3', 'grok-3-mini']
+  },
+  mistral: {
+    displayName: 'Mistral',
+    baseUrl: 'https://api.mistral.ai/v1',
+    models: ['mistral-large-3', 'mistral-medium-2505', 'mistral-small', 'mistral-nemo']
+  },
+  moonshot: {
+    displayName: 'Kimi (Moonshot)',
+    baseUrl: 'https://api.moonshot.ai/v1',
+    models: ['kimi-k2.5', 'kimi-k2-thinking', 'kimi-k2-0905-preview']
+  },
+  deepseek: {
+    displayName: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com',
+    models: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v3.2', 'deepseek-r1']
+  },
+  dashscope: {
+    displayName: 'Qwen (DashScope)',
+    baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+    models: ['qwen-plus-latest', 'qwen-max', 'qwen-plus', 'qwen-turbo']
+  },
+  openrouter: {
+    displayName: 'OpenRouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    models: ['anthropic/claude-sonnet-4.5', 'anthropic/claude-3.5-sonnet', 'openai/gpt-4o', 'google/gemini-2.5-pro', 'deepseek/deepseek-chat', 'x-ai/grok-4', 'mistralai/mistral-large-2512', 'moonshotai/kimi-k2.5']
+  },
+  vertex_ai: {
+    displayName: 'Vertex AI (Google Cloud)',
+    baseUrl: 'https://us-central1-aiplatform.googleapis.com/v1/projects/{project}/locations/us-central1/publishers/google/models/{model}:generateContent',
+    models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash', 'chat-bison', 'code-bison', 'text-bison']
   }
 }
 
@@ -52,7 +94,7 @@ onMounted(async () => {
   try {
     await listProviders()
   } catch (e: any) {
-    toast.error(e.message || 'Failed to load providers')
+    toast.error(getUserMessage(e))
   }
 })
 
@@ -148,7 +190,7 @@ const handleAddProvider = async () => {
     newProvider.providerType = 'openai'
     newProvider.apiKey = ''
   } catch (e: any) {
-    toast.error(e.message || 'Failed to add provider')
+    toast.error(getUserMessage(e))
   }
 }
 
@@ -168,7 +210,7 @@ const handleRemoveProvider = async () => {
     showDeleteModal.value = false
     providerToDelete.value = null
   } catch (e: any) {
-    toast.error(e.message || 'Failed to remove provider')
+    toast.error(getUserMessage(e))
   }
 }
 
@@ -190,7 +232,7 @@ const handleTestProvider = async (provider: Provider) => {
       toast.error(result.message || 'Connection test failed')
     }
   } catch (e: any) {
-    toast.error(e.message || 'Connection test failed')
+    toast.error(getUserMessage(e))
   } finally {
     testingProvider.value = null
   }
@@ -426,6 +468,14 @@ const columns = computed(() => {
             <option value="">Select provider...</option>
             <option value="openai">OpenAI</option>
             <option value="anthropic">Anthropic</option>
+            <option value="google">Google (Gemini)</option>
+            <option value="xai">xAI (Grok)</option>
+            <option value="mistral">Mistral</option>
+            <option value="moonshot">Kimi (Moonshot)</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="dashscope">Qwen (DashScope)</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="vertex_ai">Vertex AI (Google Cloud)</option>
           </select>
         </div>
         

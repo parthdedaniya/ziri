@@ -49,7 +49,8 @@ router.get('/', (req: AuthenticatedRequest, res: Response) => {
     console.error('[ME] Get user error:', error)
     res.status(500).json({
       error: 'Failed to get user info',
-      code: 'GET_ERROR'
+      code: 'GET_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })
@@ -94,23 +95,23 @@ router.get('/keys', async (req: AuthenticatedRequest, res: Response) => {
     }
     
     const db = getDatabase()
-    const dbKey = db.prepare('SELECT key_value FROM user_agent_keys WHERE auth_id = ? ORDER BY created_at DESC LIMIT 1').get(userId) as { key_value: string } | undefined
-    
-    let decryptedKey: string | null = null
-    if (dbKey) {
-      try {
-        decryptedKey = decrypt(dbKey.key_value)
-      } catch (error: any) {
-        console.warn('[ME] Failed to decrypt API key:', error.message)
-      }
-    }
-    
+    const dbKey = db.prepare(`
+      SELECT key_value FROM user_agent_keys
+      WHERE auth_id = ? AND status IN ('active', 'disabled')
+      ORDER BY created_at DESC LIMIT 1
+    `).get(userId) as { key_value: string } | undefined
+
+    const keySuffix = dbKey && dbKey.key_value && dbKey.key_value.length <= 5
+      ? dbKey.key_value
+      : (dbKey ? '-----' : null)
+
     const attrs = userKeyEntity.attrs || {}
-    
+
     res.json({
       data: [{
         ...userKeyEntity,
-        apiKey: decryptedKey,
+        apiKey: null,
+        keySuffix,
 
         currentDailySpend: parseDecimal(attrs.current_daily_spend),
         currentMonthlySpend: parseDecimal(attrs.current_monthly_spend),
@@ -122,7 +123,8 @@ router.get('/keys', async (req: AuthenticatedRequest, res: Response) => {
     console.error('[ME] Get keys error:', error)
     res.status(500).json({
       error: 'Failed to get user keys',
-      code: 'GET_KEYS_ERROR'
+      code: 'GET_KEYS_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })
@@ -224,7 +226,8 @@ router.get('/usage', async (req: AuthenticatedRequest, res: Response) => {
     console.error('[ME] Get usage error:', error)
     res.status(500).json({
       error: 'Failed to get usage stats',
-      code: 'GET_USAGE_ERROR'
+      code: 'GET_USAGE_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })
@@ -268,7 +271,8 @@ router.post('/rotate', async (req: AuthenticatedRequest, res: Response) => {
     
     res.status(500).json({
       error: 'Failed to rotate key',
-      code: 'ROTATE_ERROR'
+      code: 'ROTATE_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })

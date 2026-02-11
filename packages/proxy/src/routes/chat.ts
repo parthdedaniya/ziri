@@ -15,25 +15,41 @@ import { eventEmitterService } from '../services/event-emitter-service.js'
 
 const router: Router = Router()
 
+const OPENAI_COMPATIBLE_PROVIDERS = new Set([
+  'openai', 'google', 'xai', 'mistral', 'moonshot', 'deepseek', 'dashscope', 'openrouter', 'vertex_ai'
+])
+
 function extractUsage(response: any, provider: string): {
   inputTokens: number
   outputTokens: number
   totalTokens: number
   cachedTokens: number
 } {
-  if (provider === 'openai') {
-    return {
-      inputTokens: response.usage?.prompt_tokens || 0,
-      outputTokens: response.usage?.completion_tokens || 0,
-      totalTokens: response.usage?.total_tokens || 0,
-      cachedTokens: response.usage?.prompt_tokens_details?.cached_tokens || 0,
-    }
-  } else if (provider === 'anthropic') {
+  if (provider === 'anthropic') {
     return {
       inputTokens: response.usage?.input_tokens || 0,
       outputTokens: response.usage?.output_tokens || 0,
       totalTokens: (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0),
       cachedTokens: response.usage?.cache_read_input_tokens || 0,
+    }
+  }
+  if (provider === 'vertex_ai' || provider === 'google') {
+    const usage = response.usageMetadata || response.usage
+    const input = usage?.promptTokenCount ?? usage?.inputTokenCount ?? usage?.prompt_tokens ?? 0
+    const output = usage?.candidatesTokenCount ?? usage?.outputTokenCount ?? usage?.completion_tokens ?? 0
+    return {
+      inputTokens: input,
+      outputTokens: output,
+      totalTokens: (usage?.totalTokenCount ?? 0) || usage?.total_tokens || input + output,
+      cachedTokens: response.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+    }
+  }
+  if (OPENAI_COMPATIBLE_PROVIDERS.has(provider)) {
+    return {
+      inputTokens: response.usage?.prompt_tokens || 0,
+      outputTokens: response.usage?.completion_tokens || 0,
+      totalTokens: response.usage?.total_tokens || 0,
+      cachedTokens: response.usage?.prompt_tokens_details?.cached_tokens || 0,
     }
   }
   return { inputTokens: 0, outputTokens: 0, totalTokens: 0, cachedTokens: 0 }
@@ -84,11 +100,21 @@ router.post('/completions', async (req: Request, res: Response) => {
     const keyHash = hashApiKey(apiKey)
     const db = getDatabase()
     
-    const dbKey = db.prepare('SELECT id, auth_id FROM user_agent_keys WHERE key_hash = ?').get(keyHash) as { id: string; auth_id: string } | undefined
+    const dbKey = db.prepare("SELECT id, auth_id FROM user_agent_keys WHERE key_hash = ? AND status = 'active'").get(keyHash) as { id: string; auth_id: string } | undefined
     if (!dbKey || dbKey.auth_id !== userId) {
       res.status(403).json({
         error: 'API key not found or invalid',
         code: 'API_KEY_INVALID',
+        requestId
+      })
+      return
+    }
+
+    const authRow = db.prepare('SELECT role, status FROM auth WHERE id = ?').get(userId) as { role: string | null; status: number } | undefined
+    if (authRow?.role != null && authRow.status === 2) {
+      res.status(403).json({
+        error: 'Dashboard user account is disabled. API key is not valid.',
+        code: 'DASHBOARD_USER_DISABLED',
         requestId
       })
       return
@@ -125,9 +151,9 @@ router.post('/completions', async (req: Request, res: Response) => {
     }
 
     const keyStatus = (userKeyEntity.attrs as any).status
-    if (keyStatus === 'revoked' || keyStatus === 'disabled' || keyStatus === 2) {
+    if (keyStatus === 'disabled' || keyStatus === 'deleted') {
       res.status(403).json({
-        error: keyStatus === 'revoked' ? 'API key has been revoked' : 'API key is disabled',
+        error: 'API key is disabled or has been deleted',
         code: 'API_KEY_REVOKED_OR_DISABLED',
         requestId
       })

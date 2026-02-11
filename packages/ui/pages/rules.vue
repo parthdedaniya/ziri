@@ -2,12 +2,14 @@
 import { useRules } from '~/composables/useRules'
 import { useConfigStore } from '~/stores/config'
 import { useToast } from '~/composables/useToast'
+import { useApiError } from '~/composables/useApiError'
 import { useSchema } from '~/composables/useSchema'
 import { useCedarWasm } from '~/composables/useCedarWasm'
 import { useDebounce } from '~/composables/useDebounce'
 import { useAdminAuth } from '~/composables/useAdminAuth'
 import { useInternalAuth } from '~/composables/useInternalAuth'
 import AIPolicyChatModal from '~/components/AIPolicyChatModal.vue'
+import { parsePolicyId, stripPolicyId, formatPolicyWithId } from '~/utils/cedar'
 import type { Policy, CreatePolicyInput } from '~/types/cedar'
 import type { ValidationError } from '~/composables/useCedarWasm'
 import type * as Monaco from 'monaco-editor'
@@ -18,6 +20,7 @@ const { getSchema } = useSchema()
 const { validatePolicies, formatPolicy } = useCedarWasm()
 const toast = useToast()
 const { checkActions, checkAction } = useInternalAuth()
+const { getUserMessage } = useApiError()
 
 
 const permissionsLoading = ref(true)
@@ -62,10 +65,11 @@ const sortBy = ref<string | null>(null)
 const sortOrder = ref<'asc' | 'desc' | null>(null)
 
  
-const newRule = reactive<CreatePolicyInput & { isActive: boolean }>({
+const newRule = reactive<CreatePolicyInput & { isActive: boolean; policyId: string }>({
   policy: '',
   description: '',
-  isActive: true
+  isActive: true,
+  policyId: ''
 })
 
  
@@ -112,6 +116,7 @@ watch(showCreateModal, (isOpen) => {
     if (!isOpeningFromTemplate.value) {
       newRule.policy = ''
       newRule.description = ''
+      newRule.policyId = ''
       newRule.isActive = true
       validationErrors.value = []
       validationWarnings.value = []
@@ -168,7 +173,7 @@ const fetchTemplates = async () => {
     }
   } catch (error: any) {
     console.error('[RULES] Failed to fetch templates:', error)
-    toast.error(error.message || 'Failed to load policy templates')
+    toast.error(getUserMessage(error))
   } finally {
     templatesLoading.value = false
   }
@@ -180,7 +185,9 @@ const useTemplate = async (template: PolicyTemplate) => {
   await nextTick()
   
   isOpeningFromTemplate.value = true
-  newRule.policy = template.policy
+  const parsedId = parsePolicyId(template.policy)
+  newRule.policyId = parsedId ?? ''
+  newRule.policy = parsedId ? stripPolicyId(template.policy) : template.policy
   newRule.description = template.title
   newRule.isActive = true
   validationErrors.value = []
@@ -189,7 +196,7 @@ const useTemplate = async (template: PolicyTemplate) => {
   showCreateModal.value = true
   
   await nextTick()
-  validatePolicy(template.policy)
+  validatePolicy(parsedId ? formatPolicyWithId(parsedId, newRule.policy) : template.policy)
 }
 
 const handleOpenTemplateModal = async () => {
@@ -241,7 +248,9 @@ onMounted(async () => {
     try {
       const policyText = decodeURIComponent(route.query.policy as string)
       isOpeningFromTemplate.value = true
-      newRule.policy = policyText
+      const parsedId = parsePolicyId(policyText)
+      newRule.policyId = parsedId ?? ''
+      newRule.policy = parsedId ? stripPolicyId(policyText) : policyText
       newRule.description = 'AI Generated Policy'
       newRule.isActive = true
       validationErrors.value = []
@@ -257,10 +266,10 @@ onMounted(async () => {
 
       showCreateModal.value = true
       await nextTick()
-      validatePolicy(policyText)
+      validatePolicy(parsedId ? formatPolicyWithId(parsedId, newRule.policy) : policyText)
     } catch (e: any) {
       console.error('[RULES] Failed to load policy from URL:', e)
-      toast.error('Failed to load policy from URL')
+      toast.error(getUserMessage(e))
     }
   }
   
@@ -445,6 +454,11 @@ const handleCreateRule = async () => {
     return
   }
   
+  if (!newRule.policyId.trim()) {
+    toast.warning('Policy ID is required')
+    return
+  }
+  
   if (!newRule.policy.trim() || !newRule.description.trim()) {
     toast.warning('Please fill in all fields')
     return
@@ -455,8 +469,10 @@ const handleCreateRule = async () => {
     return
   }
   
+  const fullPolicy = formatPolicyWithId(newRule.policyId.trim(), newRule.policy)
+  
   try {
-    await createRule(newRule)
+    await createRule({ policy: fullPolicy, description: newRule.description })
  
     if (!newRule.isActive) {
 
@@ -465,12 +481,12 @@ const handleCreateRule = async () => {
         toast.error('You do not have permission to change policy status')
         return
       }
-      const policyToUse = newRule.policy.trim()
-      await setRuleStatus(policyToUse, false)
+      await setRuleStatus(fullPolicy, false)
     }
     showCreateModal.value = false
     newRule.policy = ''
     newRule.description = ''
+    newRule.policyId = ''
     newRule.isActive = true
     validationErrors.value = []
     validationWarnings.value = []
@@ -486,15 +502,16 @@ const handleEditRule = async (rule: Policy) => {
   validationErrors.value = []
   validationWarnings.value = []
   
- 
+  const parsedId = parsePolicyId(rule.policy)
+  newRule.policyId = parsedId ?? ''
+  const body = parsedId ? stripPolicyId(rule.policy) : rule.policy
+  
   try {
-    const formatted = await formatPolicyText(rule.policy)
+    const formatted = await formatPolicyText(body)
     newRule.policy = formatted
- 
-    validatePolicy(formatted)
+    validatePolicy(parsedId ? formatPolicyWithId(parsedId, formatted) : formatted)
   } catch (e) {
- 
-    newRule.policy = rule.policy
+    newRule.policy = body
     validatePolicy(rule.policy)
   }
   
@@ -511,6 +528,11 @@ const handleUpdateRule = async () => {
     return
   }
   
+  if (!newRule.policyId.trim()) {
+    toast.warning('Policy ID is required')
+    return
+  }
+  
   if (!newRule.policy.trim() || !newRule.description.trim()) {
     toast.warning('Please fill in all fields')
     return
@@ -520,6 +542,8 @@ const handleUpdateRule = async () => {
     toast.warning('Please fix validation errors before saving')
     return
   }
+  
+  const fullPolicy = formatPolicyWithId(newRule.policyId.trim(), newRule.policy)
   
   try {
  
@@ -534,13 +558,14 @@ const handleUpdateRule = async () => {
       await setRuleStatus(ruleToEdit.value.policy, newRule.isActive)
     }
  
-    if (ruleToEdit.value.policy !== newRule.policy || ruleToEdit.value.description !== newRule.description) {
-      await updateRule(ruleToEdit.value.policy, newRule)
+    if (ruleToEdit.value.policy !== fullPolicy || ruleToEdit.value.description !== newRule.description) {
+      await updateRule(ruleToEdit.value.policy, { policy: fullPolicy, description: newRule.description })
     }
     showEditModal.value = false
     ruleToEdit.value = null
     newRule.policy = ''
     newRule.description = ''
+    newRule.policyId = ''
     newRule.isActive = true
     validationErrors.value = []
     validationWarnings.value = []
@@ -554,6 +579,7 @@ const handleCancelEdit = () => {
   ruleToEdit.value = null
   newRule.policy = ''
   newRule.description = ''
+  newRule.policyId = ''
   newRule.isActive = true
   validationErrors.value = []
   validationWarnings.value = []
@@ -591,6 +617,10 @@ const handleUseAIPolicy = async (policy: string) => {
     return
   }
 
+}
+
+const formatValidationMessage = (message: string) => {
+  return getUserMessage({ message })
 }
 </script>
 
@@ -836,6 +866,16 @@ const handleUseAIPolicy = async (policy: string) => {
           />
         </div>
 
+        <div>
+          <label class="block text-xs font-semibold text-[rgb(var(--text-secondary))] mb-1.5">Policy ID (required)</label>
+          <input 
+            v-model="newRule.policyId"
+            type="text"
+            placeholder="e.g. basic-allow-user"
+            class="input"
+          />
+        </div>
+
         <!-- Status Toggle -->
         <div class="flex items-center justify-between p-4 rounded-lg border-2 border-[rgb(var(--border))] bg-[rgb(var(--surface-elevated))]">
           <div>
@@ -883,7 +923,7 @@ const handleUseAIPolicy = async (policy: string) => {
               :key="idx"
               class="p-2 rounded bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800"
             >
-              <p class="text-xs text-red-700 dark:text-red-300">{{ error.message }}</p>
+              <p class="text-xs text-red-700 dark:text-red-300">{{ formatValidationMessage(error.message) }}</p>
               <p v-if="error.help" class="text-xs text-red-600 dark:text-red-400 mt-0.5">{{ error.help }}</p>
             </div>
           </div>
@@ -895,14 +935,14 @@ const handleUseAIPolicy = async (policy: string) => {
               :key="idx"
               class="p-2 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800"
             >
-              <p class="text-xs text-amber-700 dark:text-amber-300">{{ warning.message }}</p>
+              <p class="text-xs text-amber-700 dark:text-amber-300">{{ formatValidationMessage(warning.message) }}</p>
               <p v-if="warning.help" class="text-xs text-amber-600 dark:text-amber-400 mt-0.5">{{ warning.help }}</p>
             </div>
           </div>
         </div>
         
         <div class="flex gap-3 justify-end pt-2">
-          <UiButton type="button" variant="outline" @click="showCreateModal = false; newRule.isActive = true; validationErrors = []; validationWarnings = []">
+          <UiButton type="button" variant="outline" @click="showCreateModal = false; newRule.policyId = ''; newRule.policy = ''; newRule.description = ''; newRule.isActive = true; validationErrors = []; validationWarnings = []">
             Cancel
           </UiButton>
           <UiButton type="submit" :loading="loading" :disabled="validationErrors.length > 0">
@@ -975,6 +1015,16 @@ const handleUseAIPolicy = async (policy: string) => {
           />
         </div>
 
+        <div>
+          <label class="block text-xs font-semibold text-[rgb(var(--text-secondary))] mb-1.5">Policy ID (required)</label>
+          <input 
+            v-model="newRule.policyId"
+            type="text"
+            placeholder="e.g. basic-allow-user"
+            class="input"
+          />
+        </div>
+
         <!-- Status Toggle -->
         <div class="flex items-center justify-between p-4 rounded-lg border-2 border-[rgb(var(--border))] bg-[rgb(var(--surface-elevated))]">
           <div>
@@ -1022,7 +1072,7 @@ const handleUseAIPolicy = async (policy: string) => {
               :key="idx"
               class="p-2 rounded bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800"
             >
-              <p class="text-xs text-red-700 dark:text-red-300">{{ error.message }}</p>
+              <p class="text-xs text-red-700 dark:text-red-300">{{ formatValidationMessage(error.message) }}</p>
               <p v-if="error.help" class="text-xs text-red-600 dark:text-red-400 mt-0.5">{{ error.help }}</p>
             </div>
           </div>
@@ -1034,7 +1084,7 @@ const handleUseAIPolicy = async (policy: string) => {
               :key="idx"
               class="p-2 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800"
             >
-              <p class="text-xs text-amber-700 dark:text-amber-300">{{ warning.message }}</p>
+              <p class="text-xs text-amber-700 dark:text-amber-300">{{ formatValidationMessage(warning.message) }}</p>
               <p v-if="warning.help" class="text-xs text-amber-600 dark:text-amber-400 mt-0.5">{{ warning.help }}</p>
             </div>
           </div>

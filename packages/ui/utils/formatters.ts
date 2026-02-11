@@ -32,7 +32,10 @@ export function formatPercent(value: number, total: number): number {
     return Math.min(100, (value / total) * 100)
 }
 
-export function maskApiKey(key: string): string {
-    if (!key || key.length < 10) return key
+export function maskApiKey(key: string | undefined | null, keySuffix?: string): string {
+    if (keySuffix) {
+        return `****${keySuffix}`
+    }
+    if (!key || key.length < 10) return key || ''
     return `${key.slice(0, 7)}...${key.slice(-4)}`
 }

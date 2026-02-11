@@ -35,7 +35,7 @@ export function getNavSections(isDashboardUser: boolean): NavSection[] {
         ]
       },
       {
-        title: 'Authorization',
+        title: 'Guardrails',
         icon: 'lock',
         adminOnly: false,
         items: [
@@ -73,7 +73,7 @@ export function getNavSections(isDashboardUser: boolean): NavSection[] {
     )
   }
 
-  // My Account section (always shown)
+
   sections.push({
     title: 'My Account',
     icon: 'user',
@@ -110,22 +110,22 @@ export function getIcon(iconName: string): string {
 export function getAdminOnlyPages(): string[] {
   const pages: string[] = []
   
-  // Dashboard item is admin-only
+
   if (dashboardItem.adminOnly) {
     pages.push(dashboardItem.path)
   }
   
-  // Get all sections (assuming dashboard user to get full list)
+
   const sections = getNavSections(true)
   
   for (const section of sections) {
-    // If section is admin-only, all its items are admin-only
+
     if (section.adminOnly) {
       for (const item of section.items) {
         pages.push(item.path)
       }
     } else {
-      // Otherwise, check individual items
+
       for (const item of section.items) {
         if (item.adminOnly) {
           pages.push(item.path)

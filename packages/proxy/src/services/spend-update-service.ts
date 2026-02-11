@@ -62,7 +62,7 @@ export class SpendUpdateService {
 
  
     const executionKeys = this.db.prepare(`
-      SELECT id FROM user_agent_keys WHERE auth_id = ?
+      SELECT id FROM user_agent_keys WHERE auth_id = ? AND status IN ('active', 'disabled')
     `).all(userId) as { id: string }[]
 
     const executionKeyIds = executionKeys.map(k => k.id)

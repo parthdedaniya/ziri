@@ -14,7 +14,7 @@ export interface ZiriConfig {
   
   email?: {
     enabled?: boolean
-    provider?: 'smtp' | 'sendgrid' | 'manual'
+    provider?: 'smtp' | 'sendgrid' | 'mailgun' | 'ses' | 'manual'
     smtp?: {
       host: string
       port: number
@@ -26,6 +26,16 @@ export interface ZiriConfig {
     }
     sendgrid?: {
       apiKey: string
+    }
+    mailgun?: {
+      apiKey: string
+      domain: string
+      apiUrl?: string
+    }
+    ses?: {
+      accessKeyId: string
+      secretAccessKey: string
+      region: string
     }
     from?: string
   }

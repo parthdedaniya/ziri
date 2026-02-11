@@ -56,7 +56,7 @@ export function useAdminAuth() {
       
  
       if (process.client) {
-        await navigateTo('/config')
+        await navigateTo('/')
       }
       
       return true

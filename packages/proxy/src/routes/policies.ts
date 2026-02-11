@@ -3,7 +3,8 @@ import { requireAdmin } from '../middleware/auth.js'
 import { serviceFactory } from '../services/service-factory.js'
 import { getDatabase } from '../db/index.js'
 import { getPolicyTemplates } from '../services/policy-template-service.js'
-import { logInternalOutcome } from '../utils/internal-audit-helpers.js'
+import { logInternalAction } from '../utils/internal-audit-helpers.js'
+import { parsePolicyId } from '../utils/cedar-policy.js'
 
 const router: Router = Router()
 
@@ -135,13 +136,6 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
       })
     }
     
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: '200',
-      message: `Retrieved ${policies.length} policies`,
-      actionDurationMs: Date.now() - actionStart
-    })
-    
     res.json({
       data: {
         policies
@@ -149,16 +143,11 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
       total
     })
   } catch (error: any) {
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: '500',
-      message: error.message || 'Failed to get policies',
-      actionDurationMs: Date.now() - actionStart
-    })
     
     res.status(500).json({
       error: 'Failed to get policies',
-      message: error.message
+      code: 'POLICIES_GET_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })
@@ -170,39 +159,47 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
     
     if (!policy || !description) {
       res.status(400).json({
-        error: 'Policy and description are required'
+        error: 'Policy and description are required',
+        code: 'POLICY_MISSING_FIELDS'
+      })
+      return
+    }
+    
+    if (!parsePolicyId(policy)) {
+      res.status(400).json({
+        error: 'Policy must include @id("your-id") at the start.',
+        code: 'POLICY_ID_REQUIRED'
       })
       return
     }
     
     const policyStore = serviceFactory.getPolicyStore()
     await policyStore.createPolicy(policy, description)
-    
+    const policyId = parsePolicyId(policy)
+
     res.json({
       success: true,
       message: 'Policy created successfully'
     })
 
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: 'POLICY_CREATED',
-      resourceId: undefined,
-      resourceDetails: {
-        description
-      },
+    logInternalAction(req, {
+      action: 'create_policy',
+      resourceType: 'policy',
+      resourceId: policyId ?? undefined,
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
+    if (error.message?.includes('Policy ID already exists')) {
+      res.status(409).json({
+        error: 'This Policy ID is already in use.',
+        code: 'POLICY_ID_EXISTS'
+      })
+      return
+    }
     res.status(500).json({
       error: 'Failed to create policy',
-      message: error.message
-    })
-
-    await logInternalOutcome(req, {
-      status: 'failed',
       code: 'POLICY_CREATE_ERROR',
-      message: error.message,
-      actionDurationMs: Date.now() - actionStart
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })
@@ -214,38 +211,47 @@ router.put('/', requireAdmin, async (req: Request, res: Response) => {
     
     if (!oldPolicy || !policy || !description) {
       res.status(400).json({
-        error: 'oldPolicy, policy, and description are required'
+        error: 'oldPolicy, policy, and description are required',
+        code: 'POLICY_UPDATE_MISSING_FIELDS'
+      })
+      return
+    }
+    
+    if (!parsePolicyId(policy)) {
+      res.status(400).json({
+        error: 'Policy must include @id("your-id") at the start.',
+        code: 'POLICY_ID_REQUIRED'
       })
       return
     }
     
     const policyStore = serviceFactory.getPolicyStore()
     await policyStore.updatePolicy(oldPolicy, policy, description)
-    
+    const policyId = parsePolicyId(policy)
+
     res.json({
       success: true,
       message: 'Policy updated successfully'
     })
 
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: 'POLICY_UPDATED',
-      resourceDetails: {
-        description
-      },
+    logInternalAction(req, {
+      action: 'update_policy',
+      resourceType: 'policy',
+      resourceId: policyId ?? undefined,
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
+    if (error.message?.includes('Policy ID already exists')) {
+      res.status(409).json({
+        error: 'This Policy ID is already in use.',
+        code: 'POLICY_ID_EXISTS'
+      })
+      return
+    }
     res.status(500).json({
       error: 'Failed to update policy',
-      message: error.message
-    })
-
-    await logInternalOutcome(req, {
-      status: 'failed',
       code: 'POLICY_UPDATE_ERROR',
-      message: error.message,
-      actionDurationMs: Date.now() - actionStart
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })
@@ -257,7 +263,8 @@ router.patch('/status', requireAdmin, async (req: Request, res: Response) => {
 
     if (!policy || typeof isActive !== 'boolean') {
       res.status(400).json({
-        error: 'policy and isActive (boolean) are required'
+        error: 'policy and isActive (boolean) are required',
+        code: 'POLICY_STATUS_MISSING_FIELDS'
       })
       return
     }
@@ -271,18 +278,13 @@ router.patch('/status', requireAdmin, async (req: Request, res: Response) => {
     
     if (!existing) {
       res.status(404).json({
-        error: 'Policy not found'
+        error: 'Policy not found',
+        code: 'POLICY_NOT_FOUND'
       })
 
-      await logInternalOutcome(req, {
-        status: 'failed',
-        code: 'POLICY_STATUS_NOT_FOUND',
-        message: 'Policy not found',
-        actionDurationMs: Date.now() - actionStart
-      })
       return
     }
-    
+
     const newStatus = isActive ? 1 : 0
     const result = db.prepare(`
       UPDATE schema_policy
@@ -292,43 +294,32 @@ router.patch('/status', requireAdmin, async (req: Request, res: Response) => {
 
     if (result.changes === 0) {
       res.status(404).json({
-        error: 'Policy not found'
+        error: 'Policy not found',
+        code: 'POLICY_NOT_FOUND'
       })
 
-      await logInternalOutcome(req, {
-        status: 'failed',
-        code: 'POLICY_STATUS_NOT_FOUND',
-        message: 'Policy not found',
-        actionDurationMs: Date.now() - actionStart
-      })
       return
     }
-    
+
     res.json({
       success: true,
       message: `Policy ${isActive ? 'activated' : 'deactivated'} successfully`
     })
 
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: 'POLICY_STATUS_PATCHED',
-      resourceDetails: {
-        isActive
-      },
+    const policyId = parsePolicyId(policy)
+    logInternalAction(req, {
+      action: 'patch_policy_status',
+      resourceType: 'policy',
+      resourceId: policyId ?? undefined,
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
     res.status(500).json({
       error: 'Failed to update policy status',
-      message: error.message
+      code: 'POLICY_STATUS_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
 
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: 'POLICY_STATUS_ERROR',
-      message: error.message,
-      actionDurationMs: Date.now() - actionStart
-    })
   }
 })
 
@@ -339,43 +330,35 @@ router.delete('/', requireAdmin, async (req: Request, res: Response) => {
     
     if (!policy) {
       res.status(400).json({
-        error: 'Policy is required'
+        error: 'Policy is required',
+        code: 'POLICY_REQUIRED'
       })
 
-      await logInternalOutcome(req, {
-        status: 'failed',
-        code: 'POLICY_DELETE_MISSING',
-        message: 'Policy is required',
-        actionDurationMs: Date.now() - actionStart
-      })
       return
     }
     
     const policyStore = serviceFactory.getPolicyStore()
     await policyStore.deletePolicy(policy)
-    
+    const policyId = parsePolicyId(policy)
+
     res.json({
       success: true,
       message: 'Policy deleted successfully'
     })
 
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: 'POLICY_DELETED',
+    logInternalAction(req, {
+      action: 'delete_policy',
+      resourceType: 'policy',
+      resourceId: policyId ?? undefined,
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
     res.status(500).json({
       error: 'Failed to delete policy',
-      message: error.message
+      code: 'POLICY_DELETE_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
 
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: 'POLICY_DELETE_ERROR',
-      message: error.message,
-      actionDurationMs: Date.now() - actionStart
-    })
   }
 })
 
@@ -384,27 +367,15 @@ router.get('/templates', requireAdmin, async (req: Request, res: Response) => {
   try {
     const templates = getPolicyTemplates()
     
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: '200',
-      message: `Retrieved ${templates.length} policy templates`,
-      actionDurationMs: Date.now() - actionStart
-    })
-    
     res.json({
       templates
     })
   } catch (error: any) {
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: '500',
-      message: error.message || 'Failed to get policy templates',
-      actionDurationMs: Date.now() - actionStart
-    })
     
     res.status(500).json({
       error: 'Failed to get policy templates',
-      message: error.message
+      code: 'POLICY_TEMPLATES_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })

@@ -79,25 +79,22 @@
                   {{ keyStatus.charAt(0).toUpperCase() + keyStatus.slice(1) }}
                 </span>
               </div>
-              <div class="flex items-center gap-2">
-                <UiButton
-                  v-if="apiKey && keyStatus === 'active'"
-                  variant="ghost"
-                  size="sm"
-                  @click="handleRotateKey"
-                  :loading="isRotating"
-                  title="Rotate API Key"
-                  class="text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20"
-                >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                </UiButton>
-                <UiCopyButton v-if="apiKey" :text="apiKey" size="sm" />
-              </div>
+              <UiButton
+                v-if="keySuffix && keyStatus === 'active'"
+                variant="ghost"
+                size="sm"
+                @click="handleRotateKey"
+                :loading="isRotating"
+                title="Rotate API Key"
+                class="text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </UiButton>
             </div>
-            <code v-if="apiKey" class="block p-3 rounded-lg bg-[rgb(var(--surface-elevated))] text-xs font-mono break-all text-[rgb(var(--text))]">
-              {{ maskApiKey(apiKey) }}
+            <code v-if="keySuffix" class="block p-3 rounded-lg bg-[rgb(var(--surface-elevated))] text-xs font-mono break-all text-[rgb(var(--text))]">
+              {{ maskApiKey(undefined, keySuffix) }}
             </code>
             <p v-else class="text-sm text-[rgb(var(--text-muted))] italic">No API key found. Contact your administrator.</p>
             <p v-if="keyStatus === 'revoked'" class="text-xs text-red-600 dark:text-red-400 mt-2 italic">
@@ -241,6 +238,7 @@
 <script setup lang="ts">
 import { useUnifiedAuth } from '~/composables/useUnifiedAuth'
 import { useToast } from '~/composables/useToast'
+import { useApiError } from '~/composables/useApiError'
 import { formatCurrency, formatDate, formatPercent, maskApiKey } from '~/utils/formatters'
 
 definePageMeta({
@@ -249,6 +247,7 @@ definePageMeta({
 
 const { getAuthHeader, isAuthenticated } = useUnifiedAuth()
 const toast = useToast()
+const { getUserMessage } = useApiError()
 
 const userInfo = ref({
   userId: '',
@@ -260,7 +259,7 @@ const userInfo = ref({
   lastSignIn: ''
 })
 
-const apiKey = ref<string | null>(null)
+const keySuffix = ref<string | null>(null)
 const keyStatus = ref<'active' | 'revoked' | 'disabled' | null>(null)
 
 const usage = ref({
@@ -336,7 +335,7 @@ const loadProfile = async () => {
       const keysData = await keysResponse.json()
       if (keysData.data && keysData.data.length > 0) {
         const keyEntity = keysData.data[0]
-        apiKey.value = keyEntity.apiKey || null
+        keySuffix.value = keyEntity.keySuffix || null
         
         const status = keyEntity.attrs?.status || keyEntity.status
         if (status === 'active' || status === 1) {
@@ -380,8 +379,8 @@ const loadProfile = async () => {
       }
     }
   } catch (e: any) {
-    error.value = e.message
-    toast.error('Failed to load profile')
+    error.value = getUserMessage(e)
+    toast.error(getUserMessage(e))
   } finally {
     loading.value = false
   }

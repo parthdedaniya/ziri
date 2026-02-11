@@ -1,9 +1,10 @@
- 
+
 
 import { ref } from 'vue'
 import { useConfigStore } from '~/stores/config'
 import { useAdminAuth } from './useAdminAuth'
 import { useToast } from './useToast'
+import { useApiError } from './useApiError'
 
 export interface User {
   id: string
@@ -34,6 +35,7 @@ export function useUsers() {
   const configStore = useConfigStore()
   const { getAuthHeader } = useAdminAuth()
   const toast = useToast()
+  const { getUserMessage } = useApiError()
 
   const loadUsers = async (params?: {
     search?: string
@@ -48,33 +50,34 @@ export function useUsers() {
       if (!authHeader) {
         throw new Error('Please login first')
       }
-      
- 
+
+
       const queryParams = new URLSearchParams()
       if (params?.search) queryParams.set('search', params.search)
       if (params?.limit) queryParams.set('limit', params.limit.toString())
       if (params?.offset) queryParams.set('offset', params.offset.toString())
       if (params?.sortBy) queryParams.set('sortBy', params.sortBy)
       if (params?.sortOrder) queryParams.set('sortOrder', params.sortOrder)
-      
+
       const url = `/api/users${queryParams.toString() ? '?' + queryParams.toString() : ''}`
-      
- 
+
+
       const response = await fetch(url, {
         headers: {
           'Authorization': authHeader
         }
       })
-      
+
       if (!response.ok) {
-        throw new Error(`Failed to load users: ${response.statusText}`)
+        const err = await response.json().catch(() => ({ error: response.statusText }))
+        throw new Error(err.error || err.message || 'Failed to load users')
       }
-      
+
       const data = await response.json()
       users.value = data.users || []
       return { users: data.users || [], total: data.total || 0 }
     } catch (error: any) {
-      toast.error(`Failed to load users: ${error.message}`)
+      toast.error(getUserMessage(error))
       throw error
     } finally {
       loading.value = false
@@ -86,8 +89,8 @@ export function useUsers() {
     if (!authHeader) {
       throw new Error('Please login first')
     }
-    
- 
+
+
     const response = await fetch('/api/users', {
       method: 'POST',
       headers: {
@@ -96,19 +99,20 @@ export function useUsers() {
       },
       body: JSON.stringify(input)
     })
-    
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: response.statusText }))
       throw new Error(error.error || 'Failed to create user')
     }
-    
+
     const result = await response.json()
     users.value.push(result.user)
-    
- 
+
+
     return {
       user: result.user,
-      password: result.password
+      password: result.password,
+      apiKey: result.apiKey
     }
   }
 
@@ -117,8 +121,8 @@ export function useUsers() {
     if (!authHeader) {
       throw new Error('Please login first')
     }
-    
- 
+
+
     const response = await fetch(`/api/users/${userId}`, {
       method: 'PUT',
       headers: {
@@ -127,18 +131,18 @@ export function useUsers() {
       },
       body: JSON.stringify(updates)
     })
-    
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: response.statusText }))
       throw new Error(error.error || 'Failed to update user')
     }
-    
+
     const result = await response.json()
     const index = users.value.findIndex(u => u.userId === userId)
     if (index !== -1) {
       users.value[index] = result.user
     }
-    
+
     return result.user
   }
 
@@ -147,20 +151,20 @@ export function useUsers() {
     if (!authHeader) {
       throw new Error('Please login first')
     }
-    
- 
+
+
     const response = await fetch(`/api/users/${userId}`, {
       method: 'DELETE',
       headers: {
         'Authorization': authHeader
       }
     })
-    
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: response.statusText }))
-      throw new Error(error.error || 'Failed to delete user')
+      throw new Error(error.message || 'Failed to delete user')
     }
-    
+
     users.value = users.value.filter(u => u.userId !== userId)
   }
 
@@ -169,22 +173,22 @@ export function useUsers() {
     if (!authHeader) {
       throw new Error('Please login first')
     }
-    
- 
+
+
     const response = await fetch(`/api/users/${userId}/reset-password`, {
       method: 'POST',
       headers: {
         'Authorization': authHeader
       }
     })
-    
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: response.statusText }))
       throw new Error(error.error || 'Failed to reset password')
     }
-    
+
     const result = await response.json()
- 
+
     return {
       password: result.password,
       emailSent: result.emailSent || false

@@ -258,8 +258,13 @@ onMounted(() => {
         </div>
       </template>
 
-      <template #auth_id="{ value }">
-        <code class="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-900/30 font-mono text-xs text-indigo-600 dark:text-indigo-400 font-semibold">{{ value || 'N/A' }}</code>
+      <template #auth_id="{ row }">
+        <div class="text-sm">
+          <p class="text-[rgb(var(--text))] font-medium">
+            {{ row.auth_name || '--' }}
+          </p>
+          <code class="text-xs text-[rgb(var(--text-muted))] font-mono">{{ row.auth_id || 'N/A' }}</code>
+        </div>
       </template>
 
       <template #model="{ value }">

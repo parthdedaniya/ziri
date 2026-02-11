@@ -1,8 +1,6 @@
 import { Router, type Request, type Response } from 'express'
 import { requireAdmin } from '../middleware/auth.js'
 import { auditLogService } from '../services/audit-log-service.js'
-import { logInternalOutcome } from '../utils/internal-audit-helpers.js'
-
 const router: Router = Router()
 
 router.use(requireAdmin)
@@ -48,24 +46,11 @@ router.get('/', async (req: Request, res: Response) => {
       count: result.data.length,
       total: result.total
     })
-
-    void logInternalOutcome(req, {
-      status: 'success',
-      code: 'AUDIT_VIEWED',
-      actionDurationMs: Date.now() - actionStart
-    })
   } catch (error: any) {
     console.error('[AUDIT] Query error:', error)
     res.status(500).json({
       error: 'Failed to query audit logs',
       code: 'AUDIT_QUERY_ERROR'
-    })
-
-    void logInternalOutcome(req, {
-      status: 'failed',
-      code: 'AUDIT_VIEW_ERROR',
-      message: error.message,
-      actionDurationMs: Date.now() - actionStart
     })
   }
 })
@@ -81,24 +66,11 @@ router.get('/statistics', async (req: Request, res: Response) => {
     )
 
     res.json({ data: stats })
-
-    void logInternalOutcome(req, {
-      status: 'success',
-      code: 'AUDIT_STATS_VIEWED',
-      actionDurationMs: Date.now() - actionStart
-    })
   } catch (error: any) {
     console.error('[AUDIT] Statistics error:', error)
     res.status(500).json({
       error: 'Failed to get audit statistics',
       code: 'AUDIT_STATS_ERROR'
-    })
-
-    void logInternalOutcome(req, {
-      status: 'failed',
-      code: 'AUDIT_STATS_ERROR',
-      message: error.message,
-      actionDurationMs: Date.now() - actionStart
     })
   }
 })

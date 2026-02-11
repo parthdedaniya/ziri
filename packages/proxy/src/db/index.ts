@@ -56,6 +56,91 @@ async function initializeSchema(database: Database.Database): Promise<void> {
     }
   }
 
+  // Add new columns to existing tables if they don't exist
+  try {
+    // Check if auth_name column exists in audit_logs
+    const auditLogsColumns = database.prepare("PRAGMA table_info(audit_logs)").all() as Array<{ name: string }>
+    const hasAuthName = auditLogsColumns.some(col => col.name === 'auth_name')
+    if (!hasAuthName) {
+      database.exec('ALTER TABLE audit_logs ADD COLUMN auth_name TEXT')
+      console.log('[DB] Added auth_name column to audit_logs table')
+    }
+
+    // Check if status column exists in user_agent_keys
+    const userAgentKeysColumns = database.prepare("PRAGMA table_info(user_agent_keys)").all() as Array<{ name: string }>
+    const hasStatus = userAgentKeysColumns.some(col => col.name === 'status')
+    if (!hasStatus) {
+      database.exec("ALTER TABLE user_agent_keys ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+      database.exec("CREATE INDEX IF NOT EXISTS idx_user_agent_keys_status ON user_agent_keys(status)")
+      console.log('[DB] Added status column to user_agent_keys table')
+    }
+
+    // Partial unique index for auth email (Option D - allow reuse when deleted)
+    try {
+      database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_email_hash_active ON auth(email_hash) WHERE status != 0")
+      console.log('[DB] Added partial unique index idx_auth_email_hash_active')
+    } catch (idxError: any) {
+      if (!idxError.message?.includes('already exists')) {
+        console.warn('[DB] idx_auth_email_hash_active warning:', idxError.message)
+      }
+    }
+
+    // Add policy_id column to schema_policy for policy ID uniqueness
+    const schemaPolicyColumns = database.prepare("PRAGMA table_info(schema_policy)").all() as Array<{ name: string }>
+    const hasPolicyId = schemaPolicyColumns.some(col => col.name === 'policy_id')
+    if (!hasPolicyId) {
+      database.exec('ALTER TABLE schema_policy ADD COLUMN policy_id TEXT')
+      console.log('[DB] Added policy_id column to schema_policy')
+    }
+
+    // Backfill policy_id for existing policy rows
+    const policyRows = database.prepare(`
+      SELECT id, content FROM schema_policy
+      WHERE obj_type = 'policy' AND policy_id IS NULL
+    `).all() as Array<{ id: string; content: string }>
+
+    const usedIds = new Set(
+      (database.prepare('SELECT policy_id FROM schema_policy WHERE obj_type = ? AND policy_id IS NOT NULL').all('policy') as Array<{ policy_id: string }>)
+        .map(r => r.policy_id)
+    )
+
+    const parsePolicyId = (content: string): string | null => {
+      const match = content.trim().match(/^\s*@id\s*\(\s*"([^"]+)"\s*\)/)
+      return match ? match[1] : null
+    }
+
+    for (const row of policyRows) {
+      const parsed = parsePolicyId(row.content)
+      let policyId: string
+      if (parsed && !usedIds.has(parsed)) {
+        policyId = parsed
+      } else {
+        policyId = `legacy-${row.id}`
+      }
+      usedIds.add(policyId)
+      database.prepare('UPDATE schema_policy SET policy_id = ? WHERE id = ?').run(policyId, row.id)
+    }
+    if (policyRows.length > 0) {
+      console.log(`[DB] Backfilled policy_id for ${policyRows.length} policy row(s)`)
+    }
+
+    // Create unique index on policy_id (if not exists from schema)
+    try {
+      database.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_schema_policy_policy_id
+        ON schema_policy(policy_id)
+        WHERE obj_type = 'policy' AND policy_id IS NOT NULL
+      `)
+      console.log('[DB] Ensured idx_schema_policy_policy_id index')
+    } catch (idxError: any) {
+      if (!idxError.message?.includes('already exists')) {
+        console.warn('[DB] idx_schema_policy_policy_id warning:', idxError.message)
+      }
+    }
+  } catch (error: any) {
+    console.warn('[DB] Column addition warning:', error.message)
+  }
+
   try {
     const { seedPricing } = await import('./seed-pricing.js')
     seedPricing(database)

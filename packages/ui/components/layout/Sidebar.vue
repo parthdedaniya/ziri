@@ -66,7 +66,7 @@ const hideTooltip = () => {
   tooltipState.value.visible = false
 }
 
-// Use navigation composable
+
 const { dashboardItem, getNavSections, getIcon, isActive } = useNavigation()
 
 const navSections = computed(() => getNavSections(isDashboardUser.value))

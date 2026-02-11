@@ -13,8 +13,6 @@ const { getAuthHeader } = useUnifiedAuth()
 const { listInternalAuditLogs } = useInternalAuditLogs()
 
 const searchQuery = ref('')
-const filterDecision = ref<'' | 'permit' | 'forbid'>('')
-const filterOutcome = ref<'' | 'success' | 'failed' | 'denied_before_action'>('')
 const filterUserId = ref('')
 const filterAction = ref('')
 const filterResourceType = ref('')
@@ -41,8 +39,6 @@ const fetchLogs = async () => {
 
     const result = await listInternalAuditLogs({
       search: debouncedSearchQuery.value || undefined,
-      decision: filterDecision.value || undefined,
-      outcomeStatus: filterOutcome.value || undefined,
       userId: filterUserId.value || undefined,
       action: filterAction.value || undefined,
       resourceType: filterResourceType.value || undefined,
@@ -70,8 +66,6 @@ const handleSort = (newSortBy: string | null, newSortOrder: 'asc' | 'desc' | nul
 watch(
   [
     debouncedSearchQuery,
-    filterDecision,
-    filterOutcome,
     filterUserId,
     filterAction,
     filterResourceType,
@@ -86,27 +80,14 @@ watch(
 )
 
 const { isConnected: isSseConnected } = useRealtimeUpdates({
-  onInternalAuditLogCreated: (event) => {
-    // Ignore events for viewing the audit logs page itself to prevent infinite loop
-    if (event.data.action === 'view_internal_audit') {
-      return
-    }
-    
+  onInternalAuditLogCreated: () => {
+    // Only write operations are logged now, so refresh if on first page
     if (currentPage.value === 1) {
       fetchLogs()
     }
   },
-  onBatchUpdate: (event) => {
-    // Filter out view_internal_audit events from batch updates to prevent infinite loop
-    if (event.data.events) {
-      const hasNonViewEvents = event.data.events.some(
-        (e: any) => e.type === 'internal_audit_log_created' && e.data.action !== 'view_internal_audit'
-      )
-      if (!hasNonViewEvents) {
-        return
-      }
-    }
-    
+  onBatchUpdate: () => {
+    // Only write operations are logged now, so refresh if on first page
     if (currentPage.value === 1) {
       fetchLogs()
     }
@@ -119,34 +100,9 @@ const columns = [
   { key: 'dashboard_user_role', header: 'Role', class: 'w-24', sortable: true },
   { key: 'action', header: 'Action', class: 'w-32', sortable: true },
   { key: 'resource', header: 'Resource', class: 'w-40', sortable: false },
-  { key: 'decision', header: 'Decision', class: 'w-24', sortable: true },
-  { key: 'outcome', header: 'Outcome', class: 'w-32', sortable: false },
   { key: 'durations', header: 'Durations', class: 'w-40', sortable: false }
 ]
 
-const getDecisionBadgeClass = (decision: string) => {
-  switch (decision) {
-    case 'permit':
-      return 'badge-success'
-    case 'forbid':
-      return 'badge-danger'
-    default:
-      return 'badge-neutral'
-  }
-}
-
-const getOutcomeBadgeClass = (status: string | null) => {
-  switch (status) {
-    case 'success':
-      return 'badge-success'
-    case 'failed':
-      return 'badge-danger'
-    case 'denied_before_action':
-      return 'badge-warning'
-    default:
-      return 'badge-neutral'
-  }
-}
 
 onMounted(() => {
   fetchLogs()
@@ -184,21 +140,10 @@ onMounted(() => {
         <input
           v-model="searchQuery"
           type="text"
-          placeholder="Search by user, action, resource, or request ID..."
+          placeholder="Search by user, action, or resource..."
           class="input pl-10"
         />
       </div>
-      <select v-model="filterDecision" class="input w-40">
-        <option value="">All Decisions</option>
-        <option value="permit">Permit</option>
-        <option value="forbid">Forbid</option>
-      </select>
-      <select v-model="filterOutcome" class="input w-40">
-        <option value="">All Outcomes</option>
-        <option value="success">Success</option>
-        <option value="failed">Failed</option>
-        <option value="denied_before_action">Denied (middleware)</option>
-      </select>
       <input
         v-model="filterUserId"
         type="text"
@@ -230,8 +175,6 @@ onMounted(() => {
               <th class="text-left py-3 px-4 text-xs font-bold uppercase tracking-wider text-[rgb(var(--text-muted))] w-24">Role</th>
               <th class="text-left py-3 px-4 text-xs font-bold uppercase tracking-wider text-[rgb(var(--text-muted))] w-32">Action</th>
               <th class="text-left py-3 px-4 text-xs font-bold uppercase tracking-wider text-[rgb(var(--text-muted))] w-40">Resource</th>
-              <th class="text-left py-3 px-4 text-xs font-bold uppercase tracking-wider text-[rgb(var(--text-muted))] w-24">Decision</th>
-              <th class="text-left py-3 px-4 text-xs font-bold uppercase tracking-wider text-[rgb(var(--text-muted))] w-32">Outcome</th>
               <th class="text-left py-3 px-4 text-xs font-bold uppercase tracking-wider text-[rgb(var(--text-muted))] w-40">Durations</th>
             </tr>
           </thead>
@@ -256,15 +199,6 @@ onMounted(() => {
                 <div class="space-y-1">
                   <div class="h-4 bg-[rgb(var(--surface-elevated))] rounded w-20 animate-pulse"></div>
                   <div class="h-3 bg-[rgb(var(--surface-elevated))] rounded w-16 animate-pulse"></div>
-                </div>
-              </td>
-              <td class="py-3 px-4">
-                <div class="h-6 bg-[rgb(var(--surface-elevated))] rounded w-16 animate-pulse"></div>
-              </td>
-              <td class="py-3 px-4">
-                <div class="space-y-1">
-                  <div class="h-6 bg-[rgb(var(--surface-elevated))] rounded w-20 animate-pulse"></div>
-                  <div class="h-3 bg-[rgb(var(--surface-elevated))] rounded w-12 animate-pulse"></div>
                 </div>
               </td>
               <td class="py-3 px-4">
@@ -307,12 +241,13 @@ onMounted(() => {
         </div>
       </template>
 
-      <template #dashboard_user_id="{ value }">
-        <code
-          class="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-900/30 font-mono text-xs text-indigo-600 dark:text-indigo-400 font-semibold"
-        >
-          {{ value || 'N/A' }}
-        </code>
+      <template #dashboard_user_id="{ row }">
+        <div class="text-sm">
+          <p class="text-[rgb(var(--text))] font-medium">
+            {{ row.dashboard_user_name || '--' }}
+          </p>
+          <code class="text-xs text-[rgb(var(--text-muted))] font-mono">{{ row.dashboard_user_id || 'N/A' }}</code>
+        </div>
       </template>
 
       <template #dashboard_user_role="{ value }">
@@ -329,26 +264,6 @@ onMounted(() => {
           <p class="text-xs text-[rgb(var(--text-muted))]">
             {{ row.resource_id || '—' }}
           </p>
-        </div>
-      </template>
-
-      <template #decision="{ row }">
-        <span :class="[getDecisionBadgeClass(row.decision), 'badge']">
-          {{ row.decision === 'permit' ? 'Permit' : 'Forbid' }}
-        </span>
-      </template>
-
-      <template #outcome="{ row }">
-        <div class="flex flex-col gap-1">
-          <span :class="[getOutcomeBadgeClass(row.outcome_status), 'badge']">
-            {{ row.outcome_status || 'pending' }}
-          </span>
-          <span
-            v-if="row.outcome_code"
-            class="text-[10px] uppercase tracking-wide text-[rgb(var(--text-muted))]"
-          >
-            {{ row.outcome_code }}
-          </span>
         </div>
       </template>
 

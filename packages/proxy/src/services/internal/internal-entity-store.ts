@@ -97,6 +97,34 @@ export class InternalEntityStore implements IInternalEntityStore {
       throw new Error(`Internal entity not found for user ${userId}`)
     }
   }
+
+  /** Get entity including soft-deleted (status=0) - for restore flows */
+  async getEntityIncludingDeleted(userId: string): Promise<InternalEntity | null> {
+    const db = getDatabase()
+    const row = db.prepare(`
+      SELECT ejson FROM internal_entities
+      WHERE etype = ? AND eid = ?
+    `).get('DashboardUser', userId) as any
+    if (!row) return null
+    return JSON.parse(row.ejson) as InternalEntity
+  }
+
+  /** Restore a soft-deleted entity and update attrs */
+  async restoreEntity(userId: string, updates: Partial<InternalEntity['attrs']>): Promise<void> {
+    const db = getDatabase()
+    const existing = await this.getEntityIncludingDeleted(userId)
+    if (!existing) {
+      throw new Error(`Internal entity not found for user ${userId}`)
+    }
+    const updatedAttrs = { ...existing.attrs, ...updates }
+    const updatedEntity: InternalEntity = { ...existing, attrs: updatedAttrs }
+    const ejson = JSON.stringify(updatedEntity)
+    db.prepare(`
+      UPDATE internal_entities
+      SET ejson = ?, status = 1, updated_at = datetime('now')
+      WHERE etype = ? AND eid = ?
+    `).run(ejson, 'DashboardUser', userId)
+  }
   
   async getAllEntities(): Promise<InternalEntity[]> {
     const db = getDatabase()

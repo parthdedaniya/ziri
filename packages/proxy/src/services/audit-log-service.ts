@@ -49,15 +49,27 @@ export class AuditLogService {
   }
 
   async log(entry: AuditLogEntry): Promise<number> {
+    // Fetch user name if auth_id is provided
+    let authName: string | null = null
+    if (entry.authId) {
+      try {
+        const userRecord = this.db.prepare('SELECT name FROM auth WHERE id = ?').get(entry.authId) as { name: string | null } | undefined
+        authName = userRecord?.name || null
+      } catch (error) {
+        // If user lookup fails, continue without name
+        console.warn(`[AUDIT] Failed to fetch name for auth_id ${entry.authId}:`, error)
+      }
+    }
+
     const stmt = this.db.prepare(`
       INSERT INTO audit_logs (
-        request_id, principal, principal_type, auth_id, api_key_id,
+        request_id, principal, principal_type, auth_id, auth_name, api_key_id,
         action, resource, provider, model,
         decision, decision_reason, policies_evaluated, determining_policies,
         request_ip, user_agent, request_method, request_path, request_body_hash,
         cedar_context, entity_snapshot,
         request_timestamp, auth_start_time, auth_end_time, auth_duration_ms
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     const result = stmt.run(
@@ -65,6 +77,7 @@ export class AuditLogService {
       entry.principal,
       entry.principalType,
       entry.authId || null,
+      authName,
       entry.apiKeyId || null,
       entry.action,
       entry.resource,

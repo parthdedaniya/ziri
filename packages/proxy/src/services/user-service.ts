@@ -35,15 +35,15 @@ function generateUserKeyId(): string {
   return `uk-${random}`
 }
 
-export async function createUser(input: CreateUserInput): Promise<{ user: User; password?: string; emailSent: boolean }> {
+export async function createUser(input: CreateUserInput): Promise<{ user: User; password?: string; apiKey?: string; emailSent: boolean }> {
   const db = getDatabase()
-  
+
   const emailHash = hashEmail(input.email)
-  const existing = db.prepare('SELECT * FROM auth WHERE email_hash = ?').get(emailHash) as any
-  if (existing) {
+  const existingActive = db.prepare('SELECT * FROM auth WHERE email_hash = ? AND status != 0').get(emailHash) as any
+  if (existingActive) {
     throw new Error('User with this email already exists')
   }
-  
+
   const userId = generateUserId()
   const password = generatePassword(16)
   const passwordHash = await hashPassword(password)
@@ -92,9 +92,11 @@ export async function createUser(input: CreateUserInput): Promise<{ user: User; 
     throw new Error(`Failed to create User entity: ${error.message}`)
   }
   
-  console.log(`[USER SERVICE] createUser - createApiKey value:`, input.createApiKey, `type:`, typeof input.createApiKey)
+  const shouldCreateApiKey = input.createApiKey === true
+  console.log(`[USER SERVICE] createUser - createApiKey value:`, input.createApiKey, `type:`, typeof input.createApiKey, `shouldCreateApiKey:`, shouldCreateApiKey)
   
-  if (input.createApiKey === true) {
+  let createdApiKey: string | undefined
+  if (shouldCreateApiKey) {
     console.log(`[USER SERVICE] Creating UserKey entity and API key for user ${userId}`)
     
     const userKeyId = generateUserKeyId()
@@ -131,19 +133,20 @@ export async function createUser(input: CreateUserInput): Promise<{ user: User; 
     try {
       const { generateApiKey, hashApiKey } = await import('../utils/api-key.js')
       const apiKey = generateApiKey(userId)
+      createdApiKey = apiKey
       const keyHash = hashApiKey(apiKey)
-      const encryptedKey = encrypt(apiKey)
+      const keySuffix = apiKey.slice(-5)
       const keyId = `key-${randomBytes(8).toString('hex')}`
       db.prepare(`
-        INSERT INTO user_agent_keys (id, key_value, key_hash, auth_id)
-        VALUES (?, ?, ?, ?)
-      `).run(keyId, encryptedKey, keyHash, userId)
+        INSERT INTO user_agent_keys (id, key_value, key_hash, auth_id, status)
+        VALUES (?, ?, ?, ?, 'active')
+      `).run(keyId, keySuffix, keyHash, userId)
       console.log(`[USER SERVICE] ✓ API key created automatically for user ${userId}`)
     } catch (error: any) {
       console.warn(`[USER SERVICE] ✗ Failed to create API key for user ${userId}:`, error.message)
     }
   } else {
-    console.log(`[USER SERVICE] Skipping UserKey entity and API key creation for user ${userId} (createApiKey: ${input.createApiKey})`)
+    console.log(`[USER SERVICE] Skipping UserKey entity and API key creation for user ${userId} (shouldCreateApiKey: false)`)
   }
 
   const { sendEmail, generateUserCredentialsEmail } = await import('./email-service.js')
@@ -178,6 +181,7 @@ export async function createUser(input: CreateUserInput): Promise<{ user: User; 
   return {
     user,
     password: emailSent ? undefined : password,
+    apiKey: createdApiKey,
     emailSent
   }
 }
@@ -190,8 +194,8 @@ export function listUsers(params?: {
   sortOrder?: 'asc' | 'desc' | null
 }): { data: User[]; total: number } {
   const db = getDatabase()
-  
-  let whereClause = 'WHERE 1=1'
+
+  let whereClause = 'WHERE role IS NULL AND status != 0'
   const args: any[] = []
   
   if (params?.search) {
@@ -240,7 +244,90 @@ export function listUsers(params?: {
       user.userId.toLowerCase().includes(searchLower)
     )
     
-    const allUsers = db.prepare('SELECT * FROM auth').all() as any[]
+    const allUsers = db.prepare('SELECT * FROM auth WHERE role IS NULL').all() as any[]
+    const allMapped = allUsers.map(mapDbUserToUser)
+    const filtered = allMapped.filter(user => 
+      user.name.toLowerCase().includes(searchLower) ||
+      user.email.toLowerCase().includes(searchLower) ||
+      user.userId.toLowerCase().includes(searchLower)
+    )
+    
+    if (params?.sortBy && params?.sortOrder) {
+      const sortKey = params.sortBy as keyof User
+      mappedUsers.sort((a, b) => {
+        const aVal = a[sortKey]
+        const bVal = b[sortKey]
+        if (aVal === undefined || aVal === null) return 1
+        if (bVal === undefined || bVal === null) return -1
+        const comparison = aVal < bVal ? -1 : aVal > bVal ? 1 : 0
+        return params.sortOrder === 'asc' ? comparison : -comparison
+      })
+    }
+    
+    return { data: mappedUsers, total: filtered.length }
+  }
+  
+  return { data: mappedUsers, total }
+}
+
+export function listAllUsersForApiKeys(params?: {
+  search?: string
+  limit?: number
+  offset?: number
+  sortBy?: string | null
+  sortOrder?: 'asc' | 'desc' | null
+}): { data: User[]; total: number } {
+  const db = getDatabase()
+  
+
+  let whereClause = 'WHERE status != 0'
+  const args: any[] = []
+
+  if (params?.search) {
+    const searchPattern = `%${params.search}%`
+    whereClause += ' AND (name LIKE ? OR id LIKE ?)'
+    args.push(searchPattern, searchPattern)
+  }
+  
+  let orderByClause = 'ORDER BY created_at DESC'
+  if (params?.sortBy && params?.sortOrder) {
+    const columnMap: Record<string, string> = {
+      'name': 'name',
+      'email': 'email',
+      'userId': 'id',
+      'group': '"group"',
+      'createdAt': 'created_at',
+      'updatedAt': 'updated_at',
+      'lastSignIn': 'last_sign_in',
+      'status': 'status'
+    }
+    const dbColumn = columnMap[params.sortBy]
+    if (dbColumn) {
+      const order = params.sortOrder.toUpperCase()
+      orderByClause = `ORDER BY ${dbColumn} ${order}`
+    }
+  }
+  
+  const countSql = `SELECT COUNT(*) as total FROM auth ${whereClause}`
+  const countResult = db.prepare(countSql).get(...args) as { total: number }
+  const total = countResult.total
+  
+  const limit = params?.limit || 100
+  const offset = params?.offset || 0
+  const dataSql = `SELECT * FROM auth ${whereClause} ${orderByClause} LIMIT ? OFFSET ?`
+  const users = db.prepare(dataSql).all(...args, limit, offset) as any[]
+  
+  let mappedUsers = users.map(mapDbUserToUser)
+  
+  if (params?.search) {
+    const searchLower = params.search.toLowerCase()
+    mappedUsers = mappedUsers.filter(user => 
+      user.name.toLowerCase().includes(searchLower) ||
+      user.email.toLowerCase().includes(searchLower) ||
+      user.userId.toLowerCase().includes(searchLower)
+    )
+    
+    const allUsers = db.prepare('SELECT * FROM auth WHERE status != 0').all() as any[]
     const allMapped = allUsers.map(mapDbUserToUser)
     const filtered = allMapped.filter(user => 
       user.name.toLowerCase().includes(searchLower) ||
@@ -268,19 +355,27 @@ export function listUsers(params?: {
 
 export function getUserById(userId: string): User | null {
   const db = getDatabase()
-  const user = db.prepare('SELECT * FROM auth WHERE id = ?').get(userId) as any
+  const user = db.prepare('SELECT * FROM auth WHERE id = ? AND role IS NULL AND status != 0').get(userId) as any
   return user ? mapDbUserToUser(user) : null
 }
 
 export function getUserByEmail(email: string): User | null {
   const db = getDatabase()
   const emailHash = hashEmail(email)
-  const user = db.prepare('SELECT * FROM auth WHERE email_hash = ?').get(emailHash) as any
+  const user = db.prepare('SELECT * FROM auth WHERE email_hash = ? AND role IS NULL AND status != 0').get(emailHash) as any
   return user ? mapDbUserToUser(user) : null
 }
 
 export async function updateUser(userId: string, updates: Partial<CreateUserInput>): Promise<User> {
   const db = getDatabase()
+  
+  const dbUser = db.prepare('SELECT * FROM auth WHERE id = ?').get(userId) as any
+  if (!dbUser) {
+    throw new Error('User not found')
+  }
+  if (dbUser.role !== null && dbUser.role !== undefined) {
+    throw new Error('Cannot update dashboard user from access user management. Use dashboard user management instead.')
+  }
   
   const existing = getUserById(userId)
   if (!existing) {
@@ -294,7 +389,7 @@ export async function updateUser(userId: string, updates: Partial<CreateUserInpu
   if (updates.email !== undefined) {
  
     const newEmailHash = hashEmail(updates.email)
-    const emailExists = db.prepare('SELECT * FROM auth WHERE email_hash = ? AND id != ?').get(newEmailHash, userId)
+    const emailExists = db.prepare('SELECT * FROM auth WHERE email_hash = ? AND id != ? AND status != 0').get(newEmailHash, userId)
     if (emailExists) {
       throw new Error('Email already in use by another user')
     }
@@ -335,6 +430,18 @@ export async function updateUser(userId: string, updates: Partial<CreateUserInpu
 export async function deleteUser(userId: string): Promise<void> {
   const db = getDatabase()
   
+  const dbUser = db.prepare('SELECT * FROM auth WHERE id = ?').get(userId) as any
+  if (!dbUser) {
+    throw new Error('User not found')
+  }
+  if (dbUser.role !== null && dbUser.role !== undefined) {
+    throw new Error('Cannot delete dashboard user from access user management. Dashboard users must be deleted via dashboard user management.')
+  }
+  
+  if (userId === 'ziri') {
+    throw new Error('Cannot delete the initial admin user (ziri)')
+  }
+  
   const user = getUserById(userId)
   if (!user) {
     throw new Error('User not found')
@@ -343,33 +450,8 @@ export async function deleteUser(userId: string): Promise<void> {
   const { serviceFactory } = await import('./service-factory.js')
   const entityStore = serviceFactory.getEntityStore()
   
-  try {
-    const allEntitiesResult = await entityStore.getEntities()
-    const allEntities = allEntitiesResult.data
-    const userKeyEntities = allEntities.filter(e => 
-      e.uid.type === 'UserKey' && 
-      (e.attrs as any).user && 
-      (e.attrs as any).user.__entity && 
-      (e.attrs as any).user.__entity.id === userId
-    )
-    
-    for (const userKeyEntity of userKeyEntities) {
-      try {
-        await entityStore.deleteEntity(`UserKey::"${userKeyEntity.uid.id}"`)
-      } catch (error: any) {
-        console.warn(`[USER SERVICE] Failed to delete UserKey entity ${userKeyEntity.uid.id}:`, error.message)
-      }
-    }
-  } catch (error: any) {
-    console.warn('[USER SERVICE] Failed to delete UserKey entities:', error.message)
-  }
-  
-  try {
-    await entityStore.deleteEntity(`User::"${userId}"`)
-  } catch (error: any) {
-    console.warn(`[USER SERVICE] Failed to delete User entity:`, error.message)
-  }
-  
+  const { deleteKeysByUserId } = await import('./key-service.js')
+  await deleteKeysByUserId(userId)
 
   const userKeys = db.prepare('SELECT id, key_hash FROM user_agent_keys WHERE auth_id = ?').all(userId) as Array<{ id: string; key_hash: string }>
   
@@ -398,13 +480,30 @@ export async function deleteUser(userId: string): Promise<void> {
   }
   
 
-  db.prepare('DELETE FROM user_agent_keys WHERE auth_id = ?').run(userId)
-  db.prepare('DELETE FROM refresh_tokens WHERE auth_id = ?').run(userId)
-  db.prepare('DELETE FROM auth WHERE id = ?').run(userId)
+  db.prepare('UPDATE refresh_tokens SET revoked_at = datetime(\'now\') WHERE auth_id = ? AND revoked_at IS NULL').run(userId)
+  db.prepare('UPDATE auth SET status = 0, updated_at = datetime(\'now\') WHERE id = ?').run(userId)
+
+  try {
+    await entityStore.deleteEntity(`User::"${userId}"`)
+  } catch (error: any) {
+    console.warn('[USER SERVICE] Failed to soft-delete User entity:', error.message)
+  }
 }
 
 export async function resetUserPassword(userId: string): Promise<{ password: string; emailSent: boolean }> {
   const db = getDatabase()
+  
+  const dbUser = db.prepare('SELECT * FROM auth WHERE id = ?').get(userId) as any
+  if (!dbUser) {
+    throw new Error('User not found')
+  }
+  if (dbUser.role !== null && dbUser.role !== undefined) {
+    throw new Error('Cannot reset password for dashboard user from access user management. Dashboard user passwords must be reset via dashboard user management.')
+  }
+  
+  if (userId === 'ziri') {
+    throw new Error('Cannot reset password for the initial admin user (ziri)')
+  }
   
   const user = getUserById(userId)
   if (!user) {

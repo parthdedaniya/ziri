@@ -11,6 +11,14 @@ export class CostEstimatorService {
   private readonly CHARS_PER_TOKEN: Record<string, number> = {
     'gpt': 4,
     'claude': 3.5,
+    'gemini': 4,
+    'grok': 4,
+    'mistral': 4,
+    'moonshot': 4,
+    'deepseek': 4,
+    'dashscope': 4,
+    'openrouter': 4,
+    'vertex_ai': 4,
     'default': 4,
   }
 
@@ -22,6 +30,16 @@ export class CostEstimatorService {
     'claude-3-opus': 2.0,
     'claude-3-sonnet': 1.5,
     'claude-3-haiku': 1.0,
+    'gemini': 1.5,
+    'grok': 1.5,
+    'mistral': 1.5,
+    'moonshot': 1.5,
+    'kimi': 1.5,
+    'deepseek': 1.5,
+    'dashscope': 1.0,
+    'qwen': 1.0,
+    'openrouter': 1.5,
+    'vertex_ai': 1.5,
     'default': 1.0,
   }
 
@@ -95,24 +113,28 @@ export class CostEstimatorService {
 
   private getCharsPerToken(provider: string): number {
     const key = provider.toLowerCase()
-    if (key.includes('openai') || key.includes('gpt')) {
-      return this.CHARS_PER_TOKEN['gpt']
-    }
-    if (key.includes('anthropic') || key.includes('claude')) {
-      return this.CHARS_PER_TOKEN['claude']
-    }
+    if (key.includes('openai') || key.includes('gpt')) return this.CHARS_PER_TOKEN['gpt']
+    if (key.includes('anthropic') || key.includes('claude')) return this.CHARS_PER_TOKEN['claude']
+    if (key.includes('google') || key.includes('gemini')) return this.CHARS_PER_TOKEN['gemini']
+    if (key.includes('xai') || key.includes('grok')) return this.CHARS_PER_TOKEN['grok']
+    if (key.includes('mistral')) return this.CHARS_PER_TOKEN['mistral']
+    if (key.includes('kimi') || key.includes('moonshot')) return this.CHARS_PER_TOKEN['moonshot']
+    if (key.includes('deepseek')) return this.CHARS_PER_TOKEN['deepseek']
+    if (key.includes('qwen') || key.includes('dashscope')) return this.CHARS_PER_TOKEN['dashscope']
+    if (key.includes('openrouter')) return this.CHARS_PER_TOKEN['openrouter']
+    if (key.includes('vertex')) return this.CHARS_PER_TOKEN['vertex_ai']
     return this.CHARS_PER_TOKEN['default']
   }
 
   private getOutputRatio(model: string): number {
     const modelLower = model.toLowerCase()
-    
+
     for (const [key, ratio] of Object.entries(this.OUTPUT_RATIOS)) {
       if (modelLower.includes(key)) {
         return ratio
       }
     }
-    
+
     return this.OUTPUT_RATIOS['default']
   }
 

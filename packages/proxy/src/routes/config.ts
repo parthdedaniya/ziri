@@ -5,7 +5,7 @@ import { loadConfig } from '../config.js'
 import { getRootKey } from '../utils/root-key.js'
 import { requireAdmin } from '../middleware/auth.js'
 import { writeConfig } from '../config/index.js'
-import { logInternalOutcome } from '../utils/internal-audit-helpers.js'
+import { logInternalAction } from '../utils/internal-audit-helpers.js'
 
 const router: Router = Router()
 
@@ -16,13 +16,6 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
     const config = loadConfig()
     
  
-
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: '200',
-      message: 'Retrieved configuration',
-      actionDurationMs: Date.now() - actionStart
-    })
 
     res.json({
       mode: config.mode,
@@ -35,16 +28,11 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
       logLevel: config.logLevel
     })
   } catch (error: any) {
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: '500',
-      message: error.message || 'Failed to load configuration',
-      actionDurationMs: Date.now() - actionStart
-    })
 
     res.status(500).json({
       error: 'Failed to load configuration',
-      message: error.message
+      code: 'CONFIG_LOAD_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })
@@ -102,30 +90,20 @@ router.post('/', requireAdmin, (req: Request, res: Response) => {
       }
     })
 
-    void logInternalOutcome(req, {
-      status: 'success',
-      code: 'CONFIG_UPDATED',
+    logInternalAction(req, {
+      action: 'update_config',
+      resourceType: 'config',
       resourceId: 'global',
-      resourceDetails: {
-        mode: updatedConfig.mode,
-        logLevel: updatedConfig.logLevel
-      },
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
     console.error('[CONFIG] Failed to update configuration:', error)
     res.status(500).json({
       error: 'Failed to save configuration',
-      message: error.message
+      code: 'CONFIG_SAVE_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
 
-    void logInternalOutcome(req, {
-      status: 'failed',
-      code: 'CONFIG_UPDATE_ERROR',
-      message: error.message,
-      resourceId: 'global',
-      actionDurationMs: Date.now() - actionStart
-    })
   }
 })
 

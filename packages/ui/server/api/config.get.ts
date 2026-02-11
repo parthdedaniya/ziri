@@ -36,10 +36,11 @@ export default defineEventHandler(async (event) => {
         const proxyConfig = await response.json()
         return proxyConfig
       }
-      
+
+      const error = await response.json().catch(() => ({ error: response.statusText }))
       throw createError({
         statusCode: response.status,
-        statusMessage: `Failed to fetch config: ${response.statusText}`
+        statusMessage: error.error || error.message || response.statusText
       })
     } catch (e: any) {
       if (e.statusCode) {

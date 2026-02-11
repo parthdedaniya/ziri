@@ -6,6 +6,7 @@ import { useToast } from '~/composables/useToast'
 import { useCedarWasm } from '~/composables/useCedarWasm'
 import { useAdminAuth } from '~/composables/useAdminAuth'
 import { useInternalAuth } from '~/composables/useInternalAuth'
+import { useApiError } from '~/composables/useApiError'
 import { formatCurrency, formatPercent, maskApiKey } from '~/utils/formatters'
 import { toDecimal, toDecimalOne, toDecimalFour, toIp, normalizeDecimal } from '~/utils/cedar'
 import type { Key, CreateKeyInput, Entity } from '~/types/entity'
@@ -13,11 +14,43 @@ import type { ValidationError } from '~/composables/useCedarWasm'
 
 const router = useRouter()
 const configStore = useConfigStore()
-const { listKeys, getKey, getKeyByUserId, createKey, updateKey, rotateKey, keys, loading } = useKeys()
-const { users, loadUsers } = useUsers()
+const { listKeys, getKey, getKeyByUserId, createKey, updateKey, rotateKey, deleteKey, deleteKeyById, keys, loading } = useKeys()
+const { users } = useUsers()
+const { getAuthHeader } = useAdminAuth()
 const { validateEntities } = useCedarWasm()
 const toast = useToast()
 const { checkActions, checkAction } = useInternalAuth()
+const { getUserMessage } = useApiError()
+
+
+const loadAllUsersForApiKeys = async () => {
+  try {
+    const authHeader = getAuthHeader()
+    if (!authHeader) {
+      throw new Error('Please login first')
+    }
+    
+    const response = await fetch('/api/users?forApiKeys=true', {
+      headers: {
+        'Authorization': authHeader
+      }
+    })
+    
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: response.statusText }))
+      throw new Error(err.error || err.message || 'Failed to load users')
+    }
+    
+    const data = await response.json()
+    users.value = data.users || []
+  } catch (error: any) {
+    console.error('Failed to load users for API key creation:', error)
+  }
+}
+
+const formatValidationMessage = (message: string) => {
+  return getUserMessage({ message })
+}
 
 
 const permissionsLoading = ref(true)
@@ -52,7 +85,7 @@ onMounted(async () => {
     try {
       await Promise.allSettled([
         fetchKeys(),
-        loadUsers().catch(() => {})
+        loadAllUsersForApiKeys().catch(() => {})
       ])
     } catch (e) {
  
@@ -64,19 +97,22 @@ onMounted(async () => {
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
 const showKeyModal = ref(false)
+const showDeleteKeyModal = ref(false)
 const generatedKey = ref('')
 const keyToEdit = ref<Key | null>(null)
+const keyToDelete = ref<Key | null>(null)
 const isKeyRotated = ref(false)
 
  
 const isEditing = ref(false)
 const isRotating = ref<string | null>(null)
+const isDeleting = ref<string | null>(null)
 const isCreating = ref(false)
 const originalEntity = ref<Entity | null>(null)
 
  
 const searchQuery = ref('')
-const filterStatus = ref<'' | 'active' | 'revoked' | 'disabled'>('')
+const filterStatus = ref<'' | 'active' | 'disabled'>('')
 
  
 const currentPage = ref(1)
@@ -96,7 +132,7 @@ const newKey = reactive<{
 
  
 const editKey = reactive<{
-  status: 'active' | 'revoked' | 'disabled'
+  status: 'active' | 'disabled'
 }>({
   status: 'active'
 })
@@ -149,7 +185,6 @@ const displayKeys = computed(() => {
   return keys.value.filter(key => {
     return (
       (filterStatus.value === 'active' && (key.status === 'active' || key.status === 1)) ||
-      (filterStatus.value === 'revoked' && (key.status === 'revoked' || key.status === 2)) ||
       (filterStatus.value === 'disabled' && key.status === 'disabled') ||
       (typeof key.status === 'string' && key.status === filterStatus.value)
     )
@@ -189,7 +224,7 @@ const viewKeyDetail = async (row: Key) => {
 }
 
  
-const convertToUserKeyEntity = (userKeyId: string, formData: { status: 'active' | 'revoked' | 'disabled' }, original: Entity): Entity => {
+const convertToUserKeyEntity = (userKeyId: string, formData: { status: 'active' | 'disabled' }, original: Entity): Entity => {
   return {
     uid: {
       type: 'UserKey',
@@ -244,7 +279,6 @@ const handleEditKey = async (key: Key) => {
     keyToEdit.value = fullKey
     
  
-    const { getAuthHeader } = useAdminAuth()
     const authHeader = getAuthHeader()
     if (!authHeader) {
       throw new Error('Please login first')
@@ -270,7 +304,8 @@ const handleEditKey = async (key: Key) => {
     
  
  
-    editKey.status = originalEntity.value.attrs.status || 'active'
+    const s = originalEntity.value.attrs.status
+    editKey.status = (s === 'active' || s === 'disabled') ? s : 'active'
     
     validationErrors.value = []
     showEditModal.value = true
@@ -395,14 +430,64 @@ const handleRotateKey = async (userId: string) => {
   }
 }
 
+const confirmDeleteKey = async (row: Key) => {
+  if (!row.executionKey) {
+    toast.error('Key ID not available')
+    return
+  }
+  const check = await checkAction('delete_key_by_id', 'keys')
+  if (!check.allowed) {
+    toast.error('You do not have permission to delete keys')
+    return
+  }
+  keyToDelete.value = row
+  showDeleteKeyModal.value = true
+}
+
+const handleDeleteKey = async () => {
+  if (!keyToDelete.value?.executionKey || isDeleting.value) return
+  try {
+    isDeleting.value = keyToDelete.value.executionKey
+    await deleteKeyById(keyToDelete.value.executionKey)
+    showDeleteKeyModal.value = false
+    keyToDelete.value = null
+    await fetchKeys()
+  } catch (e) {
+    // Toast handled by deleteKeyById
+  } finally {
+    isDeleting.value = null
+  }
+}
+
+const handleRotateFromEdit = async () => {
+  if (!keyToEdit.value?.userId) return
+  const check = await checkAction('rotate_key', 'keys')
+  if (!check.allowed) {
+    toast.error('You do not have permission to rotate API keys')
+    return
+  }
+  try {
+    isRotating.value = keyToEdit.value.userId
+    const result = await rotateKey(keyToEdit.value.userId)
+    showEditModal.value = false
+    keyToEdit.value = null
+    originalEntity.value = null
+    generatedKey.value = result.apiKey
+    isKeyRotated.value = true
+    showKeyModal.value = true
+    await fetchKeys()
+  } catch (e) {
+    // Toast handled by rotateKey
+  } finally {
+    isRotating.value = null
+  }
+}
+
 const closeKeyModal = () => {
   showKeyModal.value = false
   generatedKey.value = ''
   isKeyRotated.value = false
 }
-
- 
-const { getAuthHeader } = useAdminAuth()
 </script>
 
 <template>
@@ -504,7 +589,6 @@ const { getAuthHeader } = useAdminAuth()
         >
           <option value="">All Status</option>
           <option value="active">Active</option>
-          <option value="revoked">Revoked</option>
           <option value="disabled">Disabled</option>
         </select>
       </div>
@@ -563,10 +647,7 @@ const { getAuthHeader } = useAdminAuth()
       </template>
       
       <template #apiKey="{ row }">
-        <div class="flex items-center gap-2">
-          <code class="text-xs font-mono text-[rgb(var(--text-muted))]">{{ maskApiKey(row.apiKey) }}</code>
-          <UiCopyButton v-if="canCreateKey" :text="row.apiKey" size="sm" />
-        </div>
+        <code class="text-xs font-mono text-[rgb(var(--text-muted))]">{{ maskApiKey(undefined, row.keySuffix) }}</code>
       </template>
       
       <template #currentDailySpend="{ value }">
@@ -583,14 +664,12 @@ const { getAuthHeader } = useAdminAuth()
             'px-2 py-1 rounded text-xs font-semibold',
             value === 'active' || value === 1 
               ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              : value === 'revoked' || value === 2
-              ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
               : value === 'disabled'
               ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
               : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
           ]"
         >
-          {{ typeof value === 'string' ? value.charAt(0).toUpperCase() + value.slice(1) : (value === 1 ? 'Active' : value === 2 ? 'Revoked' : 'Disabled') }}
+          {{ typeof value === 'string' ? value.charAt(0).toUpperCase() + value.slice(1) : (value === 1 ? 'Active' : 'Disabled') }}
         </span>
       </template>
       
@@ -610,16 +689,16 @@ const { getAuthHeader } = useAdminAuth()
             </svg>
           </UiButton>
           <UiButton 
-            v-if="(row.status === 'active' || row.status === 1) && canRotateKey"
+            v-if="row.executionKey && canDeleteKey"
             size="sm" 
             variant="ghost"
-            class="text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20"
-            @click.stop="handleRotateKey(row.userId)"
-            :loading="isRotating === row.userId"
-            title="Rotate all keys for this user"
+            class="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+            @click.stop="confirmDeleteKey(row)"
+            :loading="isDeleting === row.executionKey"
+            title="Delete key"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
             </svg>
           </UiButton>
         </div>
@@ -660,14 +739,12 @@ const { getAuthHeader } = useAdminAuth()
     <UiModal v-model="showEditModal" title="Edit API Key">
       <form @submit.prevent="handleUpdateKey" class="space-y-5">
         <div>
-          <label class="block text-xs font-semibold text-[rgb(var(--text-secondary))] mb-1.5">Status</label>
-          <select v-model="editKey.status" class="input">
-            <option value="active">Active</option>
-            <option value="revoked">Revoked</option>
-          </select>
-          <p class="text-xs text-[rgb(var(--text-secondary))] mt-1.5">
-            Only the status can be changed. User attributes (group, isAgent, limitRequestsPerMinute) are managed in the User entity.
-          </p>
+          <UiToggle
+            :model-value="editKey.status === 'active'"
+            @update:model-value="editKey.status = $event ? 'active' : 'disabled'"
+            label="Status"
+            help-text="Active keys can be used for API requests. Disabled keys cannot."
+          />
         </div>
         
         <!-- Validation Errors -->
@@ -683,7 +760,7 @@ const { getAuthHeader } = useAdminAuth()
               </svg>
               <div class="flex-1">
                 <p class="text-sm font-medium text-red-700 dark:text-red-300">
-                  {{ error.message }}
+                  {{ formatValidationMessage(error.message) }}
                 </p>
                 <p v-if="error.help" class="text-xs text-red-600 dark:text-red-400 mt-1">
                   {{ error.help }}
@@ -694,6 +771,15 @@ const { getAuthHeader } = useAdminAuth()
         </div>
         
         <div class="flex gap-3 justify-end pt-2">
+          <UiButton 
+            v-if="keyToEdit && canRotateKey"
+            type="button" 
+            variant="outline"
+            :loading="isRotating === keyToEdit.userId"
+            @click="handleRotateFromEdit"
+          >
+            Rotate Key
+          </UiButton>
           <UiButton type="button" variant="outline" @click="handleCancelEdit">
             Cancel
           </UiButton>
@@ -706,6 +792,26 @@ const { getAuthHeader } = useAdminAuth()
           </UiButton>
         </div>
       </form>
+    </UiModal>
+
+    <!-- Delete Key Confirmation Modal -->
+    <UiModal v-model="showDeleteKeyModal" title="Delete API Key">
+      <div class="space-y-4">
+        <p class="text-sm text-[rgb(var(--text))]">
+          Are you sure you want to delete the API key for <strong>{{ keyToDelete?.name || keyToDelete?.userId }}</strong>?
+        </p>
+        <p class="text-xs text-[rgb(var(--text-secondary))]">
+          This will permanently delete the API key. Any applications using this key will no longer be able to authenticate. This action cannot be undone.
+        </p>
+        <div class="flex gap-3 justify-end">
+          <UiButton variant="ghost" @click="showDeleteKeyModal = false">
+            Cancel
+          </UiButton>
+          <UiButton variant="danger" @click="handleDeleteKey" :loading="!!isDeleting">
+            Delete Key
+          </UiButton>
+        </div>
+      </div>
     </UiModal>
 
     <!-- Generated Key Modal -->

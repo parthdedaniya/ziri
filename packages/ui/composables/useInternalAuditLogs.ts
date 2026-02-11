@@ -2,32 +2,23 @@ import { useUnifiedAuth } from '~/composables/useUnifiedAuth'
 
 export interface InternalAuditLog {
   id: number
-  request_id: string
   dashboard_user_id: string
+  dashboard_user_name: string | null
   dashboard_user_role: string | null
   action: string
   resource_type: string
   resource_id: string | null
-  resource_details: any | null
   decision: 'permit' | 'forbid'
   decision_reason: string | null
-  request_method: string
-  request_path: string
-  request_ip: string | null
-  user_agent: string | null
-  request_body_hash: string | null
   auth_duration_ms: number | null
   request_timestamp: string
-  outcome_status: string | null
-  outcome_code: string | null
-  outcome_message: string | null
   action_duration_ms: number | null
+  outcome_status: string | null
+  created_at: string
 }
 
 export interface ListInternalAuditLogsParams {
   search?: string
-  decision?: 'permit' | 'forbid'
-  outcomeStatus?: 'success' | 'failed' | 'denied_before_action'
   userId?: string
   action?: string
   resourceType?: string
@@ -50,8 +41,6 @@ export function useInternalAuditLogs() {
 
     const searchParams = new URLSearchParams()
     if (params.search) searchParams.set('search', params.search)
-    if (params.decision) searchParams.set('decision', params.decision)
-    if (params.outcomeStatus) searchParams.set('outcomeStatus', params.outcomeStatus)
     if (params.userId) searchParams.set('userId', params.userId)
     if (params.action) searchParams.set('action', params.action)
     if (params.resourceType) searchParams.set('resourceType', params.resourceType)

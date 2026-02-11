@@ -1,5 +1,3 @@
- 
-
 import type Database from 'better-sqlite3'
 import { getDatabase } from '../db/index.js'
 import { FALLBACK_PRICING } from '../db/seed-pricing.js'
@@ -40,7 +38,7 @@ export class PricingService {
   }
 
   async getPricing(provider: string, model: string): Promise<ModelPricing | null> {
- 
+
     if (Date.now() - this.cacheTimestamp > this.CACHE_TTL_MS) {
       this.cache.clear()
       this.cacheTimestamp = Date.now()
@@ -51,10 +49,8 @@ export class PricingService {
       return this.cache.get(cacheKey)!
     }
 
- 
     let pricing = await this.findPricing(provider, model)
 
- 
     if (!pricing) {
       const alias = this.db.prepare(
         'SELECT canonical_model FROM model_aliases WHERE alias = ? AND provider = ?'
@@ -65,7 +61,6 @@ export class PricingService {
       }
     }
 
- 
     if (!pricing) {
       pricing = await this.findPartialMatch(provider, model)
     }
@@ -89,7 +84,7 @@ export class PricingService {
     if (pricing) {
       const inputCost = inputTokens * pricing.input_cost_per_token
       const outputCost = outputTokens * pricing.output_cost_per_token
-      
+
       let cacheSavings = 0
       if (cachedTokens > 0 && pricing.cache_read_cost_per_token) {
         const fullInputCost = cachedTokens * pricing.input_cost_per_token
@@ -109,8 +104,7 @@ export class PricingService {
       }
     }
 
- 
-    const fallback = FALLBACK_PRICING[provider as keyof typeof FALLBACK_PRICING] 
+    const fallback = FALLBACK_PRICING[provider as keyof typeof FALLBACK_PRICING]
       || FALLBACK_PRICING.openai
 
     return {
@@ -137,7 +131,7 @@ export class PricingService {
   }
 
   private async findPartialMatch(provider: string, model: string): Promise<ModelPricing | null> {
- 
+
     const baseModel = model.replace(/-\d{4}-\d{2}-\d{2}$/, '')
     if (baseModel !== model) {
       return this.findPricing(provider, baseModel)
@@ -151,5 +145,4 @@ export class PricingService {
   }
 }
 
- 
 export const pricingService = new PricingService()

@@ -4,7 +4,7 @@ import { requireAdmin } from '../middleware/auth.js'
 import { chatCompletions } from '../services/llm-service.js'
 import { serviceFactory } from '../services/service-factory.js'
 import * as providerService from '../services/provider-service.js'
-import { logInternalOutcome } from '../utils/internal-audit-helpers.js'
+import { logInternalAction } from '../utils/internal-audit-helpers.js'
 
 const router: Router = Router()
 
@@ -93,6 +93,7 @@ Entities in Cedar can have namespaces. For example, ExampleCo::Database::Table::
 
 ### Basic Allow Policy
 \`\`\`
+@id("allow-alice-read-doc")
 permit (
   principal == ZStrike::User::"alice",
   action == ZStrike::Action::"read",
@@ -186,6 +187,7 @@ It will be provided by the user.
   8. Only reference entity types, actions, and attributes that exist in the schema, with correct namespace.
   9. Match data types exactly (e.g. use quotes for strings, no quotes for longs or bools).
   10. If the description implies relationships (e.g. same organization), include those in the when clause.
+  11. Always include @id("descriptive-kebab-case-id") at the start of each policy (e.g. @id("allow-engineers-completion")).
 
 Generate a syntactically correct and semantically appropriate Cedar policy based on the provided schema and description. Make sure to include namespaces and choose operators (in, ==, etc.) that match the intent.`
 
@@ -195,13 +197,6 @@ router.post('/generate', requireAdmin, async (req: Request, res: Response) => {
     const { provider, model, messages, cedarSchema } = req.body
 
     if (!provider || !model || !messages || !Array.isArray(messages) || messages.length === 0) {
-      await logInternalOutcome(req, {
-        status: 'failed',
-        code: '400',
-        message: 'provider, model, and messages are required',
-        actionDurationMs: Date.now() - actionStart
-      })
-      
       res.status(400).json({
         error: 'provider, model, and messages are required',
         code: 'MISSING_FIELDS'
@@ -212,13 +207,6 @@ router.post('/generate', requireAdmin, async (req: Request, res: Response) => {
 
     const configuredProvider = providerService.getProvider(provider)
     if (!configuredProvider) {
-      await logInternalOutcome(req, {
-        status: 'failed',
-        code: '400',
-        message: `Provider '${provider}' is not configured`,
-        actionDurationMs: Date.now() - actionStart
-      })
-      
       res.status(400).json({
         error: `Provider '${provider}' is not configured`,
         code: 'PROVIDER_NOT_CONFIGURED'
@@ -238,13 +226,6 @@ router.post('/generate', requireAdmin, async (req: Request, res: Response) => {
           schemaText = JSON.stringify(schema.schema, null, 2)
         }
       } catch (error: any) {
-        await logInternalOutcome(req, {
-          status: 'failed',
-          code: '500',
-          message: 'Failed to retrieve schema',
-          actionDurationMs: Date.now() - actionStart
-        })
-        
         console.error('[AI-POLICY] Failed to get schema:', error)
         res.status(500).json({
           error: 'Failed to retrieve schema',
@@ -281,10 +262,9 @@ router.post('/generate', requireAdmin, async (req: Request, res: Response) => {
       policy = policy.replace(/^```(?:cedar|policy)?\n?/gm, '').replace(/```$/gm, '').trim()
     }
 
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: '200',
-      message: 'Policy generated successfully',
+    logInternalAction(req, {
+      action: 'generate_policy',
+      resourceType: 'policy',
       actionDurationMs: Date.now() - actionStart
     })
 
@@ -293,13 +273,6 @@ router.post('/generate', requireAdmin, async (req: Request, res: Response) => {
       usage: response.usage
     })
   } catch (error: any) {
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: '500',
-      message: error.message || 'Failed to generate policy',
-      actionDurationMs: Date.now() - actionStart
-    })
-    
     console.error('[AI-POLICY] Generate error:', error)
     res.status(500).json({
       error: error.message || 'Failed to generate policy',

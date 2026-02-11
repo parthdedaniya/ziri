@@ -4,6 +4,7 @@ import { useAIPolicyGeneration, type ChatMessage } from '~/composables/useAIPoli
 import { useProviders } from '~/composables/useProviders'
 import { useSchema } from '~/composables/useSchema'
 import { useToast } from '~/composables/useToast'
+import { useApiError } from '~/composables/useApiError'
 
 interface ExtendedChatMessage extends ChatMessage {
   timestamp?: Date
@@ -22,6 +23,7 @@ const { generatePolicy } = useAIPolicyGeneration()
 const { providers, listProviders: loadProviders } = useProviders()
 const { getSchema } = useSchema()
 const toast = useToast()
+const { getUserMessage } = useApiError()
 
 
 const AVAILABLE_MODELS = {
@@ -147,7 +149,7 @@ const sendMessage = async () => {
     messages.value.push(assistantMessage)
     generatedPolicy.value = response.policy
   } catch (e: any) {
-    toast.error(e.message || 'Failed to generate rule')
+    toast.error(getUserMessage(e))
   } finally {
     isLoading.value = false
   }

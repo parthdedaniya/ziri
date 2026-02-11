@@ -5,11 +5,13 @@ import { useDebounce } from '~/composables/useDebounce'
 import { formatDate } from '~/utils/formatters'
 import { useAdminAuth } from '~/composables/useAdminAuth'
 import { useInternalAuth } from '~/composables/useInternalAuth'
+import { useApiError } from '~/composables/useApiError'
 
 const { users, loading, loadUsers, createUser, updateUser, deleteUser, disableUser, enableUser } = useDashboardUsers()
 const toast = useToast()
 const { user: currentUser } = useAdminAuth()
 const { checkAction, checkActions } = useInternalAuth()
+const { getUserMessage } = useApiError()
 
 
 const permissionsLoading = ref(true)
@@ -77,7 +79,7 @@ const fetchUsers = async () => {
     })
     totalUsers.value = result.total || 0
   } catch (e: any) {
-    toast.error(`Failed to load dashboard users: ${e.message}`)
+    toast.error(getUserMessage(e))
   }
 }
 
@@ -155,7 +157,7 @@ const handleCreateUser = async () => {
     
     await fetchUsers()
   } catch (error: any) {
-    toast.error(`Failed to create dashboard user: ${error.message}`)
+    toast.error(getUserMessage(error))
   } finally {
     isCreatingUser.value = false
   }
@@ -180,7 +182,7 @@ const handleUpdateUser = async () => {
     toast.success('Dashboard user updated successfully')
     await fetchUsers()
   } catch (error: any) {
-    toast.error(`Failed to update dashboard user: ${error.message}`)
+    toast.error(getUserMessage(error))
   } finally {
     isUpdatingUser.value = false
   }
@@ -223,7 +225,7 @@ const handleDeleteUser = async () => {
     toast.success('Dashboard user deleted successfully')
     await fetchUsers()
   } catch (error: any) {
-    toast.error(`Failed to delete dashboard user: ${error.message}`)
+    toast.error(getUserMessage(error))
   } finally {
     isDeletingUser.value = false
   }
@@ -264,7 +266,7 @@ const handleToggleStatus = async (user: DashboardUser) => {
     }
     await fetchUsers()
   } catch (error: any) {
-    toast.error(`Failed to ${user.status === 1 ? 'disable' : 'enable'} dashboard user: ${error.message}`)
+    toast.error(getUserMessage(error))
   } finally {
     isTogglingStatus.value = false
   }

@@ -1,5 +1,6 @@
 import { getDatabase } from '../../db/index.js'
 import { randomBytes } from 'crypto'
+import { parsePolicyId } from '../../utils/cedar-policy.js'
 import type { IPolicyStore, Policy } from '../interfaces.js'
 
 export class LocalPolicyStore implements IPolicyStore {
@@ -21,16 +22,28 @@ export class LocalPolicyStore implements IPolicyStore {
   async createPolicy(policy: string, description: string): Promise<void> {
     const db = getDatabase()
     
-    const policyId = `policy-${randomBytes(8).toString('hex')}`
+    const extractedPolicyId = parsePolicyId(policy)
+    if (!extractedPolicyId) {
+      throw new Error('Policy ID is required. Policy must start with @id("your-id").')
+    }
+    
+    const existing = db.prepare(`
+      SELECT 1 FROM schema_policy WHERE obj_type = 'policy' AND policy_id = ?
+    `).get(extractedPolicyId) as { '1': number } | undefined
+    if (existing) {
+      throw new Error('Policy ID already exists')
+    }
+    
+    const rowId = `policy-${randomBytes(8).toString('hex')}`
     
     try {
       db.prepare(`
-        INSERT INTO schema_policy (id, obj_type, content, description, status)
-        VALUES (?, 'policy', ?, ?, 1)
-      `).run(policyId, policy, description)
+        INSERT INTO schema_policy (id, obj_type, content, description, status, policy_id)
+        VALUES (?, 'policy', ?, ?, 1, ?)
+      `).run(rowId, policy, description, extractedPolicyId)
     } catch (error: any) {
       if (error.message.includes('UNIQUE constraint')) {
-        throw new Error('Policy already exists')
+        throw new Error('Policy ID already exists')
       }
       throw error
     }
@@ -39,11 +52,30 @@ export class LocalPolicyStore implements IPolicyStore {
   async updatePolicy(oldPolicy: string, newPolicy: string, description: string): Promise<void> {
     const db = getDatabase()
     
+    const extractedPolicyId = parsePolicyId(newPolicy)
+    if (!extractedPolicyId) {
+      throw new Error('Policy ID is required. Policy must start with @id("your-id").')
+    }
+    
+    const currentRow = db.prepare(`
+      SELECT id FROM schema_policy WHERE obj_type = 'policy' AND content = ?
+    `).get(oldPolicy) as { id: string } | undefined
+    if (!currentRow) {
+      throw new Error('Policy not found')
+    }
+    
+    const existing = db.prepare(`
+      SELECT 1 FROM schema_policy WHERE obj_type = 'policy' AND policy_id = ? AND id != ?
+    `).get(extractedPolicyId, currentRow.id) as { '1': number } | undefined
+    if (existing) {
+      throw new Error('Policy ID already exists')
+    }
+    
     const result = db.prepare(`
       UPDATE schema_policy 
-      SET content = ?, description = ?, updated_at = datetime('now')
+      SET content = ?, description = ?, policy_id = ?, updated_at = datetime('now')
       WHERE obj_type = 'policy' AND content = ?
-    `).run(newPolicy, description, oldPolicy)
+    `).run(newPolicy, description, extractedPolicyId, oldPolicy)
     
     if (result.changes === 0) {
       throw new Error('Policy not found')

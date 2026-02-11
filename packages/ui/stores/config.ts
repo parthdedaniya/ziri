@@ -46,7 +46,13 @@ export const useConfigStore = defineStore('config', {
 
  
             try {
-                const response = await fetch('/api/config')
+                const { useAdminAuthStore } = await import('~/stores/admin-auth')
+                const adminAuthStore = useAdminAuthStore()
+                const authHeader = adminAuthStore.accessToken ? `Bearer ${adminAuthStore.accessToken}` : null
+                const headers: Record<string, string> = {}
+                if (authHeader) headers['Authorization'] = authHeader
+
+                const response = await fetch('/api/config', { headers })
                 if (response.ok) {
                     const config = await response.json()
  
@@ -169,10 +175,11 @@ export const useConfigStore = defineStore('config', {
                 })
 
                 if (!response.ok) {
-                    await response.json().catch(() => ({ error: response.statusText }))
+                    const error = await response.json().catch(() => ({ error: response.statusText }))
+                    throw new Error(error.error || error.message || 'Failed to save configuration')
                 }
             } catch (error) {
- 
+                throw error
             }
         },
 

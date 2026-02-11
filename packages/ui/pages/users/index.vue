@@ -19,9 +19,11 @@ const canResetPassword = ref(false)
  
 const showCreateModal = ref(false)
 const showPasswordModal = ref(false)
+const showApiKeyModal = ref(false)
 const showDeleteModal = ref(false)
 const showResetPasswordModal = ref(false)
 const generatedPassword = ref('')
+const generatedApiKey = ref('')
 const selectedUser = ref<User | null>(null)
 const userToDelete = ref<User | null>(null)
 const userToResetPassword = ref<User | null>(null)
@@ -131,8 +133,11 @@ const handleCreateUser = async () => {
       showPasswordModal.value = true
       toast.warning('Email was not sent. Please save the password below.')
     } else {
- 
       toast.success('User created successfully. Credentials have been sent to the user\'s email address.')
+    }
+    if (result.apiKey) {
+      generatedApiKey.value = result.apiKey
+      showApiKeyModal.value = true
     }
     
  
@@ -152,7 +157,10 @@ const handleCreateUser = async () => {
 }
 
 const confirmDelete = async (user: User) => {
-
+  if (user.userId === 'ziri') {
+    toast.error('The initial admin user (ziri) cannot be deleted')
+    return
+  }
   const check = await checkAction('delete_user', 'users')
   if (!check.allowed) {
     toast.error('You do not have permission to delete users')
@@ -164,7 +172,10 @@ const confirmDelete = async (user: User) => {
 }
 
 const confirmResetPassword = async (user: User) => {
-
+  if (user.userId === 'ziri') {
+    toast.error('The initial admin user (ziri) password cannot be reset from here')
+    return
+  }
   const check = await checkAction('reset_user_password', 'users')
   if (!check.allowed) {
     toast.error('You do not have permission to reset user passwords')
@@ -224,6 +235,16 @@ const handleResetPassword = async () => {
 const copyPassword = () => {
   navigator.clipboard.writeText(generatedPassword.value)
   toast.success('Password copied to clipboard')
+}
+
+const copyApiKey = () => {
+  navigator.clipboard.writeText(generatedApiKey.value)
+  toast.success('API key copied to clipboard')
+}
+
+const closeApiKeyModal = () => {
+  showApiKeyModal.value = false
+  generatedApiKey.value = ''
 }
 </script>
 
@@ -387,7 +408,7 @@ const copyPassword = () => {
         <template #actions="{ row }">
           <div class="flex gap-2">
             <UiButton
-              v-if="canResetPassword"
+              v-if="canResetPassword && row.userId !== 'ziri'"
               variant="ghost"
               size="sm"
               @click="confirmResetPassword(row)"
@@ -400,7 +421,7 @@ const copyPassword = () => {
               </svg>
             </UiButton>
             <UiButton
-              v-if="canDeleteUser"
+              v-if="canDeleteUser && row.userId !== 'ziri'"
               variant="ghost"
               size="sm"
               @click="confirmDelete(row)"
@@ -431,29 +452,17 @@ const copyPassword = () => {
         <UiInput v-model="newUser.name" label="Name" required />
         <UiInput v-model="newUser.group" label="Group" />
         
-        <div class="flex items-center gap-2">
-          <input 
-            type="checkbox" 
-            id="createApiKey"
-            v-model="newUser.createApiKey"
-            class="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-          />
-          <label for="createApiKey" class="text-sm font-medium text-[rgb(var(--text))]">
-            Create API Key
-          </label>
-        </div>
+        <UiToggle
+          v-model="newUser.createApiKey"
+          label="Create API Key"
+          help-text="Automatically generate an API key for this user. The key will be shown once after creation."
+        />
         
-        <div class="flex items-center gap-2">
-          <input 
-            type="checkbox" 
-            id="isAgent"
-            v-model="newUser.isAgent"
-            class="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-          />
-          <label for="isAgent" class="text-sm font-medium text-[rgb(var(--text))]">
-            Is Agent
-          </label>
-        </div>
+        <UiToggle
+          v-model="newUser.isAgent"
+          label="Is Agent"
+          help-text="Mark this user as an agent. Agents may have different rate limits or permissions."
+        />
         
         <UiInput 
           v-model="newUser.limitRequestsPerMinute" 
@@ -499,6 +508,33 @@ const copyPassword = () => {
         <div class="flex justify-end">
           <UiButton @click="showPasswordModal = false">
             Close
+          </UiButton>
+        </div>
+      </div>
+    </UiModal>
+
+    <!-- API Key Modal (shown once when user created with createApiKey) -->
+    <UiModal v-model="showApiKeyModal" title="API Key Created">
+      <div class="space-y-4">
+        <div class="p-4 bg-green-50 dark:bg-green-900/20 border-2 border-green-200 dark:border-green-800 rounded-lg">
+          <p class="text-sm font-semibold text-green-900 dark:text-green-100 mb-2">
+            API key created successfully
+          </p>
+          <p class="text-xs text-green-800 dark:text-green-200 mb-3">
+            Save this API key now - it won't be shown again!
+          </p>
+          <div class="flex items-center gap-2">
+            <code class="flex-1 text-sm font-mono bg-white dark:bg-gray-800 p-2 rounded break-all">
+              {{ generatedApiKey }}
+            </code>
+            <UiButton size="sm" @click="copyApiKey">
+              Copy
+            </UiButton>
+          </div>
+        </div>
+        <div class="flex justify-end">
+          <UiButton @click="closeApiKeyModal">
+            Done
           </UiButton>
         </div>
       </div>

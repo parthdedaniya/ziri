@@ -1,17 +1,22 @@
 <script setup lang="ts">
 import { useConfigStore } from '~/stores/config'
 import { useToast } from '~/composables/useToast'
+import { useAdminAuth } from '~/composables/useAdminAuth'
+import { validateEmail, validateEmailOrFromAddress } from '~/utils/validators'
 import { useSchema } from '~/composables/useSchema'
 import { useRules } from '~/composables/useRules'
 import { useKeys } from '~/composables/useKeys'
 import { useInternalAuth } from '~/composables/useInternalAuth'
+import { useApiError } from '~/composables/useApiError'
 
 const configStore = useConfigStore()
 const toast = useToast()
+const { getAuthHeader } = useAdminAuth()
 const { getSchema } = useSchema()
 const { listRules } = useRules()
 const { listKeys } = useKeys()
 const { checkAction } = useInternalAuth()
+const { getUserMessage } = useApiError()
 
 const isSaving = ref(false)
 const permissionsLoading = ref(true)
@@ -27,7 +32,7 @@ const form = reactive({
   publicUrl: '',
   email: {
     enabled: false,
-    provider: 'manual' as 'smtp' | 'sendgrid' | 'manual',
+    provider: 'manual' as 'smtp' | 'sendgrid' | 'mailgun' | 'ses' | 'manual',
     smtp: {
       host: '',
       port: 587,
@@ -39,6 +44,16 @@ const form = reactive({
     },
     sendgrid: {
       apiKey: ''
+    },
+    mailgun: {
+      apiKey: '',
+      domain: '',
+      apiUrl: ''
+    },
+    ses: {
+      accessKeyId: '',
+      secretAccessKey: '',
+      region: 'us-east-1'
     },
     from: ''
   },
@@ -56,55 +71,110 @@ onMounted(async () => {
   }
  
   try {
-    const response = await fetch('/api/config')
+    const authHeader = getAuthHeader()
+    const headers: Record<string, string> = {}
+    if (authHeader) headers['Authorization'] = authHeader
+
+    const response = await fetch('/api/config', { headers })
     if (response.ok) {
       const config = await response.json()
       form.mode = config.mode || 'local'
       form.server = config.server || { host: '127.0.0.1', port: configStore.port || 3100 }
       form.publicUrl = config.publicUrl || ''
-      form.email = config.email || {
-        enabled: false,
-        provider: 'manual',
-        smtp: { host: '', port: 587, secure: false, auth: { user: '', pass: '' } },
-        sendgrid: { apiKey: '' },
-        from: ''
+      const e = config.email || {}
+      form.email = {
+        enabled: e.enabled ?? false,
+        provider: (e.provider || 'manual') as 'manual' | 'smtp' | 'sendgrid' | 'mailgun' | 'ses',
+        smtp: { host: e.smtp?.host ?? '', port: e.smtp?.port ?? 587, secure: e.smtp?.secure ?? false, auth: { user: e.smtp?.auth?.user ?? '', pass: e.smtp?.auth?.pass ?? '' } },
+        sendgrid: { apiKey: e.sendgrid?.apiKey ?? '' },
+        mailgun: { apiKey: e.mailgun?.apiKey ?? '', domain: e.mailgun?.domain ?? '', apiUrl: e.mailgun?.apiUrl ?? '' },
+        ses: { accessKeyId: e.ses?.accessKeyId ?? '', secretAccessKey: e.ses?.secretAccessKey ?? '', region: e.ses?.region ?? 'us-east-1' },
+        from: e.from ?? ''
       }
       form.logLevel = config.logLevel || 'info'
     } else {
  
       form.mode = 'local'
-      form.server = configStore.server || { host: '127.0.0.1', port: configStore.port || 3100 }
+      form.server = { host: configStore.server?.host ?? '127.0.0.1', port: configStore.server?.port ?? configStore.port ?? 3100 }
       form.publicUrl = configStore.publicUrl || ''
-      form.email = configStore.email || {
-        enabled: false,
-        provider: 'manual',
-        smtp: { host: '', port: 587, secure: false, auth: { user: '', pass: '' } },
-        sendgrid: { apiKey: '' },
-        from: ''
+      const stored = configStore.email
+      form.email = {
+        enabled: stored?.enabled ?? false,
+        provider: (stored?.provider || 'manual') as 'manual' | 'smtp' | 'sendgrid' | 'mailgun' | 'ses',
+        smtp: { host: stored?.smtp?.host ?? '', port: stored?.smtp?.port ?? 587, secure: stored?.smtp?.secure ?? false, auth: { user: stored?.smtp?.auth?.user ?? '', pass: stored?.smtp?.auth?.pass ?? '' } },
+        sendgrid: { apiKey: stored?.sendgrid?.apiKey ?? '' },
+        mailgun: { apiKey: stored?.mailgun?.apiKey ?? '', domain: stored?.mailgun?.domain ?? '', apiUrl: stored?.mailgun?.apiUrl ?? '' },
+        ses: { accessKeyId: stored?.ses?.accessKeyId ?? '', secretAccessKey: stored?.ses?.secretAccessKey ?? '', region: stored?.ses?.region ?? 'us-east-1' },
+        from: stored?.from ?? ''
       }
       form.logLevel = configStore.logLevel || 'info'
     }
   } catch (e) {
  
     form.mode = 'local'
-    form.server = configStore.server || { host: '127.0.0.1', port: configStore.port || 3100 }
+    form.server = { host: configStore.server?.host ?? '127.0.0.1', port: configStore.server?.port ?? configStore.port ?? 3100 }
     form.publicUrl = configStore.publicUrl || ''
-    form.email = configStore.email || {
-      enabled: false,
-      provider: 'manual',
-      smtp: { host: '', port: 587, secure: false, auth: { user: '', pass: '' } },
-      sendgrid: { apiKey: '' },
-      from: ''
+    const stored = configStore.email
+    form.email = {
+      enabled: stored?.enabled ?? false,
+      provider: (stored?.provider || 'manual') as 'manual' | 'smtp' | 'sendgrid' | 'mailgun' | 'ses',
+      smtp: { host: stored?.smtp?.host ?? '', port: stored?.smtp?.port ?? 587, secure: stored?.smtp?.secure ?? false, auth: { user: stored?.smtp?.auth?.user ?? '', pass: stored?.smtp?.auth?.pass ?? '' } },
+      sendgrid: { apiKey: stored?.sendgrid?.apiKey ?? '' },
+      mailgun: { apiKey: stored?.mailgun?.apiKey ?? '', domain: stored?.mailgun?.domain ?? '', apiUrl: stored?.mailgun?.apiUrl ?? '' },
+      ses: { accessKeyId: stored?.ses?.accessKeyId ?? '', secretAccessKey: stored?.ses?.secretAccessKey ?? '', region: stored?.ses?.region ?? 'us-east-1' },
+      from: stored?.from ?? ''
     }
     form.logLevel = configStore.logLevel || 'info'
   }
 })
+
+function validateEmailConfig(): string | null {
+  if (!form.email.enabled) return null
+  const { provider, smtp, sendgrid, mailgun, ses, from } = form.email
+
+  if (provider === 'smtp') {
+    if (!smtp.host?.trim()) return 'SMTP Host is required'
+    if (!smtp.port || smtp.port < 1 || smtp.port > 65535) return 'Valid SMTP Port is required'
+    if (!smtp.auth.user?.trim()) return 'SMTP Username is required'
+    if (!smtp.auth.pass?.trim()) return 'SMTP Password is required'
+  }
+
+  if (provider === 'sendgrid') {
+    if (!sendgrid.apiKey?.trim()) return 'SendGrid API Key is required'
+    if (!from?.trim()) return 'From Address is required for SendGrid'
+    if (!validateEmail(from)) return 'Valid From Address is required'
+  }
+
+  if (provider === 'mailgun') {
+    if (!mailgun.apiKey?.trim()) return 'Mailgun API Key is required'
+    if (!mailgun.domain?.trim()) return 'Mailgun Sending Domain is required'
+    if (!from?.trim()) return 'From Address is required for Mailgun'
+    if (!validateEmailOrFromAddress(from)) return 'Valid From Address is required (e.g. noreply@example.com or "Name" <noreply@example.com>)'
+  }
+
+  if (provider === 'ses') {
+    if (!ses.accessKeyId?.trim()) return 'AWS Access Key ID is required'
+    if (!ses.secretAccessKey?.trim()) return 'AWS Secret Access Key is required'
+    if (!ses.region?.trim()) return 'AWS Region is required'
+
+    if (!from?.trim()) return 'From Address is required for AWS SES (must be verified in SES)'
+    if (!validateEmailOrFromAddress(from)) return 'Valid From Address is required (e.g. noreply@example.com or "Name" <noreply@example.com>)'
+  }
+
+  return null
+}
 
 const saveConfig = async () => {
 
   const check = await checkAction('update_config', 'config')
   if (!check.allowed) {
     toast.error('You do not have permission to update configuration')
+    return
+  }
+
+  const emailError = validateEmailConfig()
+  if (emailError) {
+    toast.error(emailError)
     return
   }
   
@@ -117,7 +187,7 @@ const saveConfig = async () => {
     toast.success('Configuration saved successfully')
     toast.info('Restart the proxy server for server settings to take effect')
   } catch (e: any) {
-    toast.error('Failed to save configuration')
+    toast.error(getUserMessage(e))
   } finally {
     isSaving.value = false
   }
@@ -132,6 +202,8 @@ const resetToDefaults = async () => {
     provider: 'manual',
     smtp: { host: '', port: 587, secure: false, auth: { user: '', pass: '' } },
     sendgrid: { apiKey: '' },
+    mailgun: { apiKey: '', domain: '', apiUrl: '' },
+    ses: { accessKeyId: '', secretAccessKey: '', region: 'us-east-1' },
     from: ''
   }
   form.logLevel = 'info'
@@ -329,6 +401,8 @@ const resetToDefaults = async () => {
               <option value="manual">Manual (Log to Console)</option>
               <option value="smtp">SMTP</option>
               <option value="sendgrid">SendGrid</option>
+              <option value="mailgun">Mailgun</option>
+              <option value="ses">AWS SES</option>
             </select>
           </div>
 
@@ -364,12 +438,31 @@ const resetToDefaults = async () => {
             <UiInput v-model="form.email.sendgrid.apiKey" label="SendGrid API Key" type="password" :disabled="!canUpdateConfig" />
           </div>
 
-          <!-- From Address (for all providers) -->
-          <div>
-            <UiInput v-model="form.email.from" label="From Address" type="email" placeholder="noreply@example.com" :disabled="!canUpdateConfig" />
-            <p class="text-xs text-[rgb(var(--text-secondary))] mt-1.5">
-              Email address to send from (required for SendGrid)
+          <!-- Mailgun Settings -->
+          <div v-if="form.email.provider === 'mailgun'" class="space-y-3">
+            <UiInput v-model="form.email.mailgun.apiKey" label="Mailgun API Key" type="password" :disabled="!canUpdateConfig" />
+            <UiInput v-model="form.email.mailgun.domain" label="Sending Domain" placeholder="mg.example.com" :disabled="!canUpdateConfig" />
+            <div>
+              <UiInput v-model="form.email.mailgun.apiUrl" label="API URL (optional)" placeholder="https://api.mailgun.net" :disabled="!canUpdateConfig" />
+              <p class="text-xs text-[rgb(var(--text-secondary))] mt-1.5">
+                Leave empty for US region. Use <code class="font-mono">https://api.eu.mailgun.net</code> for EU region.
+              </p>
+            </div>
+          </div>
+
+          <!-- AWS SES Settings -->
+          <div v-if="form.email.provider === 'ses'" class="space-y-3">
+            <UiInput v-model="form.email.ses.accessKeyId" label="Access Key ID" type="text" placeholder="AKIA..." :disabled="!canUpdateConfig" />
+            <UiInput v-model="form.email.ses.secretAccessKey" label="Secret Access Key" type="password" :disabled="!canUpdateConfig" />
+            <UiInput v-model="form.email.ses.region" label="Region" placeholder="us-east-1" :disabled="!canUpdateConfig" />
+            <p class="text-xs text-[rgb(var(--text-secondary))]">
+              The From address must be verified in AWS SES (e.g. via SES console or VerifyEmailIdentity).
             </p>
+          </div>
+
+          <!-- From Address (SendGrid, Mailgun, and SES) -->
+          <div v-if="form.email.provider === 'sendgrid' || form.email.provider === 'mailgun' || form.email.provider === 'ses'">
+            <UiInput v-model="form.email.from" label="From Address" type="text" placeholder="noreply@example.com or Name &lt;noreply@example.com&gt;" :disabled="!canUpdateConfig" />
           </div>
         </div>
       </div>

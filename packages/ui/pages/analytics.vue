@@ -10,7 +10,7 @@ definePageMeta({
 
 const { getAuthHeader } = useUnifiedAuth()
 
-const timeRange = ref<'7d' | '30d' | '90d' | 'all'>('30d')
+const timeRange = ref<'today' | '7d' | '30d' | '90d' | 'all'>('30d')
 
 const isLoading = ref(true)
 const overviewStats = ref({
@@ -26,6 +26,13 @@ const dailyCost = ref<any[]>([])
 const getDateRange = () => {
   const now = new Date()
   switch (timeRange.value) {
+    case 'today':
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      return {
+        startDate: today.toISOString(),
+        endDate: now.toISOString()
+      }
     case '7d':
       return {
         startDate: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString(),
@@ -257,6 +264,21 @@ const costByModelChartData = computed(() => {
   }
 })
 
+const timeRangeLabel = computed(() => {
+  switch (timeRange.value) {
+    case 'today':
+      return 'Today'
+    case '7d':
+      return 'Last 7 days'
+    case '30d':
+      return 'Last 30 days'
+    case '90d':
+      return 'Last 90 days'
+    default:
+      return 'All time'
+  }
+})
+
 onMounted(() => {
   fetchAllData()
 })
@@ -275,6 +297,7 @@ onMounted(() => {
         class="input w-32"
         @change="fetchAllData"
       >
+        <option value="today">Today</option>
         <option value="7d">Last 7 days</option>
         <option value="30d">Last 30 days</option>
         <option value="90d">Last 90 days</option>
@@ -310,7 +333,7 @@ onMounted(() => {
             <p v-if="isLoading" class="text-2xl font-bold text-[rgb(var(--text))] mt-1">...</p>
             <p v-else class="text-2xl font-bold text-[rgb(var(--text))] mt-1">{{ formatCurrency(stats.totalSpend) }}</p>
             <p class="text-xs text-[rgb(var(--text-secondary))] mt-1">
-              {{ timeRange === '7d' ? 'Last 7 days' : timeRange === '30d' ? 'Last 30 days' : timeRange === '90d' ? 'Last 90 days' : 'All time' }}
+              {{ timeRangeLabel }}
             </p>
           </div>
           <div class="p-3 rounded-xl bg-green-100 dark:bg-green-900/30 group-hover:scale-110 transition-transform">
@@ -364,7 +387,7 @@ onMounted(() => {
       <div class="card">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-sm font-bold text-[rgb(var(--text))]">Daily Cost Trend</h2>
-          <span class="badge badge-neutral">{{ timeRange === '7d' ? 'Last 7 days' : timeRange === '30d' ? 'Last 30 days' : timeRange === '90d' ? 'Last 90 days' : 'All time' }}</span>
+          <span class="badge badge-neutral">{{ timeRangeLabel }}</span>
         </div>
         <div v-if="isLoading" class="h-40 flex items-center justify-center">
           <UiLoadingSkeleton :lines="1" height="h-full" width="100%" />
@@ -379,7 +402,7 @@ onMounted(() => {
       <div class="card">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-sm font-bold text-[rgb(var(--text))]">Cost by Provider</h2>
-          <span class="badge badge-neutral">{{ timeRange === '7d' ? 'Last 7 days' : timeRange === '30d' ? 'Last 30 days' : timeRange === '90d' ? 'Last 90 days' : 'All time' }}</span>
+          <span class="badge badge-neutral">{{ timeRangeLabel }}</span>
         </div>
         <div v-if="isLoading" class="h-40 flex items-center justify-center">
           <UiLoadingSkeleton :lines="1" height="h-full" width="100%" />

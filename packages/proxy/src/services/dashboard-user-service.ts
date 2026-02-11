@@ -51,27 +51,13 @@ function mapDbUserToDashboardUser(dbUser: any): DashboardUser {
 
 export async function createDashboardUser(input: CreateDashboardUserInput): Promise<{ user: DashboardUser; password?: string; emailSent: boolean }> {
   const db = getDatabase()
-  
+
   const emailHash = hashEmail(input.email)
-  const existing = db.prepare('SELECT * FROM auth WHERE email_hash = ?').get(emailHash) as any
-  if (existing) {
-
-    if (existing.role === null || existing.role === undefined) {
-      console.warn(`[DASHBOARD USER SERVICE] Found orphaned user with email ${input.email} (role is NULL). Cleaning up and recreating...`)
-
-      db.prepare('DELETE FROM auth WHERE id = ?').run(existing.id)
-
-      try {
-        db.prepare('DELETE FROM internal_entities WHERE etype = ? AND eid = ?').run('DashboardUser', existing.id)
-      } catch {
-
-      }
-    } else {
-
-      throw new Error('User with this email already exists')
-    }
+  const existingActive = db.prepare('SELECT * FROM auth WHERE email_hash = ? AND status != 0').get(emailHash) as any
+  if (existingActive) {
+    throw new Error('User with this email already exists')
   }
-  
+
   const userId = generateDashboardUserId()
   const password = generatePassword(16)
   const passwordHash = await hashPassword(password)
@@ -211,7 +197,7 @@ export function listDashboardUsers(params?: {
 }): { data: DashboardUser[]; total: number } {
   const db = getDatabase()
   
-  let whereClause = 'WHERE role IS NOT NULL'
+  let whereClause = 'WHERE role IS NOT NULL AND status != 0'
   const args: any[] = []
   
   if (params?.search) {
@@ -247,7 +233,7 @@ export function listDashboardUsers(params?: {
 export function getDashboardUser(userId: string): DashboardUser | null {
   const db = getDatabase()
   
-  const dbUser = db.prepare('SELECT * FROM auth WHERE id = ? AND role IS NOT NULL').get(userId) as any
+  const dbUser = db.prepare('SELECT * FROM auth WHERE id = ? AND role IS NOT NULL AND status != 0').get(userId) as any
   
   if (!dbUser) {
     return null
@@ -263,7 +249,7 @@ export async function updateDashboardUser(userId: string, updates: {
 }): Promise<DashboardUser> {
   const db = getDatabase()
   
-  const existing = db.prepare('SELECT * FROM auth WHERE id = ? AND role IS NOT NULL').get(userId) as any
+  const existing = db.prepare('SELECT * FROM auth WHERE id = ? AND role IS NOT NULL AND status != 0').get(userId) as any
   if (!existing) {
     throw new Error('Dashboard user not found')
   }
@@ -278,6 +264,10 @@ export async function updateDashboardUser(userId: string, updates: {
   
   if (updates.email !== undefined) {
     const emailHash = hashEmail(updates.email)
+    const conflict = db.prepare('SELECT id FROM auth WHERE email_hash = ? AND id != ? AND status != 0').get(emailHash, userId) as any
+    if (conflict) {
+      throw new Error('User with this email already exists')
+    }
     const encryptedEmail = encrypt(updates.email)
     updateFields.push('email = ?')
     updateFields.push('email_hash = ?')
@@ -337,23 +327,23 @@ export async function deleteDashboardUser(userId: string): Promise<void> {
   
   const db = getDatabase()
   
-  const existing = db.prepare('SELECT * FROM auth WHERE id = ? AND role IS NOT NULL').get(userId) as any
+  const existing = db.prepare('SELECT * FROM auth WHERE id = ? AND role IS NOT NULL AND status != 0').get(userId) as any
   if (!existing) {
     throw new Error('Dashboard user not found')
   }
   
+  const { deleteKeysByUserId } = await import('./key-service.js')
+  await deleteKeysByUserId(userId)
 
   const transaction = db.transaction(() => {
-
     db.prepare(`
-      DELETE FROM internal_entities
+      UPDATE internal_entities SET status = 0, updated_at = datetime('now')
       WHERE etype = ? AND eid = ?
     `).run('DashboardUser', userId)
-    
 
-    db.prepare('DELETE FROM auth WHERE id = ?').run(userId)
+    db.prepare('UPDATE auth SET status = 0, updated_at = datetime(\'now\') WHERE id = ?').run(userId)
   })
-  
+
   transaction()
 }
 
@@ -364,7 +354,7 @@ export async function disableDashboardUser(userId: string): Promise<DashboardUse
   
   const db = getDatabase()
   
-  const existing = db.prepare('SELECT * FROM auth WHERE id = ? AND role IS NOT NULL').get(userId) as any
+  const existing = db.prepare('SELECT * FROM auth WHERE id = ? AND role IS NOT NULL AND status != 0').get(userId) as any
   if (!existing) {
     throw new Error('Dashboard user not found')
   }
@@ -372,7 +362,7 @@ export async function disableDashboardUser(userId: string): Promise<DashboardUse
 
   db.prepare(`
     UPDATE auth 
-    SET status = 0, updated_at = datetime('now')
+    SET status = 2, updated_at = datetime('now')
     WHERE id = ?
   `).run(userId)
   
@@ -386,7 +376,7 @@ export async function disableDashboardUser(userId: string): Promise<DashboardUse
 export async function enableDashboardUser(userId: string): Promise<DashboardUser> {
   const db = getDatabase()
   
-  const existing = db.prepare('SELECT * FROM auth WHERE id = ? AND role IS NOT NULL').get(userId) as any
+  const existing = db.prepare('SELECT * FROM auth WHERE id = ? AND role IS NOT NULL AND status != 0').get(userId) as any
   if (!existing) {
     throw new Error('Dashboard user not found')
   }

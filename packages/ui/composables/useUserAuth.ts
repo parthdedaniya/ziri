@@ -44,7 +44,7 @@ export function useUserAuth() {
  
       if (process.client) {
         if (data.user.role === 'admin') {
-          await navigateTo('/config')
+          await navigateTo('/')
         } else {
           await navigateTo('/me')
         }

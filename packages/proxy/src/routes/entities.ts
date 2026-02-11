@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express'
 import { requireAdmin } from '../middleware/auth.js'
 import { serviceFactory } from '../services/service-factory.js'
-import { logInternalOutcome } from '../utils/internal-audit-helpers.js'
+import { logInternalAction } from '../utils/internal-audit-helpers.js'
 
 const router: Router = Router()
 
@@ -39,13 +39,17 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
           const userKeyId = entity.uid.id
           const userEntityId = (entity.attrs as any).user?.__entity?.id
           if (userEntityId) {
-            const dbKey = db.prepare('SELECT id, key_value, key_hash FROM user_agent_keys WHERE auth_id = ? ORDER BY created_at DESC LIMIT 1').get(userEntityId) as { id: string; key_value: string; key_hash: string } | undefined
+            const dbKey = db.prepare(`
+              SELECT id, key_value, key_hash FROM user_agent_keys
+              WHERE auth_id = ? AND status IN ('active', 'disabled')
+              ORDER BY created_at DESC LIMIT 1
+            `).get(userEntityId) as { id: string; key_value: string; key_hash: string } | undefined
             if (dbKey) {
-              const { decrypt } = await import('../utils/encryption.js')
-              const decryptedKey = decrypt(dbKey.key_value)
+              const keySuffix = (dbKey.key_value && dbKey.key_value.length <= 5) ? dbKey.key_value : '-----'
               return {
                 ...entity,
-                apiKey: decryptedKey,
+                apiKey: null,
+                keySuffix,
                 keyHash: dbKey.key_hash,
                 executionKey: dbKey.id,
                 userKeyId: userKeyId
@@ -55,6 +59,7 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
           return {
             ...entity,
             apiKey: null,
+            keySuffix: null,
             keyHash: null,
             executionKey: null,
             userKeyId: userKeyId
@@ -62,9 +67,14 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
         }
         return entity
       }))
-      
+      const filtered = entitiesWithKeys.filter(e => {
+        if (e.uid.type === 'UserKey' && (e as any).executionKey == null && (e as any).keySuffix == null) {
+          return false
+        }
+        return true
+      })
       res.json({
-        data: entitiesWithKeys,
+        data: filtered,
         total: result.total
       })
     } else {
@@ -73,24 +83,11 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
         total: result.total
       })
     }
-
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: '200',
-      message: `Retrieved ${result.data.length} entities`,
-      actionDurationMs: Date.now() - actionStart
-    })
   } catch (error: any) {
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: '500',
-      message: error.message || 'Failed to get entities',
-      actionDurationMs: Date.now() - actionStart
-    })
-
     res.status(500).json({
       error: 'Failed to get entities',
-      message: error.message
+      code: 'ENTITIES_GET_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })
@@ -99,30 +96,46 @@ router.put('/', requireAdmin, async (req: Request, res: Response) => {
   const actionStart = Date.now()
   try {
     const { entity, status } = req.body
-    
+
     if (!entity) {
       res.status(400).json({
-        error: 'Entity is required'
+        error: 'Entity is required',
+        code: 'ENTITY_REQUIRED'
       })
       return
     }
-    
+
     if (!entity.uid || !entity.uid.type || !entity.uid.id) {
       res.status(400).json({
-        error: 'Entity must have uid with type and id'
+        error: 'Entity must have uid with type and id',
+        code: 'ENTITY_INVALID_UID'
       })
       return
     }
-    
+
+    if (entity.uid.type === 'UserKey' && entity.attrs?.user?.__entity?.id) {
+      const authId = entity.attrs.user.__entity.id
+      const entityStatus = entity.attrs.status
+      if (entityStatus === 'active' || entityStatus === 'disabled') {
+        const { getDatabase } = await import('../db/index.js')
+        const db = getDatabase()
+        db.prepare(`
+          UPDATE user_agent_keys SET status = ?, updated_at = datetime('now')
+          WHERE auth_id = ? AND status IN ('active', 'disabled')
+        `).run(entityStatus, authId)
+      }
+    }
+
     const entityStore = serviceFactory.getEntityStore()
     const entityStatus = status !== undefined ? status : 1
-    
+
     await entityStore.updateEntity(entity, entityStatus)
     
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: '200',
-      message: 'Entity updated successfully',
+    const resourceId = entity?.uid?.id ? `${entity.uid.type}::${entity.uid.id}` : null
+    logInternalAction(req, {
+      action: 'update_entity',
+      resourceType: 'entity',
+      resourceId,
       actionDurationMs: Date.now() - actionStart
     })
 
@@ -131,16 +144,10 @@ router.put('/', requireAdmin, async (req: Request, res: Response) => {
       message: 'Entity updated successfully'
     })
   } catch (error: any) {
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: '500',
-      message: error.message || 'Failed to update entity',
-      actionDurationMs: Date.now() - actionStart
-    })
-
     res.status(500).json({
       error: 'Failed to update entity',
-      message: error.message
+      code: 'ENTITY_UPDATE_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })

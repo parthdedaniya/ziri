@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS user_agent_keys (
   key_value TEXT NOT NULL,
   key_hash TEXT NOT NULL,
   auth_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled', 'deleted')),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (auth_id) REFERENCES auth(id) ON DELETE CASCADE
@@ -33,6 +34,7 @@ CREATE TABLE IF NOT EXISTS user_agent_keys (
 CREATE INDEX IF NOT EXISTS idx_user_agent_keys_auth_id ON user_agent_keys(auth_id);
 CREATE INDEX IF NOT EXISTS idx_user_agent_keys_key_hash ON user_agent_keys(key_hash);
 CREATE INDEX IF NOT EXISTS idx_user_agent_keys_created_at ON user_agent_keys(created_at);
+CREATE INDEX IF NOT EXISTS idx_user_agent_keys_status ON user_agent_keys(status);
 `;
 
 export const CREATE_PROVIDER_KEYS_TABLE = `
@@ -56,6 +58,7 @@ CREATE TABLE IF NOT EXISTS schema_policy (
   content TEXT NOT NULL,
   description TEXT,
   status INTEGER NOT NULL DEFAULT 1 CHECK (status IN (0, 1, 2)),
+  policy_id TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -64,6 +67,7 @@ CREATE INDEX IF NOT EXISTS idx_schema_policy_obj_type ON schema_policy(obj_type)
 CREATE INDEX IF NOT EXISTS idx_schema_policy_status ON schema_policy(status);
 CREATE INDEX IF NOT EXISTS idx_schema_policy_version ON schema_policy(version);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_schema_policy_unique_schema ON schema_policy(obj_type) WHERE obj_type = 'schema';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_schema_policy_policy_id ON schema_policy(policy_id) WHERE obj_type = 'policy' AND policy_id IS NOT NULL;
 `;
 
 export const CREATE_REFRESH_TOKENS_TABLE = `
@@ -147,6 +151,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   principal TEXT NOT NULL,
   principal_type TEXT NOT NULL,
   auth_id TEXT,
+  auth_name TEXT,
   api_key_id TEXT,
   action TEXT NOT NULL,
   resource TEXT NOT NULL,
@@ -295,26 +300,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_internal_schema_policy_unique_schema ON in
 export const CREATE_INTERNAL_AUDIT_LOGS_TABLE = `
 CREATE TABLE IF NOT EXISTS internal_audit_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  request_id TEXT NOT NULL UNIQUE,
   dashboard_user_id TEXT NOT NULL,
+  dashboard_user_name TEXT,
   dashboard_user_role TEXT,
   action TEXT NOT NULL,
   resource_type TEXT NOT NULL,
   resource_id TEXT,
-  resource_details TEXT,
   decision TEXT NOT NULL CHECK (decision IN ('permit', 'forbid')),
   decision_reason TEXT,
-  request_method TEXT NOT NULL,
-  request_path TEXT NOT NULL,
-  request_ip TEXT,
-  user_agent TEXT,
-  request_body_hash TEXT,
   auth_duration_ms INTEGER,
   request_timestamp TEXT NOT NULL,
-  outcome_status TEXT,
-  outcome_code TEXT,
-  outcome_message TEXT,
   action_duration_ms INTEGER,
+  outcome_status TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

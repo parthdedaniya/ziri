@@ -49,7 +49,7 @@ export function useAuth() {
           toast.success('Admin login successful!')
           
           if (process.client) {
-            await navigateTo('/config')
+            await navigateTo('/')
           }
           
           return true
@@ -102,7 +102,7 @@ export function useAuth() {
  
       if (process.client) {
         if (userData.user.role === 'admin') {
-          await navigateTo('/config')
+          await navigateTo('/')
         } else {
           await navigateTo('/me')
         }

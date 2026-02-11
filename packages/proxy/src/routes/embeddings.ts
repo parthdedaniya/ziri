@@ -60,11 +60,21 @@ router.post('/', async (req: Request, res: Response) => {
     const keyHash = hashApiKey(apiKey)
     const db = getDatabase()
 
-    const dbKey = db.prepare('SELECT id, auth_id FROM user_agent_keys WHERE key_hash = ?').get(keyHash) as { id: string; auth_id: string } | undefined
+    const dbKey = db.prepare("SELECT id, auth_id FROM user_agent_keys WHERE key_hash = ? AND status = 'active'").get(keyHash) as { id: string; auth_id: string } | undefined
     if (!dbKey || dbKey.auth_id !== userId) {
       res.status(403).json({
         error: 'API key not found or invalid',
         code: 'API_KEY_INVALID',
+        requestId
+      })
+      return
+    }
+
+    const authRow = db.prepare('SELECT role, status FROM auth WHERE id = ?').get(userId) as { role: string | null; status: number } | undefined
+    if (authRow?.role != null && authRow.status === 2) {
+      res.status(403).json({
+        error: 'Dashboard user account is disabled. API key is not valid.',
+        code: 'DASHBOARD_USER_DISABLED',
         requestId
       })
       return
@@ -101,9 +111,9 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const keyStatus = (userKeyEntity.attrs as any).status
-    if (keyStatus === 'revoked' || keyStatus === 'disabled' || keyStatus === 2) {
+    if (keyStatus === 'disabled' || keyStatus === 'deleted') {
       res.status(403).json({
-        error: keyStatus === 'revoked' ? 'API key has been revoked' : 'API key is disabled',
+        error: 'API key is disabled or has been deleted',
         code: 'API_KEY_REVOKED_OR_DISABLED',
         requestId
       })

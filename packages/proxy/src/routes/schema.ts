@@ -3,7 +3,7 @@
 import { Router, type Request, type Response } from 'express'
 import { requireAdmin } from '../middleware/auth.js'
 import { serviceFactory } from '../services/service-factory.js'
-import { logInternalOutcome } from '../utils/internal-audit-helpers.js'
+import { logInternalAction } from '../utils/internal-audit-helpers.js'
 
 const router: Router = Router()
 
@@ -17,15 +17,9 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
     if (format === 'cedar') {
  
       if (!schemaStore.getSchemaAsCedarText) {
-        await logInternalOutcome(req, {
-          status: 'failed',
-          code: '500',
-          message: 'Cedar text format not supported',
-          actionDurationMs: Date.now() - actionStart
-        })
-        
         res.status(500).json({
-          error: 'Cedar text format not supported by this schema store'
+          error: 'Cedar text format not supported by this schema store',
+          code: 'CEDAR_NOT_SUPPORTED'
         })
         return
       }
@@ -35,13 +29,6 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
       
  
       const schema = await schemaStore.getSchema()
-      
-      await logInternalOutcome(req, {
-        status: 'success',
-        code: '200',
-        message: 'Retrieved schema (cedar format)',
-        actionDurationMs: Date.now() - actionStart
-      })
       
       res.json({
         data: {
@@ -55,13 +42,6 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
  
       const schema = await schemaStore.getSchema()
       
-      await logInternalOutcome(req, {
-        status: 'success',
-        code: '200',
-        message: 'Retrieved schema (json format)',
-        actionDurationMs: Date.now() - actionStart
-      })
-      
       res.json({
         data: {
           schema: schema.schema,
@@ -71,16 +51,11 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
       })
     }
   } catch (error: any) {
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: '500',
-      message: error.message || 'Failed to get schema',
-      actionDurationMs: Date.now() - actionStart
-    })
     
     res.status(500).json({
       error: 'Failed to get schema',
-      message: error.message
+      code: 'SCHEMA_GET_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })
@@ -94,7 +69,8 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
     
     if (!schema) {
       res.status(400).json({
-        error: 'Schema is required'
+        error: 'Schema is required',
+        code: 'SCHEMA_REQUIRED'
       })
       return
     }
@@ -139,25 +115,19 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
       }
     })
 
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: 'SCHEMA_UPDATED',
+    logInternalAction(req, {
+      action: 'update_schema',
+      resourceType: 'schema',
       resourceId: 'schema',
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
     res.status(500).json({
       error: 'Failed to update schema',
-      message: error.message
+      code: 'SCHEMA_UPDATE_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
 
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: 'SCHEMA_UPDATE_ERROR',
-      message: error.message,
-      resourceId: 'schema',
-      actionDurationMs: Date.now() - actionStart
-    })
   }
 })
 

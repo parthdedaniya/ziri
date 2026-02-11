@@ -11,7 +11,7 @@ import KeysSpendChart from '~/components/keys/SpendChart.vue'
 const route = useRoute()
 const router = useRouter()
 const configStore = useConfigStore()
-const { getKey, getKeyByUserId, revokeKey, currentKey, loading } = useKeys()
+const { getKey, getKeyByUserId, deleteKeyById, currentKey, loading } = useKeys()
 const { getAuthHeader } = useUnifiedAuth()
 const toast = useToast()
 const { checkAction } = useInternalAuth()
@@ -170,15 +170,30 @@ const monthlySpendData = computed(() => {
   }
 })
 
-const handleRevoke = async () => {
+const showDeleteKeyModal = ref(false)
+const isDeletingKey = ref(false)
+
+const confirmDeleteKey = () => {
+  const keyToDelete = currentKey.value || demoKey.value
+  if (!keyToDelete.executionKey) {
+    toast.error('Key ID not available')
+    return
+  }
+  showDeleteKeyModal.value = true
+}
+
+const handleDeleteKey = async () => {
+  const keyToDelete = currentKey.value || demoKey.value
+  if (!keyToDelete.executionKey || isDeletingKey.value) return
   try {
-    const keyToRevoke = currentKey.value || demoKey.value
-    if (keyToRevoke.userId) {
-      await revokeKey(keyToRevoke.userId)
-      demoKey.value.status = 'revoked'
-    }
+    isDeletingKey.value = true
+    await deleteKeyById(keyToDelete.executionKey)
+    showDeleteKeyModal.value = false
+    router.push('/keys')
   } catch (e) {
- 
+    // Toast handled by deleteKeyById
+  } finally {
+    isDeletingKey.value = false
   }
 }
 
@@ -327,9 +342,9 @@ watch(() => key.value.executionKey, () => {
       <div class="card">
         <div class="flex items-center justify-between mb-5">
           <h2 class="text-base font-bold text-[rgb(var(--text))]">Key Details</h2>
-          <span :class="key.status === 'active' ? 'badge-success' : 'badge-danger'" class="badge">
+          <span :class="(key.status === 'active' || key.status === 1) ? 'badge-success' : 'badge-danger'" class="badge">
             <span class="w-1.5 h-1.5 rounded-full bg-current"></span>
-            {{ key.status }}
+            {{ typeof key.status === 'number' ? (key.status === 1 ? 'active' : 'disabled') : key.status }}
           </span>
         </div>
         
@@ -359,12 +374,9 @@ watch(() => key.value.executionKey, () => {
           
           
           <div class="pt-4 border-t-2 border-[rgb(var(--border))]">
-            <div class="flex items-center justify-between mb-2">
-              <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider">API Key</p>
-              <UiCopyButton v-if="canCreateKey" :text="key.apiKey" size="sm" />
-            </div>
+            <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider mb-2">API Key</p>
             <code class="block p-3 rounded-lg bg-[rgb(var(--surface-elevated))] text-xs font-mono break-all text-[rgb(var(--text))]">
-              {{ maskApiKey(key.apiKey) }}
+              {{ maskApiKey(undefined, key.keySuffix) }}
             </code>
           </div>
           
@@ -392,16 +404,16 @@ watch(() => key.value.executionKey, () => {
         </div>
         
         <UiButton 
-          v-if="key.status === 'active'"
+          v-if="key.executionKey && (key.status === 'active' || key.status === 1)"
           variant="danger" 
           class="w-full mt-6"
-          @click="handleRevoke"
-          :loading="loading"
+          @click="confirmDeleteKey"
+          :loading="isDeletingKey"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
           </svg>
-          Revoke Key
+          Delete Key
         </UiButton>
       </div>
       
@@ -455,5 +467,25 @@ watch(() => key.value.executionKey, () => {
       </div>
     </div>
     </template>
+
+    <!-- Delete Key Confirmation Modal -->
+    <UiModal v-model="showDeleteKeyModal" title="Delete API Key">
+      <div class="space-y-4">
+        <p class="text-sm text-[rgb(var(--text))]">
+          Are you sure you want to delete the API key for <strong>{{ key.name || key.userId }}</strong>?
+        </p>
+        <p class="text-xs text-[rgb(var(--text-secondary))]">
+          This will permanently delete the API key. Any applications using this key will no longer be able to authenticate. This action cannot be undone.
+        </p>
+        <div class="flex gap-3 justify-end">
+          <UiButton variant="ghost" @click="showDeleteKeyModal = false">
+            Cancel
+          </UiButton>
+          <UiButton variant="danger" @click="handleDeleteKey" :loading="isDeletingKey">
+            Delete Key
+          </UiButton>
+        </div>
+      </div>
+    </UiModal>
   </div>
 </template>

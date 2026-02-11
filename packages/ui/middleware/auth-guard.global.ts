@@ -58,7 +58,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
     }
 
  
-    // Import navigation composable to get admin-only pages from single source of truth
+
     const { getAdminOnlyPages } = await import('~/composables/useNavigation')
     const adminOnlyPages = getAdminOnlyPages()
 

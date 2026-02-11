@@ -1,9 +1,13 @@
  
 
 import { Router, type Request, type Response } from 'express'
-import { requireAdmin } from '../middleware/auth.js'
+import { requireAdmin, type AdminRequest } from '../middleware/auth.js'
 import * as userService from '../services/user-service.js'
-import { logInternalOutcome } from '../utils/internal-audit-helpers.js'
+import * as dashboardUserService from '../services/dashboard-user-service.js'
+import * as keyService from '../services/key-service.js'
+import { internalAuthorizationService } from '../services/internal/internal-authorization-service.js'
+import { logInternalAction } from '../utils/internal-audit-helpers.js'
+import type { User } from '../services/user-service.js'
 
 const router: Router = Router()
 
@@ -19,40 +23,69 @@ router.get('/', async (req: Request, res: Response) => {
       limit,
       offset,
       sortBy,
-      sortOrder
+      sortOrder,
+      forApiKeys // Query parameter to include dashboard users for API key creation
     } = req.query
     
-    const result = userService.listUsers({
-      search: search as string | undefined,
-      limit: limit ? parseInt(limit as string, 10) : undefined,
-      offset: offset ? parseInt(offset as string, 10) : undefined,
-      sortBy: sortBy as string | undefined || null,
-      sortOrder: (sortOrder === 'asc' || sortOrder === 'desc') ? sortOrder as 'asc' | 'desc' : null
-    })
-    
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: '200',
-      message: `Retrieved ${result.data.length} users`,
-      actionDurationMs: Date.now() - actionStart
-    })
+
+    let result: { data: User[]; total: number }
+    if (forApiKeys === 'true') {
+      const [accessResult, dashboardResult] = await Promise.all([
+        userService.listUsers({
+          search: search as string | undefined,
+          limit: 1000,
+          offset: 0,
+          sortBy: sortBy as string | undefined || null,
+          sortOrder: (sortOrder === 'asc' || sortOrder === 'desc') ? sortOrder as 'asc' | 'desc' : null
+        }),
+        dashboardUserService.listDashboardUsers({
+          search: search as string | undefined,
+          limit: 1000,
+          offset: 0,
+          sortBy: sortBy as string | undefined || null,
+          sortOrder: (sortOrder === 'asc' || sortOrder === 'desc') ? sortOrder as 'asc' | 'desc' : null
+        })
+      ])
+      const accessUsers = accessResult.data
+      const dashboardUsersAsUser: User[] = dashboardResult.data.map(d => ({
+        id: d.userId,
+        userId: d.userId,
+        email: d.email,
+        name: d.name,
+        group: undefined,
+        isAgent: false,
+        status: d.status,
+        createdAt: d.createdAt,
+        updatedAt: d.updatedAt,
+        lastSignIn: d.lastSignIn
+      }))
+      const merged = [...accessUsers, ...dashboardUsersAsUser]
+      const total = merged.length
+      const lim = limit ? parseInt(limit as string, 10) : 100
+      const off = offset ? parseInt(offset as string, 10) : 0
+      const paginated = merged.slice(off, off + lim)
+      result = { data: paginated, total }
+    } else {
+      result = userService.listUsers({
+        search: search as string | undefined,
+        limit: limit ? parseInt(limit as string, 10) : undefined,
+        offset: offset ? parseInt(offset as string, 10) : undefined,
+        sortBy: sortBy as string | undefined || null,
+        sortOrder: (sortOrder === 'asc' || sortOrder === 'desc') ? sortOrder as 'asc' | 'desc' : null
+      })
+    }
     
     res.json({
       users: result.data,
       total: result.total
     })
   } catch (error: any) {
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: '500',
-      message: error.message || 'Failed to list users',
-      actionDurationMs: Date.now() - actionStart
-    })
     
     console.error('[USERS] List error:', error)
     res.status(500).json({
       error: 'Failed to list users',
-      code: 'LIST_ERROR'
+      code: 'LIST_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })
@@ -65,14 +98,6 @@ router.get('/:userId', async (req: Request, res: Response) => {
     const user = userService.getUserById(userId)
     
     if (!user) {
-      await logInternalOutcome(req, {
-        status: 'failed',
-        code: '404',
-        message: 'User not found',
-        resourceId: userId,
-        actionDurationMs: Date.now() - actionStart
-      })
-      
       res.status(404).json({
         error: 'User not found',
         code: 'USER_NOT_FOUND'
@@ -80,40 +105,26 @@ router.get('/:userId', async (req: Request, res: Response) => {
       return
     }
     
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: '200',
-      message: 'Retrieved user',
-      resourceId: userId,
-      actionDurationMs: Date.now() - actionStart
-    })
-    
     res.json({ user })
   } catch (error: any) {
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: '500',
-      message: error.message || 'Failed to get user',
-      resourceId: req.params.userId,
-      actionDurationMs: Date.now() - actionStart
-    })
     
     console.error('[USERS] Get error:', error)
     res.status(500).json({
       error: 'Failed to get user',
-      code: 'GET_ERROR'
+      code: 'GET_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })
 
  
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', async (req: AdminRequest, res: Response) => {
   const actionStart = Date.now()
   try {
     const { email, name, group, isAgent, limitRequestsPerMinute, createApiKey } = req.body
-    
+
     console.log(`[USERS] Create user request - createApiKey value:`, createApiKey, `type:`, typeof createApiKey)
-    
+
     if (!email || !name) {
       res.status(400).json({
         error: 'email and name are required',
@@ -121,10 +132,28 @@ router.post('/', async (req: Request, res: Response) => {
       })
       return
     }
-    
+
     const shouldCreateApiKey = createApiKey === true || createApiKey === 'true'
     console.log(`[USERS] Should create API key:`, shouldCreateApiKey)
-    
+
+    if (shouldCreateApiKey && req.admin) {
+      const principal = `DashboardUser::"${req.admin.userId}"`
+      const authzResult = await internalAuthorizationService.authorize({
+        principal,
+        action: 'Action::"create_key"',
+        resourceType: 'keys',
+        context: {}
+      })
+      if (!authzResult.allowed) {
+        res.status(403).json({
+          error: 'Access denied',
+          code: 'ACCESS_DENIED',
+          reason: authzResult.reason
+        })
+        return
+      }
+    }
+
     const result = await userService.createUser({ 
       email, 
       name, 
@@ -137,27 +166,32 @@ router.post('/', async (req: Request, res: Response) => {
     if (result.emailSent) {
       res.status(201).json({
         user: result.user,
+        apiKey: result.apiKey,
         message: 'User created successfully. Credentials have been sent to the user\'s email address.'
       })
     } else {
       res.status(201).json({
         user: result.user,
         password: result.password,
+        apiKey: result.apiKey,
         message: 'User created successfully. Save the password - it won\'t be shown again! Email was not sent (email service not configured or failed).'
       })
     }
 
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: 'USER_CREATED',
+    logInternalAction(req, {
+      action: 'create_user',
+      resourceType: 'user',
       resourceId: result.user.userId,
-      resourceDetails: {
-        userId: result.user.userId,
-        email: result.user.email,
-        name: result.user.name
-      },
       actionDurationMs: Date.now() - actionStart
     })
+    if (result.apiKey) {
+      logInternalAction(req, {
+        action: 'create_key',
+        resourceType: 'api_key',
+        resourceId: result.user.userId,
+        actionDurationMs: Date.now() - actionStart
+      })
+    }
   } catch (error: any) {
     console.error('[USERS] Create error:', error)
     
@@ -167,26 +201,15 @@ router.post('/', async (req: Request, res: Response) => {
         code: 'USER_EXISTS'
       })
 
-      await logInternalOutcome(req, {
-        status: 'failed',
-        code: 'USER_CREATE_EXISTS',
-        message: error.message,
-        actionDurationMs: Date.now() - actionStart
-      })
       return
     }
     
     res.status(500).json({
       error: 'Failed to create user',
-      code: 'CREATE_ERROR'
+      code: 'CREATE_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
 
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: 'USER_CREATE_ERROR',
-      message: error.message,
-      actionDurationMs: Date.now() - actionStart
-    })
   }
 })
 
@@ -201,15 +224,10 @@ router.put('/:userId', async (req: Request, res: Response) => {
     
     res.json({ user })
 
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: 'USER_UPDATED',
+    logInternalAction(req, {
+      action: 'update_user',
+      resourceType: 'user',
       resourceId: user.userId,
-      resourceDetails: {
-        userId: user.userId,
-        email: user.email,
-        name: user.name
-      },
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
@@ -221,12 +239,6 @@ router.put('/:userId', async (req: Request, res: Response) => {
         code: 'USER_NOT_FOUND'
       })
 
-      await logInternalOutcome(req, {
-        status: 'failed',
-        code: 'USER_UPDATE_NOT_FOUND',
-        message: error.message,
-        actionDurationMs: Date.now() - actionStart
-      })
       return
     }
     
@@ -236,45 +248,62 @@ router.put('/:userId', async (req: Request, res: Response) => {
         code: 'EMAIL_EXISTS'
       })
 
-      await logInternalOutcome(req, {
-        status: 'failed',
-        code: 'USER_UPDATE_EMAIL_EXISTS',
-        message: error.message,
-        actionDurationMs: Date.now() - actionStart
-      })
       return
     }
     
     res.status(500).json({
       error: 'Failed to update user',
-      code: 'UPDATE_ERROR'
+      code: 'UPDATE_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
 
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: 'USER_UPDATE_ERROR',
-      message: error.message,
-      actionDurationMs: Date.now() - actionStart
-    })
   }
 })
 
  
-router.delete('/:userId', async (req: Request, res: Response) => {
+router.delete('/:userId', async (req: AdminRequest, res: Response) => {
   const actionStart = Date.now()
   try {
     const { userId } = req.params
+    const keysBeforeDelete = keyService.getKeysByUserId(userId)
+    const hadKeys = keysBeforeDelete.length > 0
+
+    if (hadKeys && req.admin) {
+      const principal = `DashboardUser::"${req.admin.userId}"`
+      const authzResult = await internalAuthorizationService.authorize({
+        principal,
+        action: 'Action::"delete_keys_by_user"',
+        resourceType: 'keys',
+        context: {}
+      })
+      if (!authzResult.allowed) {
+        res.status(403).json({
+          error: 'Access denied',
+          code: 'ACCESS_DENIED',
+          reason: authzResult.reason
+        })
+        return
+      }
+    }
+
     await userService.deleteUser(userId)
-    
+
     res.json({ success: true })
 
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: 'USER_DELETED',
+    logInternalAction(req, {
+      action: 'delete_user',
+      resourceType: 'user',
       resourceId: userId,
-      resourceDetails: { userId },
       actionDurationMs: Date.now() - actionStart
     })
+    if (hadKeys) {
+      logInternalAction(req, {
+        action: 'delete_keys',
+        resourceType: 'api_key',
+        resourceId: userId,
+        actionDurationMs: Date.now() - actionStart
+      })
+    }
   } catch (error: any) {
     console.error('[USERS] Delete error:', error)
     
@@ -284,26 +313,15 @@ router.delete('/:userId', async (req: Request, res: Response) => {
         code: 'USER_NOT_FOUND'
       })
 
-      await logInternalOutcome(req, {
-        status: 'failed',
-        code: 'USER_DELETE_NOT_FOUND',
-        message: error.message,
-        actionDurationMs: Date.now() - actionStart
-      })
       return
     }
     
     res.status(500).json({
       error: 'Failed to delete user',
-      code: 'DELETE_ERROR'
+      code: 'DELETE_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
 
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: 'USER_DELETE_ERROR',
-      message: error.message,
-      actionDurationMs: Date.now() - actionStart
-    })
   }
 })
 
@@ -328,11 +346,10 @@ router.post('/:userId/reset-password', async (req: Request, res: Response) => {
       })
     }
 
-    await logInternalOutcome(req, {
-      status: 'success',
-      code: 'USER_PASSWORD_RESET',
+    logInternalAction(req, {
+      action: 'reset_password',
+      resourceType: 'user',
       resourceId: userId,
-      resourceDetails: { userId },
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
@@ -344,26 +361,15 @@ router.post('/:userId/reset-password', async (req: Request, res: Response) => {
         code: 'USER_NOT_FOUND'
       })
 
-      await logInternalOutcome(req, {
-        status: 'failed',
-        code: 'USER_PASSWORD_RESET_NOT_FOUND',
-        message: error.message,
-        actionDurationMs: Date.now() - actionStart
-      })
       return
     }
     
     res.status(500).json({
       error: 'Failed to reset password',
-      code: 'RESET_ERROR'
+      code: 'RESET_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
 
-    await logInternalOutcome(req, {
-      status: 'failed',
-      code: 'USER_PASSWORD_RESET_ERROR',
-      message: error.message,
-      actionDurationMs: Date.now() - actionStart
-    })
   }
 })
 

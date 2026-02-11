@@ -1,33 +1,35 @@
 import type { Request } from 'express'
 import { internalAuditLogService } from '../services/internal-audit-log-service.js'
 
-export interface InternalOutcomePayload {
-  status: 'success' | 'failed'
-  code: string
-  message?: string
-  resourceId?: string
-  resourceDetails?: any
+export interface LogInternalActionPayload {
+  action: string
+  resourceType: string
+  resourceId?: string | null
   actionDurationMs?: number
+  authDurationMs?: number
 }
 
-export async function logInternalOutcome(req: Request, outcome: InternalOutcomePayload): Promise<void> {
-  const internal = (req as any).internalAudit
-  if (!internal?.requestId) {
-    return
-  }
-
+export function logInternalAction(req: Request, payload: LogInternalActionPayload): void {
   try {
-    await internalAuditLogService.updateOutcome({
-      requestId: internal.requestId,
-      outcomeStatus: outcome.status,
-      outcomeCode: outcome.code,
-      outcomeMessage: outcome.message,
-      actionDurationMs: outcome.actionDurationMs,
-      resourceId: outcome.resourceId ?? internal.resourceId ?? null,
-      resourceDetails: outcome.resourceDetails
+    const admin = (req as any).admin
+    const userId = admin?.userId ?? 'unknown'
+    const role = admin?.role ?? null
+    const name = admin?.name ?? null
+
+    internalAuditLogService.logInternalAction({
+      dashboardUserId: userId,
+      dashboardUserName: name,
+      dashboardUserRole: role,
+      action: payload.action,
+      resourceType: payload.resourceType,
+      resourceId: payload.resourceId ?? null,
+      decision: 'permit',
+      authDurationMs: payload.authDurationMs ?? null,
+      actionDurationMs: payload.actionDurationMs ?? null,
+      outcomeStatus: 'success',
+      requestTimestamp: new Date().toISOString()
     })
   } catch (error: any) {
-    console.error('[INTERNAL AUDIT] Failed to update outcome:', error?.message || error)
+    console.error('[INTERNAL AUDIT] Failed to log action:', error?.message || error)
   }
 }
-

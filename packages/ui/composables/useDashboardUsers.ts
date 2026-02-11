@@ -1,4 +1,5 @@
 import { useAdminAuthStore } from '~/stores/admin-auth'
+import { useApiError } from './useApiError'
 
 export interface DashboardUser {
   id: string
@@ -20,6 +21,7 @@ export interface CreateDashboardUserInput {
 
 export const useDashboardUsers = () => {
   const adminAuthStore = useAdminAuthStore()
+  const { getUserMessage } = useApiError()
   
   const users = ref<DashboardUser[]>([])
   const loading = ref(false)
@@ -56,7 +58,7 @@ export const useDashboardUsers = () => {
       return { data: response.users, total: response.total }
     } catch (error: any) {
       console.error('[DASHBOARD USERS] Load error:', error)
-      throw error
+      throw new Error(getUserMessage(error))
     } finally {
       loading.value = false
     }
@@ -68,16 +70,19 @@ export const useDashboardUsers = () => {
       throw new Error('Not authenticated')
     }
     
-    const response = await $fetch<{ user: DashboardUser; password?: string; message: string }>('/api/dashboard-users', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: input
-    })
-    
-    return response
+    try {
+      const response = await $fetch<{ user: DashboardUser; password?: string; message: string }>('/api/dashboard-users', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: input
+      })
+      return response
+    } catch (error: any) {
+      throw new Error(getUserMessage(error))
+    }
   }
   
   const updateUser = async (userId: string, updates: {
@@ -90,16 +95,19 @@ export const useDashboardUsers = () => {
       throw new Error('Not authenticated')
     }
     
-    const response = await $fetch<{ user: DashboardUser }>(`/api/dashboard-users/${userId}`, {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: updates
-    })
-    
-    return response.user
+    try {
+      const response = await $fetch<{ user: DashboardUser }>(`/api/dashboard-users/${userId}`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: updates
+      })
+      return response.user
+    } catch (error: any) {
+      throw new Error(getUserMessage(error))
+    }
   }
   
   const deleteUser = async (userId: string) => {
@@ -108,12 +116,16 @@ export const useDashboardUsers = () => {
       throw new Error('Not authenticated')
     }
     
-    await $fetch(`/api/dashboard-users/${userId}`, {
-      method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    })
+    try {
+      await $fetch(`/api/dashboard-users/${userId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      })
+    } catch (error: any) {
+      throw new Error(getUserMessage(error))
+    }
   }
   
   const disableUser = async (userId: string) => {
@@ -122,14 +134,17 @@ export const useDashboardUsers = () => {
       throw new Error('Not authenticated')
     }
     
-    const response = await $fetch<{ user: DashboardUser }>(`/api/dashboard-users/${userId}/disable`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    })
-    
-    return response.user
+    try {
+      const response = await $fetch<{ user: DashboardUser }>(`/api/dashboard-users/${userId}/disable`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      })
+      return response.user
+    } catch (error: any) {
+      throw new Error(getUserMessage(error))
+    }
   }
   
   const enableUser = async (userId: string) => {
@@ -138,14 +153,17 @@ export const useDashboardUsers = () => {
       throw new Error('Not authenticated')
     }
     
-    const response = await $fetch<{ user: DashboardUser }>(`/api/dashboard-users/${userId}/enable`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    })
-    
-    return response.user
+    try {
+      const response = await $fetch<{ user: DashboardUser }>(`/api/dashboard-users/${userId}/enable`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      })
+      return response.user
+    } catch (error: any) {
+      throw new Error(getUserMessage(error))
+    }
   }
   
   return {

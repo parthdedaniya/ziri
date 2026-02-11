@@ -25,10 +25,10 @@ export default defineEventHandler(async (event) => {
     })
     
     if (!response.ok) {
-      const error = await response.text()
+      const error = await response.json().catch(() => ({ error: response.statusText }))
       throw createError({
         statusCode: response.status,
-        statusMessage: error || response.statusText
+        statusMessage: error.error || error.message || response.statusText
       })
     }
     

@@ -33,7 +33,7 @@ const userRole = computed(() => {
 const isAdmin = computed(() => userRole.value === 'admin')
 const isDashboardUser = computed(() => userRole.value && userRole.value !== 'user')
 
-// Use navigation composable
+
 const { dashboardItem, getNavSections, getIcon, isActive } = useNavigation()
 
 const navSections = computed(() => getNavSections(isDashboardUser.value))
