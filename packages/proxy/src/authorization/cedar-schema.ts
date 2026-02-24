@@ -14,7 +14,7 @@ entity Resource;
 entity User = {
   user_id: __cedar::String,
   email: __cedar::String,
-  group?: __cedar::String,
+  tenant?: __cedar::String,
   is_agent: __cedar::Bool,
   limit_requests_per_minute: __cedar::Long
 };

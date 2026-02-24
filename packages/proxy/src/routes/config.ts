@@ -4,6 +4,7 @@ import { getRootKey } from '../utils/root-key.js'
 import { requireAdmin } from '../middleware/auth.js'
 import { writeConfig } from '../config/index.js'
 import { logInternalAction } from '../utils/internal-audit-helpers.js'
+import { listEmailProviders } from '../email-providers/index.js'
 
 const router: Router = Router()
 
@@ -34,16 +35,39 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
   }
 })
 
+router.get('/email-providers', requireAdmin, async (_req: Request, res: Response) => {
+  const providers = listEmailProviders().map(p => ({
+    id: p.id,
+    label: p.label,
+    fields: p.fields,
+    fromRequired: p.fromRequired ?? false
+  }))
+  res.json({ providers })
+})
+
  
 router.post('/', requireAdmin, (req: Request, res: Response) => {
   const actionStart = Date.now()
   try {
     const { mode, server, publicUrl, email, logLevel } = req.body
-    
- 
+
     const existing = loadConfig()
-    
- 
+
+    let cleanedEmail = email
+    if (email && typeof email === 'object' && email.provider) {
+      const currentProvider = email.provider
+      cleanedEmail = {
+        enabled: email.enabled ?? false,
+        provider: currentProvider,
+        options: (email.options && email.options[currentProvider])
+          ? { [currentProvider]: email.options[currentProvider] }
+          : {},
+        fromByProvider: (email.fromByProvider && email.fromByProvider[currentProvider])
+          ? { [currentProvider]: email.fromByProvider[currentProvider] }
+          : {}
+      }
+    }
+
     const updatedConfig: any = {
       mode: mode || existing.mode || 'local',
       server: server || {
@@ -51,19 +75,17 @@ router.post('/', requireAdmin, (req: Request, res: Response) => {
         port: existing.port || 3100
       },
       publicUrl: publicUrl !== undefined ? publicUrl : existing.publicUrl,
-      email: email !== undefined ? email : existing.email,
+      email: cleanedEmail !== undefined ? cleanedEmail : existing.email,
       logLevel: logLevel || existing.logLevel || 'info'
     }
-    
- 
+
     if (existing.backendUrl) updatedConfig.backendUrl = existing.backendUrl
     if (existing.orgId) updatedConfig.orgId = existing.orgId
     if (existing.projectId) updatedConfig.projectId = existing.projectId
     if (existing.clientId) updatedConfig.clientId = existing.clientId
     if (existing.clientSecret) updatedConfig.clientSecret = existing.clientSecret
     if (existing.pdpUrl) updatedConfig.pdpUrl = existing.pdpUrl
-    
- 
+
     writeConfig(updatedConfig)
 
     res.json({

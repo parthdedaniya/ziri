@@ -7,4 +7,6 @@ export const SUCCESS_MESSAGES = {
   USER_PASSWORD_RESET_EMAIL_NOT_SENT: 'Password reset successfully. Save the password - it won\'t be shown again! Email was not sent (email service not configured or failed).',
   DASHBOARD_USER_CREATED_EMAIL_SENT: 'Dashboard user created successfully. Credentials have been sent to the user\'s email address.',
   DASHBOARD_USER_CREATED_EMAIL_NOT_SENT: 'Dashboard user created successfully. Save the password - it won\'t be shown again! Email was not sent (email service not configured or failed).',
+  DASH_USER_PW_RESET_SENT: 'Password reset. New password sent to user\'s email.',
+  DASH_USER_PW_RESET_NOT_SENT: 'Password reset. Save the password below; email was not sent.',
 } as const

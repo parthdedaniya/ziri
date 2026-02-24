@@ -39,7 +39,7 @@ const isDeletingUser = ref(false)
 const newUser = reactive<CreateUserInput>({
   email: '',
   name: '',
-  group: '',
+  tenant: '',
   isAgent: false,
   limitRequestsPerMinute: 100,
   createApiKey: true
@@ -146,7 +146,7 @@ const handleCreateUser = async () => {
     Object.assign(newUser, {
       email: '',
       name: '',
-      group: '',
+      tenant: '',
       isAgent: false,
       limitRequestsPerMinute: 100,
       createApiKey: true
@@ -452,7 +452,7 @@ const closeApiKeyModal = () => {
       <form @submit.prevent="handleCreateUser" class="space-y-4">
         <UiInput v-model="newUser.email" label="Email" type="email" required />
         <UiInput v-model="newUser.name" label="Name" required />
-        <UiInput v-model="newUser.group" label="Group" />
+        <UiInput v-model="newUser.tenant" label="Tenant" />
         
         <UiToggle
           v-model="newUser.createApiKey"

@@ -100,7 +100,7 @@ const columns = [
   { key: 'dashboard_user_role', header: 'Role', class: 'w-24', sortable: true },
   { key: 'action', header: 'Action', class: 'w-32', sortable: true },
   { key: 'resource', header: 'Resource', class: 'w-40', sortable: false },
-  { key: 'durations', header: 'Durations', class: 'w-40', sortable: false }
+  { key: 'duration', header: 'Duration', class: 'w-40', sortable: false }
 ]
 
 
@@ -175,7 +175,7 @@ onMounted(() => {
               <th class="text-left py-3 px-4 text-xs font-bold uppercase tracking-wider text-[rgb(var(--text-muted))] w-24">Role</th>
               <th class="text-left py-3 px-4 text-xs font-bold uppercase tracking-wider text-[rgb(var(--text-muted))] w-32">Action</th>
               <th class="text-left py-3 px-4 text-xs font-bold uppercase tracking-wider text-[rgb(var(--text-muted))] w-40">Resource</th>
-              <th class="text-left py-3 px-4 text-xs font-bold uppercase tracking-wider text-[rgb(var(--text-muted))] w-40">Durations</th>
+              <th class="text-left py-3 px-4 text-xs font-bold uppercase tracking-wider text-[rgb(var(--text-muted))] w-40">Duration</th>
             </tr>
           </thead>
           <tbody>
@@ -267,14 +267,14 @@ onMounted(() => {
         </div>
       </template>
 
-      <template #durations="{ row }">
+      <template #duration="{ row }">
         <div class="text-xs text-[rgb(var(--text-muted))] space-y-0.5">
-          <p>
+          <!-- <p>
             Auth:
             <span class="font-mono text-[rgb(var(--text))]">{{
               row.auth_duration_ms != null ? `${row.auth_duration_ms}ms` : 'N/A'
             }}</span>
-          </p>
+          </p> -->
           <p>
             Action:
             <span class="font-mono text-[rgb(var(--text))]">{{

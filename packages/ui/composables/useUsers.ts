@@ -12,7 +12,7 @@ export interface User {
   userId: string
   email: string
   name: string
-  group?: string
+  tenant?: string
   isAgent: boolean
   status: number
   createdAt: string
@@ -23,7 +23,7 @@ export interface User {
 export interface CreateUserInput {
   email: string
   name: string
-  group?: string
+  tenant?: string
   isAgent: boolean
   limitRequestsPerMinute?: number
   createApiKey?: boolean

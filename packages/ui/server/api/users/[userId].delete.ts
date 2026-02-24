@@ -6,7 +6,6 @@ export default defineEventHandler((event) => {
     path: `/api/users/${userId}`,
     method: 'DELETE',
     authMode: 'passthrough',
-    authHeaderSource: 'root-key-only',
-    authRequiredMessage: 'Root key required'
+    authRequiredMessage: 'Authentication required'
   })
 })

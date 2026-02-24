@@ -50,7 +50,7 @@ router.get('/', async (req: Request, res: Response) => {
         userId: d.userId,
         email: d.email,
         name: d.name,
-        group: undefined,
+        tenant: undefined,
         isAgent: false,
         status: d.status,
         createdAt: d.createdAt,
@@ -118,7 +118,7 @@ router.get('/:userId', async (req: Request, res: Response) => {
 router.post('/', async (req: AdminRequest, res: Response) => {
   const actionStart = Date.now()
   try {
-    const { email, name, group, isAgent, limitRequestsPerMinute, createApiKey } = req.body
+    const { email, name, tenant, isAgent, limitRequestsPerMinute, createApiKey } = req.body
 
     if (!email || !name) {
       res.status(400).json({
@@ -151,7 +151,7 @@ router.post('/', async (req: AdminRequest, res: Response) => {
     const result = await userService.createUser({ 
       email, 
       name, 
-      group,
+      tenant,
       isAgent: isAgent ?? false,
       limitRequestsPerMinute: limitRequestsPerMinute || 100,
       createApiKey: shouldCreateApiKey

@@ -61,6 +61,18 @@ action "delete_admin_dashboard_user" appliesTo {
   context: InternalContext
 };
 
+action "reset_dashboard_user_password" appliesTo {
+  principal: [DashboardUser],
+  resource: [Dashboard],
+  context: InternalContext
+};
+
+action "reset_admin_dashboard_user_password" appliesTo {
+  principal: [DashboardUser],
+  resource: [Dashboard],
+  context: InternalContext
+};
+
 action "list_users" appliesTo {
   principal: [DashboardUser],
   resource: [Dashboard],

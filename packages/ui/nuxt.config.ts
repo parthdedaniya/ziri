@@ -4,6 +4,9 @@ import topLevelAwait from 'vite-plugin-top-level-await'
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
+  experimental: {
+    appManifest: false
+  },
 
   modules: ['@nuxtjs/tailwindcss', '@pinia/nuxt', 'nuxt-monaco-editor'],
 

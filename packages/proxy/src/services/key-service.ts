@@ -104,7 +104,7 @@ export async function createKey(input: CreateKeyInput): Promise<{ apiKey: string
       attrs: {
         user_id: input.userId,
         email: userEmail,
-        group: dbUser.group || '',
+        tenant: dbUser.tenant || '',
         is_agent: dbUser.is_agent === 1,
         limit_requests_per_minute: 100
       },

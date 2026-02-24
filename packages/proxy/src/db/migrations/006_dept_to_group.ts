@@ -4,14 +4,14 @@ export function up(db: Database.Database): void {
   const cols = db.prepare('PRAGMA table_info(auth)').all() as { name: string }[]
   const hasDept = cols.some(c => c.name === 'dept')
   if (hasDept) {
-    db.exec('ALTER TABLE auth RENAME COLUMN dept TO "group"')
+    db.exec('ALTER TABLE auth RENAME COLUMN dept TO tenant')
   }
 }
 
 export function down(db: Database.Database): void {
   const cols = db.prepare('PRAGMA table_info(auth)').all() as { name: string }[]
-  const hasGroup = cols.some(c => c.name === 'group')
-  if (hasGroup) {
-    db.exec('ALTER TABLE auth RENAME COLUMN "group" TO dept')
+  const hasTenant = cols.some(c => c.name === 'tenant')
+  if (hasTenant) {
+    db.exec('ALTER TABLE auth RENAME COLUMN tenant TO dept')
   }
 }

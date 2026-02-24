@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatCurrency, formatDateShort } from '~/utils/formatters'
+import { formatCurrency } from '~/utils/formatters'
 import { useKeysStore } from '~/stores/keys'
 import { useRulesStore } from '~/stores/rules'
 import { useConfigStore } from '~/stores/config'
@@ -26,7 +26,7 @@ const overviewStats = ref({
   forbidCount: 0,
   totalCost: 0
 })
-const recentActivity = ref<any[]>([])
+const modelBreakdown = ref<any[]>([])
 
 const fetchOverviewStats = async () => {
   try {
@@ -48,12 +48,15 @@ const fetchOverviewStats = async () => {
   }
 }
 
-const fetchRecentActivity = async () => {
+const fetchModelStats = async () => {
   try {
     const authHeader = getAuthHeader()
     if (!authHeader) return
 
-    const response = await fetch('/api/audit?limit=10', {
+    const params = new URLSearchParams({
+      groupBy: 'model'
+    })
+    const response = await fetch(`/api/costs/summary?${params.toString()}`, {
       headers: {
         'Authorization': authHeader
       }
@@ -61,14 +64,7 @@ const fetchRecentActivity = async () => {
 
     if (response.ok) {
       const data = await response.json()
-      recentActivity.value = (data.data || []).map((log: any) => ({
-        timestamp: log.request_timestamp,
-        userId: log.auth_id || 'unknown',
-        model: log.model || 'N/A',
-        provider: log.provider || 'N/A',
-        decision: log.decision === 'permit' ? 'Allow' : 'Deny',
-        cost: log.spend ?? 0
-      }))
+      modelBreakdown.value = data.data || []
     }
   } catch (error) {
  
@@ -133,7 +129,7 @@ onMounted(async () => {
         listKeys().catch(() => {}),
         listRules().catch(() => {}),
         fetchOverviewStats(),
-        fetchRecentActivity(),
+        fetchModelStats(),
         fetchCostStats()
       ])
     } catch (e) {
@@ -149,17 +145,17 @@ onMounted(async () => {
 useRealtimeUpdates({
   onAuditLogCreated: () => {
     fetchOverviewStats()
-    fetchRecentActivity()
     fetchCostStats()
   },
   onCostTracked: () => {
     fetchOverviewStats()
     fetchCostStats()
+    fetchModelStats()
   },
   onBatchUpdate: () => {
     fetchOverviewStats()
-    fetchRecentActivity()
     fetchCostStats()
+    fetchModelStats()
   }
 })
 
@@ -183,14 +179,33 @@ const stats = computed(() => {
   }
 })
 
-const activityColumns = [
-  { key: 'timestamp', header: 'Time' },
-  { key: 'userId', header: 'User' },
-  { key: 'provider', header: 'Provider' },
-  { key: 'model', header: 'Model' },
-  { key: 'decision', header: 'Decision' },
-  { key: 'cost', header: 'Cost' }
-]
+const topModelsBySpend = computed(() => {
+  return [...modelBreakdown.value]
+    .sort((a, b) => (b.total_cost || 0) - (a.total_cost || 0))
+})
+
+const topModelsByRequests = computed(() => {
+  return [...modelBreakdown.value]
+    .sort((a, b) => (b.request_count || 0) - (a.request_count || 0))
+})
+
+const modelSpendPieData = computed(() => ({
+  labels: topModelsBySpend.value.map(item => item.model_used || 'N/A'),
+  values: topModelsBySpend.value.map(item => item.total_cost || 0)
+}))
+
+const modelRequestPieData = computed(() => ({
+  labels: topModelsByRequests.value.map(item => item.model_used || 'N/A'),
+  values: topModelsByRequests.value.map(item => item.request_count || 0)
+}))
+
+const totalModelSpend = computed(() => {
+  return topModelsBySpend.value.reduce((sum, item) => sum + (item.total_cost || 0), 0)
+})
+
+const totalModelRequests = computed(() => {
+  return topModelsByRequests.value.reduce((sum, item) => sum + (item.request_count || 0), 0)
+})
 </script>
 
 <template>
@@ -398,66 +413,66 @@ const activityColumns = [
       </div>
     </div>
 
-    <!-- Recent Activity -->
+    <!-- Model Distribution -->
     <div class="card">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-sm font-bold text-[rgb(var(--text))]">Recent Activity</h2>
-        <div class="flex items-center gap-3">
-          <span class="badge badge-neutral">Last 10 requests</span>
-          <NuxtLink to="/logs" class="text-sm font-medium text-[rgb(var(--primary))] hover:underline">View all logs</NuxtLink>
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div>
+          <h2 class="text-sm font-bold text-[rgb(var(--text))]">Model Distribution</h2>
+          <p class="text-xs text-[rgb(var(--text-muted))] mt-1">Based on tracked model usage</p>
         </div>
+        <NuxtLink to="/logs" class="btn btn-outline px-3 py-1.5 text-xs">
+          Go to Logs
+        </NuxtLink>
       </div>
-      <div v-if="isLoading" class="overflow-x-auto rounded-xl border-2 border-[rgb(var(--border))] bg-[rgb(var(--surface))]">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="border-b-2 border-[rgb(var(--border))]">
-              <th 
-                v-for="column in activityColumns" 
-                :key="column.key"
-                class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-[rgb(var(--text-muted))]"
-              >
-                <UiLoadingSkeleton :lines="1" height="h-4" width="60%" />
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="i in 10" :key="i" class="border-b border-[rgb(var(--border))]">
-              <td v-for="column in activityColumns" :key="column.key" class="px-4 py-3">
-                <UiLoadingSkeleton :lines="1" height="h-4" :width="`${60 + Math.random() * 40}%`" />
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <UiTable v-else :columns="activityColumns" :data="recentActivity">
-        <template #timestamp="{ value }">
-          <span class="text-[rgb(var(--text-muted))] font-mono text-xs">{{ formatDateShort(value) }}</span>
-        </template>
-        
-        <template #userId="{ value }">
-          <code class="px-2 py-0.5 rounded-md bg-[rgb(var(--surface-elevated))] font-mono text-xs text-indigo-600 dark:text-indigo-400">{{ value }}</code>
-        </template>
-        
-        <template #provider="{ value }">
-          <span class="text-[rgb(var(--text-secondary))] text-xs">{{ value }}</span>
-        </template>
-        
-        <template #model="{ value }">
-          <span class="text-[rgb(var(--text-secondary))]">{{ value }}</span>
-        </template>
-        
-        <template #decision="{ value }">
-          <span :class="value === 'Allow' ? 'badge-success' : 'badge-danger'" class="badge">
-            {{ value }}
-          </span>
-        </template>
-        
-        <template #cost="{ value }">
-          <span class="font-mono font-medium">{{ formatCurrency(value) }}</span>
-        </template>
-      </UiTable>
-      <div v-if="!isLoading && recentActivity.length === 0" class="text-center py-8 text-[rgb(var(--text-muted))]">
-        No recent activity
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="rounded-xl border-2 border-[rgb(var(--border))] p-4 bg-[rgb(var(--surface))]">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-[rgb(var(--text-muted))]">Spend Share</h3>
+            <span class="badge badge-neutral">All models</span>
+          </div>
+          <div v-if="isLoading" class="h-44 flex items-center justify-center">
+            <UiLoadingSkeleton :lines="1" height="h-full" width="100%" />
+          </div>
+          <div v-else-if="modelSpendPieData.labels.length === 0" class="h-44 flex items-center justify-center text-[rgb(var(--text-muted))] text-sm">
+            No model spend data
+          </div>
+          <div v-else>
+            <KeysSpendChart type="pie" :data="modelSpendPieData" />
+            <div class="mt-3 space-y-2">
+              <div v-for="item in topModelsBySpend" :key="`spend-${item.model_used}`" class="flex items-center justify-between text-xs">
+                <span class="text-[rgb(var(--text-secondary))] truncate max-w-[70%]">{{ item.model_used || 'N/A' }}</span>
+                <span class="font-medium text-[rgb(var(--text))]">
+                  {{ totalModelSpend > 0 ? (((item.total_cost || 0) / totalModelSpend) * 100).toFixed(1) : '0.0' }}%
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="rounded-xl border-2 border-[rgb(var(--border))] p-4 bg-[rgb(var(--surface))]">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-[rgb(var(--text-muted))]">Request Share</h3>
+            <span class="badge badge-neutral">All models</span>
+          </div>
+          <div v-if="isLoading" class="h-44 flex items-center justify-center">
+            <UiLoadingSkeleton :lines="1" height="h-full" width="100%" />
+          </div>
+          <div v-else-if="modelRequestPieData.labels.length === 0" class="h-44 flex items-center justify-center text-[rgb(var(--text-muted))] text-sm">
+            No model request data
+          </div>
+          <div v-else>
+            <KeysSpendChart type="pie" :data="modelRequestPieData" />
+            <div class="mt-3 space-y-2">
+              <div v-for="item in topModelsByRequests" :key="`req-${item.model_used}`" class="flex items-center justify-between text-xs">
+                <span class="text-[rgb(var(--text-secondary))] truncate max-w-[70%]">{{ item.model_used || 'N/A' }}</span>
+                <span class="font-medium text-[rgb(var(--text))]">
+                  {{ totalModelRequests > 0 ? (((item.request_count || 0) / totalModelRequests) * 100).toFixed(1) : '0.0' }}%
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

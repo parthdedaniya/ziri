@@ -13,7 +13,17 @@ export default defineEventHandler(async (event) => {
   }
   
   try {
-    const response = await fetch(`${proxyUrl}/api/stats/overview`, {
+    const query = getQuery(event)
+    const params = new URLSearchParams()
+    if (typeof query.startDate === 'string' && query.startDate.length > 0) {
+      params.set('startDate', query.startDate)
+    }
+    if (typeof query.endDate === 'string' && query.endDate.length > 0) {
+      params.set('endDate', query.endDate)
+    }
+    const queryString = params.toString()
+
+    const response = await fetch(`${proxyUrl}/api/stats/overview${queryString ? `?${queryString}` : ''}`, {
       headers: {
         'Authorization': authHeader.startsWith('Bearer ') ? authHeader : `Bearer ${authHeader}`
       }

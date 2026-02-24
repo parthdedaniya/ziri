@@ -201,7 +201,7 @@ watch([messages, isLoading], () => {
             </svg>
           </div>
           <div class="header-info">
-            <h3 class="assistant-name">AI Rules Generator</h3>
+            <h3 class="assistant-name">AI Policy Generator</h3>
             <div class="header-controls">
               <select 
                 v-model="selectedModel"
@@ -257,10 +257,10 @@ watch([messages, isLoading], () => {
           <div class="message-content">
             <div class="message-bubble ai-bubble">
               <p class="message-text">
-                Hi! I'm here to help you create Cedar rules. Describe what you need in natural language, and I'll generate the appropriate rule for you.
+                Hi! I'm here to help you create Cedar policies. Describe what you need in natural language, and I'll generate the appropriate policy for you.
               </p>
               <p class="example-text">
-                For example: "Create a rule that allows users to read their own profile"
+                For example: "Create a policy that allows users to read their own profile"
               </p>
             </div>
           </div>
@@ -291,7 +291,7 @@ watch([messages, isLoading], () => {
                       <svg class="code-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                       </svg>
-                      <span>Cedar Rule</span>
+                      <span>Cedar Policy</span>
                     </div>
                     <button
                       @click="copyPolicy(message.content)"
@@ -315,7 +315,7 @@ watch([messages, isLoading], () => {
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                   </svg>
-                  Use this rule
+                  Use this policy
                 </button>
               </div>
               <div v-else class="message-text">{{ message.content }}</div>
@@ -349,7 +349,7 @@ watch([messages, isLoading], () => {
           <textarea
             v-model="currentMessage"
             @keypress="handleKeyPress"
-            placeholder="Describe the rule you want to create..."
+            placeholder="Describe the policy you want to create..."
             class="input flex-1 resize-none text-xs py-2"
             rows="2"
             :disabled="isLoading || !selectedModel || availableModels.length === 0"

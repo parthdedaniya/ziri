@@ -61,7 +61,13 @@ const fetchOverviewStats = async () => {
     const authHeader = getAuthHeader()
     if (!authHeader) return
 
-    const response = await fetch('/api/stats/overview', {
+    const dateRangeParams = getDateRange()
+    const params = new URLSearchParams({
+      ...(dateRangeParams.startDate && { startDate: dateRangeParams.startDate }),
+      ...(dateRangeParams.endDate && { endDate: dateRangeParams.endDate }),
+    })
+
+    const response = await fetch(`/api/stats/overview?${params.toString()}`, {
       headers: {
         'Authorization': authHeader
       }

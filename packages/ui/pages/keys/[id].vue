@@ -29,7 +29,7 @@ const demoKey = ref<Key>({
   userId: routeId,
   name: 'Alice Smith',
   email: 'alice@company.com',
-  group: 'Engineering',
+  tenant: 'Engineering',
   isAgent: false,
   limitRequestsPerMinute: 100,
   apiKey: 'sk-abc123def456ghi789jkl012mno345pqr678stu901vwx234',
@@ -366,8 +366,8 @@ watch(() => key.value.executionKey, () => {
             <p class="text-sm text-[rgb(var(--text))]">{{ key.email }}</p>
           </div>
             <div>
-              <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider mb-1">Department</p>
-              <p class="text-sm text-[rgb(var(--text))]">{{ key.group }}</p>
+              <p class="text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider mb-1">Tenant</p>
+              <p class="text-sm text-[rgb(var(--text))]">{{ key.tenant }}</p>
             </div>
           </div>
           

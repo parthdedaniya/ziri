@@ -18,7 +18,9 @@ export interface ProxyConfig {
   logLevel: 'debug' | 'info' | 'warn' | 'error'
   email?: {
     enabled: boolean
-    provider: 'smtp' | 'sendgrid' | 'mailgun' | 'ses' | 'manual'
+    provider: string
+    options?: Record<string, unknown>
+    fromByProvider?: Record<string, string>
     smtp?: {
       host: string
       port: number
@@ -76,6 +78,8 @@ export function loadConfig(): ProxyConfig {
     emailConfig = {
       enabled: fileConfig.email.enabled ?? false,
       provider: fileConfig.email.provider || 'manual',
+      options: fileConfig.email.options,
+      fromByProvider: fileConfig.email.fromByProvider,
       smtp: fileConfig.email.smtp,
       sendgrid: fileConfig.email.sendgrid,
       mailgun: fileConfig.email.mailgun,

@@ -14,7 +14,9 @@ export interface ZiriConfig {
   
   email?: {
     enabled?: boolean
-    provider?: 'smtp' | 'sendgrid' | 'mailgun' | 'ses' | 'manual'
+    provider?: string
+    options?: Record<string, unknown>
+    fromByProvider?: Record<string, string>
     smtp?: {
       host: string
       port: number

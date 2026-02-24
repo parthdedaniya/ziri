@@ -6,7 +6,7 @@ import { randomBytes } from 'crypto'
 export interface CreateUserInput {
   email: string
   name: string
-  group?: string
+  tenant?: string
   isAgent: boolean
   limitRequestsPerMinute?: number
   createApiKey?: boolean
@@ -17,7 +17,7 @@ export interface User {
   userId: string
   email: string
   name: string
-  group?: string
+  tenant?: string
   isAgent: boolean
   status: number
   createdAt: string
@@ -50,7 +50,7 @@ export async function createUser(input: CreateUserInput): Promise<{ user: User; 
   const encryptedEmail = encrypt(input.email)
   
   const result = db.prepare(`
-    INSERT INTO auth (id, email, email_hash, name, password, "group", is_agent, status)
+    INSERT INTO auth (id, email, email_hash, name, password, tenant, is_agent, status)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     userId,
@@ -58,7 +58,7 @@ export async function createUser(input: CreateUserInput): Promise<{ user: User; 
     emailHash,
     input.name,
     passwordHash,
-    input.group || null,
+    input.tenant || null,
     input.isAgent ? 1 : 0,
     1
   )
@@ -78,7 +78,7 @@ export async function createUser(input: CreateUserInput): Promise<{ user: User; 
     attrs: {
       user_id: userId,
       email: input.email,
-      group: input.group || '',
+      tenant: input.tenant || '',
       is_agent: input.isAgent,
       limit_requests_per_minute: limitRequestsPerMinute
     },
@@ -202,7 +202,7 @@ export function listUsers(params?: {
       'name': 'name',
       'email': 'email',
       'userId': 'id',
-      'group': '"group"',
+      'tenant': 'tenant',
       'createdAt': 'created_at',
       'updatedAt': 'updated_at',
       'lastSignIn': 'last_sign_in',
@@ -287,7 +287,7 @@ export function listAllUsersForApiKeys(params?: {
       'name': 'name',
       'email': 'email',
       'userId': 'id',
-      'group': '"group"',
+      'tenant': 'tenant',
       'createdAt': 'created_at',
       'updatedAt': 'updated_at',
       'lastSignIn': 'last_sign_in',
@@ -397,9 +397,9 @@ export async function updateUser(userId: string, updates: Partial<CreateUserInpu
     values.push(updates.name)
   }
   
-  if (updates.group !== undefined) {
-    fields.push('"group" = ?')
-    values.push(updates.group || null)
+  if (updates.tenant !== undefined) {
+    fields.push('tenant = ?')
+    values.push(updates.tenant || null)
   }
   
   if (updates.isAgent !== undefined) {
@@ -556,7 +556,7 @@ function mapDbUserToUser(dbUser: any): User {
     userId: dbUser.id,
     email: decryptedEmail,
     name: dbUser.name || '',
-    group: dbUser.group ?? undefined,
+    tenant: dbUser.tenant ?? undefined,
     isAgent: dbUser.is_agent === 1,
     status,
     createdAt: dbUser.created_at,

@@ -67,7 +67,7 @@ export async function createDashboardUser(input: CreateDashboardUserInput): Prom
   const transaction = db.transaction(() => {
 
     const authResult = db.prepare(`
-      INSERT INTO auth (id, email, email_hash, name, password, role, status, is_agent, "group")
+      INSERT INTO auth (id, email, email_hash, name, password, role, status, is_agent, tenant)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       userId,
@@ -389,4 +389,46 @@ export async function enableDashboardUser(userId: string): Promise<DashboardUser
   
   const updated = db.prepare('SELECT * FROM auth WHERE id = ?').get(userId) as any
   return mapDbUserToDashboardUser(updated)
+}
+
+export async function resetDashUserPw(userId: string): Promise<{ user: DashboardUser; password: string; emailSent: boolean }> {
+  const db = getDatabase()
+  const existing = db.prepare('SELECT * FROM auth WHERE id = ? AND role IS NOT NULL AND status != 0').get(userId) as any
+  if (!existing) {
+    throw new Error('Dashboard user not found')
+  }
+  if (userId === 'ziri') {
+    throw new Error('Cannot reset password for the initial admin user (ziri)')
+  }
+  const plainPw = generatePassword(16)
+  const pwHash = await hashPassword(plainPw)
+  db.prepare('UPDATE auth SET password = ?, updated_at = datetime(\'now\') WHERE id = ?').run(pwHash, userId)
+  const user = mapDbUserToDashboardUser(existing)
+  const { sendEmail, genDashUserPwResetEmail } = await import('./email-service.js')
+  const { loadConfig } = await import('../config.js')
+  const config = loadConfig()
+  const dashboardUrl = config.publicUrl || `http://${config.host || 'localhost'}:${config.port}`
+  let emailSent = false
+  try {
+    const content = genDashUserPwResetEmail({
+      name: user.name,
+      email: user.email,
+      newPassword: plainPw,
+      dashboardUrl
+    })
+    emailSent = await sendEmail({
+      to: user.email,
+      subject: 'ZIRI Dashboard Password Reset',
+      html: content.html,
+      text: content.text
+    })
+  } catch (err: any) {
+    console.warn(`[DASHBOARD USER SERVICE] Failed to send reset email to ${user.email}:`, err.message)
+  }
+  const updated = db.prepare('SELECT * FROM auth WHERE id = ?').get(userId) as any
+  return {
+    user: mapDbUserToDashboardUser(updated),
+    password: plainPw,
+    emailSent
+  }
 }

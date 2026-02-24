@@ -171,7 +171,8 @@ forbid (
     action in [
         Action::"create_admin_dashboard_user",
         Action::"update_admin_dashboard_user",
-        Action::"delete_admin_dashboard_user"
+        Action::"delete_admin_dashboard_user",
+        Action::"reset_admin_dashboard_user_password"
     ],
     resource
 )

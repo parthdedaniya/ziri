@@ -1,18 +1,9 @@
  
 
-import { loadConfig, type ProxyConfig } from '../config.js'
-import nodemailer from 'nodemailer'
-import sgMail from '@sendgrid/mail'
-import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses'
+import { loadConfig } from '../config.js'
+import { getEmailProvider } from '../email-providers/index.js'
+import type { EmailOptions } from '../email-providers/types.js'
 
-export interface EmailOptions {
-  to: string
-  subject: string
-  html: string
-  text?: string
-}
-
- 
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
   const config = loadConfig()
   const emailConfig = config.email
@@ -21,202 +12,60 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
     return false
   }
   
-  try {
-    switch (emailConfig.provider) {
-      case 'smtp':
-        return await sendViaSMTP(options, emailConfig.smtp!, emailConfig.from)
-      
-      case 'sendgrid':
-        return await sendViaSendGrid(options, emailConfig.sendgrid!.apiKey, emailConfig.from)
-      
-      case 'mailgun':
-        return await sendViaMailgun(options, emailConfig.mailgun!, emailConfig.from)
-      
-      case 'ses':
-        return await sendViaSES(options, emailConfig.ses!, emailConfig.from)
-      
-      case 'manual':
-      default:
-        return true
+  if (emailConfig.provider === 'manual') {
+    return true
+  }
+
+  const providerId = emailConfig.provider || 'manual'
+  const provider = getEmailProvider(providerId)
+
+  if (!provider) {
+    console.warn(`[EMAIL] Unknown provider "${providerId}", treating as manual`)
+    return true
+  }
+
+  let cfg: Record<string, unknown> = {}
+  const opts = emailConfig.options
+  if (opts && typeof opts === 'object') {
+    const providerOpts = opts[providerId]
+    if (providerOpts && typeof providerOpts === 'object' && !Array.isArray(providerOpts)) {
+      cfg = { ...(providerOpts as Record<string, unknown>) }
+    } else {
+      cfg = { ...(opts as Record<string, unknown>) }
     }
+  }
+
+  if (!emailConfig.options && emailConfig.smtp) {
+    cfg.host = emailConfig.smtp.host
+    cfg.port = emailConfig.smtp.port
+    cfg.secure = emailConfig.smtp.secure
+    cfg.user = emailConfig.smtp.auth.user
+    cfg.pass = emailConfig.smtp.auth.pass
+  }
+
+  if (!emailConfig.options && emailConfig.sendgrid) {
+    cfg.apiKey = emailConfig.sendgrid.apiKey
+  }
+
+  if (!emailConfig.options && emailConfig.mailgun) {
+    cfg.apiKey = emailConfig.mailgun.apiKey
+    cfg.domain = emailConfig.mailgun.domain
+    cfg.apiUrl = emailConfig.mailgun.apiUrl
+  }
+
+  if (!emailConfig.options && emailConfig.ses) {
+    cfg.accessKeyId = emailConfig.ses.accessKeyId
+    cfg.secretAccessKey = emailConfig.ses.secretAccessKey
+    cfg.region = emailConfig.ses.region
+  }
+
+  const from = (emailConfig.fromByProvider?.[providerId] ?? emailConfig.from) || undefined
+  try {
+    return await provider.send(options, cfg, from)
   } catch (error: any) {
     console.error('[EMAIL] Failed to send email:', error)
     return false
   }
-}
-
- 
-async function sendViaSMTP(
-  options: EmailOptions,
-  smtpConfig: NonNullable<ProxyConfig['email']>['smtp'],
-  from?: string
-): Promise<boolean> {
-  if (!smtpConfig) {
-    throw new Error('SMTP configuration not provided')
-  }
-  
- 
- 
- 
-  let secure = smtpConfig.secure || false
-  let requireTLS = false
-  
-  if (smtpConfig.port === 465) {
- 
-    secure = true
-    requireTLS = false
-  } else if (smtpConfig.port === 587) {
- 
-    secure = false
-    requireTLS = true
-  } else {
- 
-    secure = smtpConfig.secure || false
-    requireTLS = smtpConfig.secure || false
-  }
-  
-  const transporter = nodemailer.createTransport({
-    host: smtpConfig.host,
-    port: smtpConfig.port,
-    secure: secure,
-    requireTLS: requireTLS,
-    auth: {
-      user: smtpConfig.auth.user,
-      pass: smtpConfig.auth.pass
-    }
-  })
-  
-  await transporter.sendMail({
-    from: from || smtpConfig.auth.user,
-    to: options.to,
-    subject: options.subject,
-    html: options.html,
-    text: options.text
-  })
-  
-  return true
-}
-
- 
-async function sendViaSendGrid(
-  options: EmailOptions,
-  apiKey: string,
-  from?: string
-): Promise<boolean> {
-  if (!from) {
-    throw new Error('From address required for SendGrid')
-  }
-  
-  sgMail.setApiKey(apiKey)
-  
-  await sgMail.send({
-    from,
-    to: options.to,
-    subject: options.subject,
-    html: options.html,
-    text: options.text
-  })
-  
-  return true
-}
-
- 
-async function sendViaMailgun(
-  options: EmailOptions,
-  mailgunConfig: NonNullable<ProxyConfig['email']>['mailgun'],
-  from?: string
-): Promise<boolean> {
-  if (!mailgunConfig) {
-    throw new Error('Mailgun configuration not provided')
-  }
-  if (!mailgunConfig.domain) {
-    throw new Error('Mailgun domain is required')
-  }
-  if (!from) {
-    throw new Error('From address required for Mailgun')
-  }
-
-  const apiUrl = mailgunConfig.apiUrl || 'https://api.mailgun.net'
-  const url = `${apiUrl.replace(/\/$/, '')}/v3/${mailgunConfig.domain}/messages`
-
-  const formData = new URLSearchParams()
-  formData.append('from', from)
-  formData.append('to', options.to)
-  formData.append('subject', options.subject)
-  formData.append('html', options.html)
-  if (options.text) {
-    formData.append('text', options.text)
-  }
-
-  const auth = Buffer.from(`api:${mailgunConfig.apiKey}`).toString('base64')
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${auth}`,
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
-    body: formData.toString()
-  })
-
-  if (!response.ok) {
-    const errText = await response.text()
-    throw new Error(`Mailgun API error (${response.status}): ${errText}`)
-  }
-
-  return true
-}
-
-async function sendViaSES(
-  options: EmailOptions,
-  sesConfig: NonNullable<ProxyConfig['email']>['ses'],
-  from?: string
-): Promise<boolean> {
-  if (!sesConfig) {
-    throw new Error('AWS SES configuration not provided')
-  }
-  if (!sesConfig.accessKeyId?.trim() || !sesConfig.secretAccessKey?.trim() || !sesConfig.region?.trim()) {
-    throw new Error('AWS SES requires accessKeyId, secretAccessKey, and region')
-  }
-  if (!from?.trim()) {
-    throw new Error('From address required for AWS SES (must be verified in SES)')
-  }
-
-  const client = new SESClient({
-    region: sesConfig.region,
-    credentials: {
-      accessKeyId: sesConfig.accessKeyId,
-      secretAccessKey: sesConfig.secretAccessKey
-    }
-  })
-
-  const command = new SendEmailCommand({
-    Source: from,
-    Destination: {
-      ToAddresses: [options.to]
-    },
-    Message: {
-      Subject: {
-        Data: options.subject,
-        Charset: 'UTF-8'
-      },
-      Body: {
-        Html: {
-          Data: options.html,
-          Charset: 'UTF-8'
-        },
-        ...(options.text && {
-          Text: {
-            Data: options.text,
-            Charset: 'UTF-8'
-          }
-        })
-      }
-    }
-  })
-
-  await client.send(command)
-  return true
 }
 
  
@@ -527,5 +376,69 @@ If you have any questions or need assistance, please contact your administrator.
 Welcome to ZIRI!
   `.trim()
   
+  return { html, text }
+}
+
+export function genDashUserPwResetEmail(data: {
+  name: string
+  email: string
+  newPassword: string
+  dashboardUrl: string
+}): { html: string; text: string } {
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Password Reset</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+    <h1 style="color: white; margin: 0; font-size: 24px;">Dashboard Password Reset</h1>
+  </div>
+  <div style="background: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+    <h2 style="color: #1f2937; margin-top: 0;">Hello, ${data.name}</h2>
+    <p>Your ZIRI dashboard password has been reset. Use the credentials below to sign in.</p>
+    <div style="background: white; border: 2px solid #e5e7eb; border-radius: 6px; padding: 20px; margin: 20px 0;">
+      <div style="margin-bottom: 15px;">
+        <strong style="color: #6b7280; display: block; margin-bottom: 5px; font-size: 12px; text-transform: uppercase;">Email</strong>
+        <code style="background: #f3f4f6; padding: 8px 12px; border-radius: 4px; font-size: 14px;">${data.email}</code>
+      </div>
+      <div style="margin-bottom: 15px;">
+        <strong style="color: #6b7280; display: block; margin-bottom: 5px; font-size: 12px; text-transform: uppercase;">New Password</strong>
+        <code style="background: #f3f4f6; padding: 8px 12px; border-radius: 4px; font-size: 14px;">${data.newPassword}</code>
+      </div>
+      <div>
+        <strong style="color: #6b7280; display: block; margin-bottom: 5px; font-size: 12px; text-transform: uppercase;">Dashboard URL</strong>
+        <code style="background: #f3f4f6; padding: 8px 12px; border-radius: 4px; font-size: 14px; word-break: break-all;">${data.dashboardUrl}</code>
+      </div>
+    </div>
+    <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 4px;">
+      <strong style="color: #92400e;">Important</strong>
+      <p style="color: #78350f; margin: 5px 0 0; font-size: 14px;">Save this password. Your old password no longer works.</p>
+    </div>
+    <p style="color: #6b7280; font-size: 14px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+      If you did not request this reset, contact your administrator.
+    </p>
+  </div>
+</body>
+</html>
+  `.trim()
+  const text = `
+Dashboard Password Reset - ZIRI
+
+Hello, ${data.name},
+
+Your ZIRI dashboard password has been reset.
+
+Email: ${data.email}
+New Password: ${data.newPassword}
+Dashboard URL: ${data.dashboardUrl}
+
+Important: Save this password. Your old password no longer works.
+
+If you did not request this reset, contact your administrator.
+  `.trim()
   return { html, text }
 }

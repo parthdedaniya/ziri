@@ -27,7 +27,7 @@ export const useKeysStore = defineStore('keys', {
                 name: attrs.name as string,
                 email: attrs.email as string,
                 role: attrs.role as 'engineer' | 'senior_engineer' | 'manager',
-                group: attrs.group as string,
+                tenant: attrs.tenant as string,
                 apiKey: 'hidden',
                 currentDailySpend: parseDecimal(attrs.current_daily_spend),
                 dailySpendLimit: parseDecimal(attrs.daily_spend_limit),
@@ -104,7 +104,7 @@ export const useKeysStore = defineStore('keys', {
                             name: input.name,
                             email: input.email,
                             role: input.role,
-                            group: input.group,
+                            tenant: input.tenant,
                             daily_spend_limit: {
                                 __extn: {
                                     fn: "decimal",

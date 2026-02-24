@@ -26,7 +26,7 @@ export interface EntityAttrs {
   user_id?: string
   name?: string
   email?: string
-  group?: string
+  tenant?: string
   is_agent?: boolean
   limit_requests_per_minute?: number
   

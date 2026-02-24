@@ -12,7 +12,8 @@ export interface GatewayConfig {
  
     email?: {
         enabled?: boolean
-        provider?: 'smtp' | 'sendgrid' | 'mailgun' | 'ses' | 'manual'
+    provider?: string
+    options?: Record<string, unknown>
         smtp?: {
             host: string
             port: number

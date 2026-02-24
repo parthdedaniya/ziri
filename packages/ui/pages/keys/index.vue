@@ -743,7 +743,7 @@ const closeKeyModal = () => {
             :model-value="editKey.status === 'active'"
             @update:model-value="editKey.status = $event ? 'active' : 'disabled'"
             label="Status"
-            help-text="Active keys can be used for API requests. Disabled keys cannot."
+            help-text="Only active keys can be used for API requests."
           />
         </div>
         

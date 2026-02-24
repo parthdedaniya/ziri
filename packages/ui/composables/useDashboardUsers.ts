@@ -164,6 +164,25 @@ export const useDashboardUsers = () => {
       throw new Error(getUserMessage(error))
     }
   }
+
+  const resetPw = async (userId: string): Promise<{ password?: string; emailSent: boolean }> => {
+    const token = adminAuthStore.accessToken
+    if (!token) {
+      throw new Error('Not authenticated')
+    }
+    try {
+      const res = await $fetch<{ password?: string; message?: string }>(`/api/dashboard-users/${userId}/reset-password`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      return {
+        password: res.password,
+        emailSent: !res.password
+      }
+    } catch (error: any) {
+      throw new Error(getUserMessage(error))
+    }
+  }
   
   return {
     users,
@@ -173,6 +192,7 @@ export const useDashboardUsers = () => {
     updateUser,
     deleteUser,
     disableUser,
-    enableUser
+    enableUser,
+    resetPw
   }
 }

@@ -2,7 +2,7 @@
 import { useConfigStore } from '~/stores/config'
 import { useToast } from '~/composables/useToast'
 import { useAdminAuth } from '~/composables/useAdminAuth'
-import { validateEmail, validateEmailOrFromAddress } from '~/utils/validators'
+import { validateEmail, validateEmailOrFromAddress, getFromAddressValidationHint } from '~/utils/validators'
 import { useSchema } from '~/composables/useSchema'
 import { useRules } from '~/composables/useRules'
 import { useKeys } from '~/composables/useKeys'
@@ -22,42 +22,117 @@ const isSaving = ref(false)
 const permissionsLoading = ref(true)
 const canUpdateConfig = ref(false)
 
+interface EmailProviderField {
+  key: string
+  label: string
+  type: 'text' | 'password' | 'number' | 'checkbox' | 'url'
+  required?: boolean
+  placeholder?: string
+  help?: string
+}
+
+interface EmailProviderDef {
+  id: string
+  label: string
+  fields: EmailProviderField[]
+  fromRequired: boolean
+}
+
+const emailProviders = ref<EmailProviderDef[]>([])
+
  
 const form = reactive({
   mode: 'local' as 'local' | 'live',
-  server: {
-    host: '127.0.0.1',
-    port: 3100
-  },
   publicUrl: '',
   email: {
     enabled: false,
-    provider: 'manual' as 'smtp' | 'sendgrid' | 'mailgun' | 'ses' | 'manual',
-    smtp: {
-      host: '',
-      port: 587,
-      secure: false,
-      auth: {
-        user: '',
-        pass: ''
-      }
-    },
-    sendgrid: {
-      apiKey: ''
-    },
-    mailgun: {
-      apiKey: '',
-      domain: '',
-      apiUrl: ''
-    },
-    ses: {
-      accessKeyId: '',
-      secretAccessKey: '',
-      region: 'us-east-1'
-    },
-    from: ''
+    provider: 'manual' as string,
+    options: {} as Record<string, Record<string, unknown>>,
+    fromByProvider: {} as Record<string, string>
   },
   logLevel: 'info' as 'debug' | 'info' | 'warn' | 'error'
+})
+
+function isProviderScopedOptions(opts: Record<string, unknown>): boolean {
+  return Object.values(opts).some(
+    v => typeof v === 'object' && v !== null && !Array.isArray(v)
+  )
+}
+
+const mapEmailConfigToForm = (raw: any) => {
+  const e = raw || {}
+  const provider = (e.provider || 'manual') as string
+  const options: Record<string, Record<string, unknown>> = {}
+
+  if (e.options && typeof e.options === 'object') {
+    const opts = e.options as Record<string, unknown>
+    if (isProviderScopedOptions(opts)) {
+      for (const [pid, vals] of Object.entries(opts)) {
+        if (vals && typeof vals === 'object' && !Array.isArray(vals)) {
+          options[pid] = { ...(vals as Record<string, unknown>) }
+        }
+      }
+    } else {
+      options[provider] = { ...opts }
+    }
+  } else {
+    const flat: Record<string, unknown> = {}
+    if (provider === 'smtp' && e.smtp) {
+      flat.host = e.smtp.host ?? ''
+      flat.port = e.smtp.port ?? 587
+      flat.secure = e.smtp.secure ?? false
+      flat.user = e.smtp.auth?.user ?? ''
+      flat.pass = e.smtp.auth?.pass ?? ''
+    }
+    if (provider === 'sendgrid' && e.sendgrid) {
+      flat.apiKey = e.sendgrid.apiKey ?? ''
+    }
+    if (provider === 'mailgun' && e.mailgun) {
+      flat.apiKey = e.mailgun.apiKey ?? ''
+      flat.domain = e.mailgun.domain ?? ''
+      flat.apiUrl = e.mailgun.apiUrl ?? ''
+    }
+    if (provider === 'ses' && e.ses) {
+      flat.accessKeyId = e.ses.accessKeyId ?? ''
+      flat.secretAccessKey = e.ses.secretAccessKey ?? ''
+      flat.region = e.ses.region ?? 'us-east-1'
+    }
+    options[provider] = flat
+  }
+
+  if (!options[provider]) {
+    options[provider] = {}
+  }
+
+  const fromByProvider: Record<string, string> = {}
+  if (e.fromByProvider && typeof e.fromByProvider === 'object') {
+    for (const [pid, val] of Object.entries(e.fromByProvider)) {
+      if (typeof val === 'string') fromByProvider[pid] = val
+    }
+  }
+  if ((e.from ?? '') && !fromByProvider[provider]) {
+    fromByProvider[provider] = e.from as string
+  }
+
+  form.email = {
+    enabled: e.enabled ?? false,
+    provider,
+    options,
+    fromByProvider
+  }
+}
+
+watch(() => form.email.provider, (newProvider) => {
+  if (newProvider) {
+    if (!form.email.options[newProvider]) form.email.options[newProvider] = {}
+    if (!(newProvider in form.email.fromByProvider)) form.email.fromByProvider[newProvider] = ''
+  }
+}, { immediate: true })
+
+const currentProviderOptions = computed(() => {
+  const p = form.email.provider
+  if (!form.email.options[p]) form.email.options[p] = {}
+  return form.email.options[p] as Record<string, unknown>
 })
 
 onMounted(async () => {
@@ -74,94 +149,104 @@ onMounted(async () => {
     const authHeader = getAuthHeader()
     const headers: Record<string, string> = {}
     if (authHeader) headers['Authorization'] = authHeader
+    const providersRes = await fetch('/api/config/email-providers', { headers })
+    if (providersRes.ok) {
+      const body = await providersRes.json()
+      emailProviders.value = body.providers || []
+    }
+  } catch {
+  }
+ 
+  try {
+    const authHeader = getAuthHeader()
+    const headers: Record<string, string> = {}
+    if (authHeader) headers['Authorization'] = authHeader
 
     const response = await fetch('/api/config', { headers })
     if (response.ok) {
       const config = await response.json()
       form.mode = config.mode || 'local'
-      form.server = config.server || { host: '127.0.0.1', port: configStore.port || 3100 }
       form.publicUrl = config.publicUrl || ''
-      const e = config.email || {}
-      form.email = {
-        enabled: e.enabled ?? false,
-        provider: (e.provider || 'manual') as 'manual' | 'smtp' | 'sendgrid' | 'mailgun' | 'ses',
-        smtp: { host: e.smtp?.host ?? '', port: e.smtp?.port ?? 587, secure: e.smtp?.secure ?? false, auth: { user: e.smtp?.auth?.user ?? '', pass: e.smtp?.auth?.pass ?? '' } },
-        sendgrid: { apiKey: e.sendgrid?.apiKey ?? '' },
-        mailgun: { apiKey: e.mailgun?.apiKey ?? '', domain: e.mailgun?.domain ?? '', apiUrl: e.mailgun?.apiUrl ?? '' },
-        ses: { accessKeyId: e.ses?.accessKeyId ?? '', secretAccessKey: e.ses?.secretAccessKey ?? '', region: e.ses?.region ?? 'us-east-1' },
-        from: e.from ?? ''
-      }
+      mapEmailConfigToForm(config.email)
       form.logLevel = config.logLevel || 'info'
     } else {
  
       form.mode = 'local'
-      form.server = { host: configStore.server?.host ?? '127.0.0.1', port: configStore.server?.port ?? configStore.port ?? 3100 }
       form.publicUrl = configStore.publicUrl || ''
       const stored = configStore.email
-      form.email = {
-        enabled: stored?.enabled ?? false,
-        provider: (stored?.provider || 'manual') as 'manual' | 'smtp' | 'sendgrid' | 'mailgun' | 'ses',
-        smtp: { host: stored?.smtp?.host ?? '', port: stored?.smtp?.port ?? 587, secure: stored?.smtp?.secure ?? false, auth: { user: stored?.smtp?.auth?.user ?? '', pass: stored?.smtp?.auth?.pass ?? '' } },
-        sendgrid: { apiKey: stored?.sendgrid?.apiKey ?? '' },
-        mailgun: { apiKey: stored?.mailgun?.apiKey ?? '', domain: stored?.mailgun?.domain ?? '', apiUrl: stored?.mailgun?.apiUrl ?? '' },
-        ses: { accessKeyId: stored?.ses?.accessKeyId ?? '', secretAccessKey: stored?.ses?.secretAccessKey ?? '', region: stored?.ses?.region ?? 'us-east-1' },
-        from: stored?.from ?? ''
-      }
+      mapEmailConfigToForm(stored)
       form.logLevel = configStore.logLevel || 'info'
     }
   } catch (e) {
  
     form.mode = 'local'
-    form.server = { host: configStore.server?.host ?? '127.0.0.1', port: configStore.server?.port ?? configStore.port ?? 3100 }
     form.publicUrl = configStore.publicUrl || ''
     const stored = configStore.email
-    form.email = {
-      enabled: stored?.enabled ?? false,
-      provider: (stored?.provider || 'manual') as 'manual' | 'smtp' | 'sendgrid' | 'mailgun' | 'ses',
-      smtp: { host: stored?.smtp?.host ?? '', port: stored?.smtp?.port ?? 587, secure: stored?.smtp?.secure ?? false, auth: { user: stored?.smtp?.auth?.user ?? '', pass: stored?.smtp?.auth?.pass ?? '' } },
-      sendgrid: { apiKey: stored?.sendgrid?.apiKey ?? '' },
-      mailgun: { apiKey: stored?.mailgun?.apiKey ?? '', domain: stored?.mailgun?.domain ?? '', apiUrl: stored?.mailgun?.apiUrl ?? '' },
-      ses: { accessKeyId: stored?.ses?.accessKeyId ?? '', secretAccessKey: stored?.ses?.secretAccessKey ?? '', region: stored?.ses?.region ?? 'us-east-1' },
-      from: stored?.from ?? ''
-    }
+    mapEmailConfigToForm(stored)
     form.logLevel = configStore.logLevel || 'info'
   }
 })
 
 function validateEmailConfig(): string | null {
   if (!form.email.enabled) return null
-  const { provider, smtp, sendgrid, mailgun, ses, from } = form.email
+  const { provider, options, fromByProvider } = form.email
+  const selected = emailProviders.value.find(p => p.id === provider)
+  const providerOpts = options[provider] || {}
+  const from = fromByProvider[provider] ?? ''
 
-  if (provider === 'smtp') {
-    if (!smtp.host?.trim()) return 'SMTP Host is required'
-    if (!smtp.port || smtp.port < 1 || smtp.port > 65535) return 'Valid SMTP Port is required'
-    if (!smtp.auth.user?.trim()) return 'SMTP Username is required'
-    if (!smtp.auth.pass?.trim()) return 'SMTP Password is required'
+  if (selected) {
+    for (const field of selected.fields) {
+      if (!field.required) continue
+      const v = providerOpts[field.key]
+      if (field.type === 'checkbox') {
+        if (!v) return `${field.label} is required`
+      } else {
+        const s = typeof v === 'string' ? v : v != null ? String(v) : ''
+        if (!s.trim()) return `${field.label} is required`
+      }
+    }
   }
 
-  if (provider === 'sendgrid') {
-    if (!sendgrid.apiKey?.trim()) return 'SendGrid API Key is required'
-    if (!from?.trim()) return 'From Address is required for SendGrid'
-    if (!validateEmail(from)) return 'Valid From Address is required'
-  }
-
-  if (provider === 'mailgun') {
-    if (!mailgun.apiKey?.trim()) return 'Mailgun API Key is required'
-    if (!mailgun.domain?.trim()) return 'Mailgun Sending Domain is required'
-    if (!from?.trim()) return 'From Address is required for Mailgun'
-    if (!validateEmailOrFromAddress(from)) return 'Valid From Address is required (e.g. noreply@example.com or "Name" <noreply@example.com>)'
-  }
-
-  if (provider === 'ses') {
-    if (!ses.accessKeyId?.trim()) return 'AWS Access Key ID is required'
-    if (!ses.secretAccessKey?.trim()) return 'AWS Secret Access Key is required'
-    if (!ses.region?.trim()) return 'AWS Region is required'
-
-    if (!from?.trim()) return 'From Address is required for AWS SES (must be verified in SES)'
-    if (!validateEmailOrFromAddress(from)) return 'Valid From Address is required (e.g. noreply@example.com or "Name" <noreply@example.com>)'
+  if (selected?.fromRequired) {
+    if (!from?.trim()) {
+      if (provider === 'sendgrid') return 'From Address is required for SendGrid'
+      if (provider === 'mailgun') return 'From Address is required for Mailgun'
+      if (provider === 'ses') return 'From Address is required for AWS SES (must be verified in SES)'
+      return 'From Address is required'
+    }
+    if (provider === 'sendgrid') {
+      if (!validateEmail(from)) return 'Valid From Address is required'
+    } else if (provider === 'mailgun' || provider === 'ses') {
+      if (!validateEmailOrFromAddress(from)) {
+        const hint = getFromAddressValidationHint(from)
+        return hint || 'Valid From Address is required (e.g. noreply@example.com or "Name" <noreply@example.com>)'
+      }
+    }
   }
 
   return null
+}
+
+function buildCleanEmailPayload() {
+  const currentProvider = form.email.provider
+  const options: Record<string, Record<string, unknown>> = {}
+  const fromByProvider: Record<string, string> = {}
+
+  if (currentProvider) {
+    options[currentProvider] = form.email.options[currentProvider] || {}
+    const fromVal = form.email.fromByProvider[currentProvider]?.trim()
+    if (fromVal) fromByProvider[currentProvider] = fromVal
+  }
+
+  return {
+    ...form,
+    email: {
+      enabled: form.email.enabled,
+      provider: currentProvider,
+      options,
+      fromByProvider
+    }
+  }
 }
 
 const saveConfig = async () => {
@@ -180,7 +265,7 @@ const saveConfig = async () => {
   
   isSaving.value = true
   try {
-    await configStore.updateConfig(form)
+    await configStore.updateConfig(buildCleanEmailPayload())
     await nextTick()
     await new Promise(resolve => setTimeout(resolve, 100))
     
@@ -195,16 +280,12 @@ const saveConfig = async () => {
 
 const resetToDefaults = async () => {
   form.mode = 'local'
-  form.server = { host: '127.0.0.1', port: 3100 }
   form.publicUrl = ''
   form.email = {
     enabled: false,
     provider: 'manual',
-    smtp: { host: '', port: 587, secure: false, auth: { user: '', pass: '' } },
-    sendgrid: { apiKey: '' },
-    mailgun: { apiKey: '', domain: '', apiUrl: '' },
-    ses: { accessKeyId: '', secretAccessKey: '', region: 'us-east-1' },
-    from: ''
+    options: {},
+    fromByProvider: {}
   }
   form.logLevel = 'info'
   await configStore.updateConfig(form)
@@ -218,7 +299,7 @@ const resetToDefaults = async () => {
     <div v-if="permissionsLoading" class="max-w-2xl space-y-6">
       <!-- Header Skeleton -->
       <div class="skeleton-shimmer h-8 w-48 rounded-lg"></div>
-      
+
       <!-- Server Settings Card Skeleton -->
       <section class="card">
         <div class="flex items-center gap-3 mb-5">
@@ -249,7 +330,7 @@ const resetToDefaults = async () => {
           </div>
         </div>
       </section>
-      
+
       <!-- Email Settings Card Skeleton -->
       <section class="card">
         <div class="flex items-center gap-3 mb-5">
@@ -277,7 +358,7 @@ const resetToDefaults = async () => {
           </div>
         </div>
       </section>
-      
+
       <!-- Actions Skeleton -->
       <div class="flex gap-3">
         <div class="skeleton-shimmer h-10 w-40 rounded-lg"></div>
@@ -338,20 +419,6 @@ const resetToDefaults = async () => {
         <h3 class="text-sm font-bold text-[rgb(var(--text))]">Server Settings</h3>
       </div>
       <div class="space-y-4">
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <UiInput v-model="form.server.host" label="Host" placeholder="127.0.0.1" :disabled="!canUpdateConfig" />
-            <p class="text-xs text-[rgb(var(--text-secondary))] mt-1.5">
-              Use <code class="font-mono">0.0.0.0</code> for network access
-            </p>
-          </div>
-          <div>
-            <UiInput v-model.number="form.server.port" label="Port" type="number" :disabled="!canUpdateConfig" />
-            <p class="text-xs text-[rgb(var(--text-secondary))] mt-1.5">
-              Auto-increments if port is in use
-            </p>
-          </div>
-        </div>
         <div>
           <UiInput v-model="form.publicUrl" label="Public URL" type="url" placeholder="https://your-ngrok-url.ngrok.io" :disabled="!canUpdateConfig" />
           <p class="text-xs text-[rgb(var(--text-secondary))] mt-1.5">
@@ -360,12 +427,12 @@ const resetToDefaults = async () => {
         </div>
         <div>
           <label class="block text-xs font-semibold text-[rgb(var(--text-secondary))] mb-1.5">Log Level</label>
-          <select v-model="form.logLevel" class="input" :disabled="!canUpdateConfig">
-            <option value="debug">Debug</option>
-            <option value="info">Info</option>
-            <option value="warn">Warn</option>
-            <option value="error">Error</option>
-          </select>
+          <div class="input bg-[rgb(var(--surface-elevated))] text-[rgb(var(--text-muted))]">
+            {{ (form.logLevel || 'info').toUpperCase() }}
+          </div>
+          <p class="text-xs text-[rgb(var(--text-secondary))] mt-1.5">
+            Update log level in <code class="font-mono">%APPDATA%\ziri\config.json</code> (Windows) or <code class="font-mono">~/.ziri/config.json</code>, then restart the proxy.
+          </p>
         </div>
       </div>
     </section>
@@ -393,76 +460,54 @@ const resetToDefaults = async () => {
             Enable Email Service
           </label>
         </div>
-        
+
         <div v-if="form.email.enabled" class="space-y-4 pl-6 border-l-2 border-[rgb(var(--border))]">
           <div>
             <label class="block text-xs font-semibold text-[rgb(var(--text-secondary))] mb-1.5">Provider</label>
             <select v-model="form.email.provider" class="input" :disabled="!canUpdateConfig">
-              <option value="manual">Manual (Log to Console)</option>
-              <option value="smtp">SMTP</option>
-              <option value="sendgrid">SendGrid</option>
-              <option value="mailgun">Mailgun</option>
-              <option value="ses">AWS SES</option>
+              <option v-if="!emailProviders.length" value="manual">Manual (Log to Console)</option>
+              <option v-for="p in emailProviders" :key="p.id" :value="p.id">
+                {{ p.label }}
+              </option>
             </select>
           </div>
 
-          <!-- SMTP Settings -->
-          <div v-if="form.email.provider === 'smtp'" class="space-y-3">
-            <div class="grid grid-cols-2 gap-4">
-              <UiInput v-model="form.email.smtp.host" label="SMTP Host" placeholder="smtp.gmail.com" :disabled="!canUpdateConfig" />
-              <UiInput v-model.number="form.email.smtp.port" label="SMTP Port" type="number" :disabled="!canUpdateConfig" />
-            </div>
-            <div class="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="smtpSecure"
-                v-model="form.email.smtp.secure"
-                class="w-4 h-4 rounded border-[rgb(var(--border))]"
+          <div v-if="emailProviders.length" class="space-y-3">
+            <div v-for="field in (emailProviders.find(p => p.id === form.email.provider)?.fields || [])" :key="field.key">
+              <UiInput
+                v-if="field.type === 'text' || field.type === 'password' || field.type === 'url' || field.type === 'number'"
+                v-model="currentProviderOptions[field.key]"
+                :label="field.label"
+                :type="field.type === 'password' ? 'password' : (field.type === 'number' ? 'number' : 'text')"
+                :placeholder="field.placeholder"
                 :disabled="!canUpdateConfig"
               />
-              <label for="smtpSecure" class="text-sm text-[rgb(var(--text-secondary))]">
-                Use TLS/SSL (for port 465 only)
-              </label>
-            </div>
-            <p class="text-xs text-[rgb(var(--text-secondary))]">
-              <strong>Note:</strong> Port 587 uses STARTTLS (leave unchecked). Port 465 uses SSL/TLS (check this box).
-            </p>
-            <div class="grid grid-cols-2 gap-4">
-              <UiInput v-model="form.email.smtp.auth.user" label="SMTP Username" :disabled="!canUpdateConfig" />
-              <UiInput v-model="form.email.smtp.auth.pass" label="SMTP Password" type="password" :disabled="!canUpdateConfig" />
-            </div>
-          </div>
-
-          <!-- SendGrid Settings -->
-          <div v-if="form.email.provider === 'sendgrid'" class="space-y-3">
-            <UiInput v-model="form.email.sendgrid.apiKey" label="SendGrid API Key" type="password" :disabled="!canUpdateConfig" />
-          </div>
-
-          <!-- Mailgun Settings -->
-          <div v-if="form.email.provider === 'mailgun'" class="space-y-3">
-            <UiInput v-model="form.email.mailgun.apiKey" label="Mailgun API Key" type="password" :disabled="!canUpdateConfig" />
-            <UiInput v-model="form.email.mailgun.domain" label="Sending Domain" placeholder="mg.example.com" :disabled="!canUpdateConfig" />
-            <div>
-              <UiInput v-model="form.email.mailgun.apiUrl" label="API URL (optional)" placeholder="https://api.mailgun.net" :disabled="!canUpdateConfig" />
-              <p class="text-xs text-[rgb(var(--text-secondary))] mt-1.5">
-                Leave empty for US region. Use <code class="font-mono">https://api.eu.mailgun.net</code> for EU region.
+              <div v-else-if="field.type === 'checkbox'" class="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  :id="`email-field-${field.key}`"
+                  v-model="currentProviderOptions[field.key]"
+                  class="w-4 h-4 rounded border-[rgb(var(--border))]"
+                  :disabled="!canUpdateConfig"
+                />
+                <label :for="`email-field-${field.key}`" class="text-sm text-[rgb(var(--text-secondary))]">
+                  {{ field.label }}
+                </label>
+              </div>
+              <p v-if="field.help" class="text-xs text-[rgb(var(--text-secondary))] mt-1.5">
+                {{ field.help }}
               </p>
             </div>
           </div>
 
-          <!-- AWS SES Settings -->
-          <div v-if="form.email.provider === 'ses'" class="space-y-3">
-            <UiInput v-model="form.email.ses.accessKeyId" label="Access Key ID" type="text" placeholder="AKIA..." :disabled="!canUpdateConfig" />
-            <UiInput v-model="form.email.ses.secretAccessKey" label="Secret Access Key" type="password" :disabled="!canUpdateConfig" />
-            <UiInput v-model="form.email.ses.region" label="Region" placeholder="us-east-1" :disabled="!canUpdateConfig" />
-            <p class="text-xs text-[rgb(var(--text-secondary))]">
-              The From address must be verified in AWS SES (e.g. via SES console or VerifyEmailIdentity).
-            </p>
-          </div>
-
-          <!-- From Address (SendGrid, Mailgun, and SES) -->
-          <div v-if="form.email.provider === 'sendgrid' || form.email.provider === 'mailgun' || form.email.provider === 'ses'">
-            <UiInput v-model="form.email.from" label="From Address" type="text" placeholder="noreply@example.com or Name &lt;noreply@example.com&gt;" :disabled="!canUpdateConfig" />
+          <div v-if="emailProviders.find(p => p.id === form.email.provider)?.fromRequired">
+            <UiInput
+              v-model="form.email.fromByProvider[form.email.provider]"
+              label="From Address"
+              type="text"
+              placeholder="noreply@example.com or Name &lt;noreply@example.com&gt;"
+              :disabled="!canUpdateConfig"
+            />
           </div>
         </div>
       </div>

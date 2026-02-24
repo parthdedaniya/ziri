@@ -41,7 +41,7 @@ export function useKeys() {
 
         const name = userEntity ? (userEntity.attrs as any).name || '' : ''
         const email = userEntity ? (userEntity.attrs as any).email || '' : ''
-        const group = userEntity ? (userEntity.attrs as any).group || '' : ''
+        const tenant = userEntity ? (userEntity.attrs as any).tenant || '' : ''
         const isAgent = userEntity ? (userEntity.attrs as any).is_agent || false : false
         const limitRequestsPerMinute = userEntity ? (userEntity.attrs as any).limit_requests_per_minute || 0 : 0
 
@@ -51,7 +51,7 @@ export function useKeys() {
             executionKey: (entity as any).executionKey || undefined,
             name: name,
             email: email,
-            group: group,
+            tenant: tenant,
             isAgent: isAgent,
             limitRequestsPerMinute: limitRequestsPerMinute,
             apiKey: apiKey,

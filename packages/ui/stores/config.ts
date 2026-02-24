@@ -185,15 +185,16 @@ export const useConfigStore = defineStore('config', {
         },
 
         async updateConfig(config: Partial<GatewayConfig>) {
- 
             this.$patch(config)
+            if (config.email) {
+                this.email = JSON.parse(JSON.stringify(config.email)) as typeof this.email
+            }
             await this.saveToStorage()
- 
             await new Promise(resolve => setTimeout(resolve, 50))
         },
 
         async resetToDefaults() {
- 
+
             this.$patch(defaultConfig)
             await this.saveToStorage()
         }

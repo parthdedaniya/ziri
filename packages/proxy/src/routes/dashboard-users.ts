@@ -583,4 +583,81 @@ router.post('/:userId/enable', async (req: AdminRequest, res: Response) => {
   }
 })
 
+router.post('/:userId/reset-password', async (req: AdminRequest, res: Response) => {
+  const actionStart = Date.now()
+  try {
+    const { userId } = req.params
+    const principalId = req.admin!.userId
+    if (principalId === userId) {
+      res.status(403).json({
+        error: 'You cannot reset your own password',
+        code: 'SELF_MODIFICATION_FORBIDDEN'
+      })
+      return
+    }
+    const target = await internalEntityStore.getEntity(userId)
+    if (!target) {
+      res.status(404).json({
+        error: 'Dashboard user not found',
+        code: 'USER_NOT_FOUND'
+      })
+      return
+    }
+    const targetRole = target.attrs.role
+    if (targetRole === 'admin' && principalId !== 'ziri') {
+      const principal = await internalEntityStore.getEntity(principalId)
+      if (!principal) {
+        res.status(403).json({
+          error: 'User entity not found',
+          code: 'ENTITY_NOT_FOUND'
+        })
+        return
+      }
+      const principalUid = `DashboardUser::"${principalId}"`
+      const authzResult = await internalAuthorizationService.authorize({
+        principal: principalUid,
+        action: 'Action::"reset_admin_dashboard_user_password"',
+        resourceType: 'dashboard_users',
+        context: {}
+      })
+      if (!authzResult.allowed) {
+        res.status(403).json({
+          error: 'Only ziri can reset an admin dashboard user\'s password',
+          code: 'ADMIN_ONLY_ACTION'
+        })
+        return
+      }
+    }
+    const result = await dashboardUserService.resetDashUserPw(userId)
+    if (result.emailSent) {
+      res.json({ message: SUCCESS_MESSAGES.DASH_USER_PW_RESET_SENT })
+    } else {
+      res.json({
+        password: result.password,
+        message: SUCCESS_MESSAGES.DASH_USER_PW_RESET_NOT_SENT
+      })
+    }
+    logInternalAction(req, {
+      action: 'reset_dashboard_user_password',
+      resourceType: 'dashboard_user',
+      resourceId: userId,
+      actionDurationMs: Date.now() - actionStart
+    })
+  } catch (error: any) {
+    console.error('[DASHBOARD USERS] Reset password error:', error)
+    if (error.message === 'Dashboard user not found' || error.message.includes('Cannot reset')) {
+      res.status(400).json({
+        error: error.message,
+        code: error.message.includes('ziri') ? 'CANNOT_RESET_ZIRI' : 'USER_NOT_FOUND'
+      })
+      return
+    }
+    res.status(500).json({
+      error: 'Failed to reset password',
+      code: 'RESET_ERROR',
+      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
+    })
+  }
+})
+
 export default router

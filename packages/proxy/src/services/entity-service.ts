@@ -20,7 +20,7 @@ export interface CreateEntityInput {
   userId: string
  
   role?: string
-  group?: string
+  tenant?: string
   securityClearance?: number
   trainingCompleted?: boolean
   yearsOfService?: number
@@ -72,7 +72,7 @@ export async function createEntityInBackend(input: CreateEntityInput): Promise<v
       name: user.name,
       email: user.email,
       role: input.role || '',
-      group: input.group || '',
+      tenant: input.tenant || '',
       security_clearance: input.securityClearance || 2,
       training_completed: input.trainingCompleted ?? false,
       years_of_service: toDecimalOne(input.yearsOfService || 0),

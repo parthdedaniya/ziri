@@ -58,6 +58,7 @@ const routeActionMap: Record<string, { action: string; resourceType: string }> =
   'DELETE:/api/dashboard-users/:userId': { action: 'delete_dashboard_user', resourceType: 'dashboard_users' },
   'POST:/api/dashboard-users/:userId/disable': { action: 'update_dashboard_user', resourceType: 'dashboard_users' },
   'POST:/api/dashboard-users/:userId/enable': { action: 'update_dashboard_user', resourceType: 'dashboard_users' },
+  'POST:/api/dashboard-users/:userId/reset-password': { action: 'reset_dashboard_user_password', resourceType: 'dashboard_users' },
 
   'GET:/api/internal-audit-logs': { action: 'view_internal_audit', resourceType: 'audit' }
 }

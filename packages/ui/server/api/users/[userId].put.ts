@@ -8,7 +8,6 @@ export default defineEventHandler(async (event) => {
     method: 'PUT',
     body,
     authMode: 'passthrough',
-    authHeaderSource: 'root-key-only',
-    authRequiredMessage: 'Master key required'
+    authRequiredMessage: 'Authentication required'
   })
 })

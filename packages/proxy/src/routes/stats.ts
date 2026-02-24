@@ -12,16 +12,38 @@ router.use(requireAdmin)
 router.get('/overview', (req: Request, res: Response) => {
   try {
     const db = getDatabase()
-    
- 
-    const totalRequests = db.prepare('SELECT COUNT(*) as count FROM audit_logs').get() as { count: number }
-    
- 
-    const permitCount = db.prepare('SELECT COUNT(*) as count FROM audit_logs WHERE decision = ?').get('permit') as { count: number }
-    const forbidCount = db.prepare('SELECT COUNT(*) as count FROM audit_logs WHERE decision = ?').get('forbid') as { count: number }
-    
- 
-    const totalCost = db.prepare('SELECT SUM(total_cost) as sum FROM cost_tracking').get() as { sum: number | null }
+
+    const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined
+    const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined
+
+    const auditWhereParts = ['1=1']
+    const auditArgs: any[] = []
+    if (startDate) {
+      auditWhereParts.push('request_timestamp >= ?')
+      auditArgs.push(startDate)
+    }
+    if (endDate) {
+      auditWhereParts.push('request_timestamp <= ?')
+      auditArgs.push(endDate)
+    }
+    const auditWhere = auditWhereParts.join(' AND ')
+
+    const costWhereParts = ['1=1']
+    const costArgs: any[] = []
+    if (startDate) {
+      costWhereParts.push('request_timestamp >= ?')
+      costArgs.push(startDate)
+    }
+    if (endDate) {
+      costWhereParts.push('request_timestamp <= ?')
+      costArgs.push(endDate)
+    }
+    const costWhere = costWhereParts.join(' AND ')
+
+    const totalRequests = db.prepare(`SELECT COUNT(*) as count FROM audit_logs WHERE ${auditWhere}`).get(...auditArgs) as { count: number }
+    const permitCount = db.prepare(`SELECT COUNT(*) as count FROM audit_logs WHERE ${auditWhere} AND decision = ?`).get(...auditArgs, 'permit') as { count: number }
+    const forbidCount = db.prepare(`SELECT COUNT(*) as count FROM audit_logs WHERE ${auditWhere} AND decision = ?`).get(...auditArgs, 'forbid') as { count: number }
+    const totalCost = db.prepare(`SELECT SUM(total_cost) as sum FROM cost_tracking WHERE ${costWhere}`).get(...costArgs) as { sum: number | null }
     
     res.json({
       totalRequests: totalRequests.count || 0,

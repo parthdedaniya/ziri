@@ -5,7 +5,6 @@ export default defineEventHandler((event) => {
   return proxyJsonRequest(event, {
     path: `/api/users/${userId}`,
     authMode: 'passthrough',
-    authHeaderSource: 'root-key-only',
-    authRequiredMessage: 'Root key required'
+    authRequiredMessage: 'Authentication required'
   })
 })

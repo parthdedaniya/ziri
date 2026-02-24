@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS auth (
   email_hash TEXT NOT NULL,
   name TEXT,
   password TEXT NOT NULL,
-  "group" TEXT,
+  tenant TEXT,
   is_agent INTEGER NOT NULL DEFAULT 0,
   status INTEGER NOT NULL DEFAULT 1 CHECK (status IN (0, 1, 2)),
   last_sign_in TEXT,

@@ -7,7 +7,7 @@ import { useAdminAuth } from '~/composables/useAdminAuth'
 import { useInternalAuth } from '~/composables/useInternalAuth'
 import { useApiError } from '~/composables/useApiError'
 
-const { users, loading, loadUsers, createUser, updateUser, deleteUser, disableUser, enableUser } = useDashboardUsers()
+const { users, loading, loadUsers, createUser, updateUser, deleteUser, disableUser, enableUser, resetPw } = useDashboardUsers()
 const toast = useToast()
 const { user: currentUser } = useAdminAuth()
 const { checkAction, checkActions } = useInternalAuth()
@@ -18,6 +18,7 @@ const permissionsLoading = ref(true)
 const canCreateAdmin = ref(false)
 const canUpdateAdmin = ref(false)
 const canDeleteAdmin = ref(false)
+const canResetPw = ref(false)
 const isZiri = computed(() => currentUser.value?.userId === 'ziri')
 
 const tableColumns = [
@@ -27,21 +28,24 @@ const tableColumns = [
   { key: 'role', header: 'Role' },
   { key: 'status', header: 'Status' },
   { key: 'lastSignIn', header: 'Last Sign In', sortable: true },
-  { key: 'actions', header: '', class: 'w-40' }
+  { key: 'actions', header: '', class: 'w-48' }
 ]
 
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
 const showPasswordModal = ref(false)
 const showDeleteModal = ref(false)
+const showResetModal = ref(false)
 const generatedPassword = ref('')
 const selectedUser = ref<DashboardUser | null>(null)
 const userToDelete = ref<DashboardUser | null>(null)
+const userToReset = ref<DashboardUser | null>(null)
 
 const isCreatingUser = ref(false)
 const isUpdatingUser = ref(false)
 const isDeletingUser = ref(false)
 const isTogglingStatus = ref(false)
+const resettingPw = ref(false)
 
 const newUser = reactive<CreateDashboardUserInput>({
   email: '',
@@ -100,12 +104,14 @@ onMounted(async () => {
     const permissions = await checkActions([
       { action: 'create_admin_dashboard_user', resourceType: 'dashboard_users' },
       { action: 'update_admin_dashboard_user', resourceType: 'dashboard_users' },
-      { action: 'delete_admin_dashboard_user', resourceType: 'dashboard_users' }
+      { action: 'delete_admin_dashboard_user', resourceType: 'dashboard_users' },
+      { action: 'reset_dashboard_user_password', resourceType: 'dashboard_users' }
     ])
     
     canCreateAdmin.value = permissions.results.find(r => r.action === 'create_admin_dashboard_user')?.allowed || false
     canUpdateAdmin.value = permissions.results.find(r => r.action === 'update_admin_dashboard_user')?.allowed || false
     canDeleteAdmin.value = permissions.results.find(r => r.action === 'delete_admin_dashboard_user')?.allowed || false
+    canResetPw.value = permissions.results.find(r => r.action === 'reset_dashboard_user_password')?.allowed || false
   } finally {
     permissionsLoading.value = false
   }
@@ -275,6 +281,45 @@ const handleToggleStatus = async (user: DashboardUser) => {
 const copyPassword = () => {
   navigator.clipboard.writeText(generatedPassword.value)
   toast.success('Password copied to clipboard')
+}
+
+const confirmResetPw = async (user: DashboardUser) => {
+  if (user.role === 'admin') {
+    const check = await checkAction('reset_admin_dashboard_user_password', 'dashboard_users')
+    if (!check.allowed) {
+      toast.error('Only ziri can reset an admin\'s password')
+      return
+    }
+  } else {
+    const check = await checkAction('reset_dashboard_user_password', 'dashboard_users')
+    if (!check.allowed) {
+      toast.error('You do not have permission to reset dashboard user passwords')
+      return
+    }
+  }
+  userToReset.value = user
+  showResetModal.value = true
+}
+
+const handleResetPw = async () => {
+  if (!userToReset.value || resettingPw.value) return
+  try {
+    resettingPw.value = true
+    const result = await resetPw(userToReset.value.userId)
+    showResetModal.value = false
+    if (result.password) {
+      generatedPassword.value = result.password
+      showPasswordModal.value = true
+      toast.warning('Email was not sent. Please save the password below.')
+    } else {
+      toast.success('Password reset. New password sent to user\'s email.')
+    }
+    userToReset.value = null
+  } catch (e: any) {
+    toast.error(getUserMessage(e))
+  } finally {
+    resettingPw.value = false
+  }
 }
 
 const getRoleBadgeColor = (role: string) => {
@@ -472,6 +517,19 @@ const getRoleBadgeColor = (role: string) => {
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
             </svg>
           </UiButton>
+          <UiButton
+            v-if="currentUser?.userId !== row.userId && row.userId !== 'ziri' && ((row.role !== 'admin' && canResetPw) || (row.role === 'admin' && isZiri))"
+            variant="ghost"
+            size="sm"
+            @click="confirmResetPw(row)"
+            :loading="resettingPw && userToReset?.userId === row.userId"
+            title="Reset Password"
+            class="text-amber-500 hover:text-amber-600"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+            </svg>
+          </UiButton>
           <!-- Disable/Enable button: Hide for admin users if not ziri, hide for self -->
           <UiButton
             v-if="currentUser?.userId !== row.userId && (row.role !== 'admin' || canUpdateAdmin)"
@@ -644,6 +702,30 @@ const getRoleBadgeColor = (role: string) => {
             :loading="isDeletingUser"
           >
             Delete User
+          </UiButton>
+        </div>
+      </div>
+    </UiModal>
+
+    <!-- Reset Password Modal -->
+    <UiModal v-model="showResetModal" title="Reset Password">
+      <div class="space-y-4">
+        <p class="text-[rgb(var(--text))]">
+          Reset password for <strong>{{ userToReset?.name }}</strong>? A new password will be sent to their email if configured, otherwise shown here.
+        </p>
+        <div v-if="userToReset" class="text-sm text-[rgb(var(--text-secondary))]">
+          <span class="font-medium">Email:</span> {{ userToReset.email }}
+        </div>
+        <div class="flex gap-3 justify-end">
+          <UiButton variant="ghost" @click="showResetModal = false; userToReset = null">
+            Cancel
+          </UiButton>
+          <UiButton
+            :loading="resettingPw"
+            class="bg-amber-500 hover:bg-amber-600 text-white"
+            @click="handleResetPw"
+          >
+            Reset Password
           </UiButton>
         </div>
       </div>

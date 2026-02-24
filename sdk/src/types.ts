@@ -24,7 +24,7 @@ export interface EntityAttrs {
   name: string
   email: string
   role: string
-  group: string
+  tenant: string
   security_clearance: number
   training_completed: boolean
   years_of_service: CedarDecimal
@@ -51,7 +51,7 @@ export interface Key {
   name: string
   email: string
   role: string
-  group: string
+  tenant: string
   apiKey: string
   currentDailySpend: number
   dailySpendLimit: number
@@ -67,7 +67,7 @@ export interface CreateKeyInput {
   name: string
   email: string
   role: string
-  group: string
+  tenant: string
   dailySpendLimit: number
   monthlySpendLimit: number
 }

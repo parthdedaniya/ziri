@@ -167,7 +167,7 @@ export async function initializeAdminUser(): Promise<void> {
   
   if (!adminUser) {
     db.prepare(`
-      INSERT INTO auth (id, email, email_hash, name, password, "group", is_agent, status, role)
+      INSERT INTO auth (id, email, email_hash, name, password, tenant, is_agent, status, role)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       adminId,
