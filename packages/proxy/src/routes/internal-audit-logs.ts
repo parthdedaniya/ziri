@@ -46,13 +46,8 @@ router.get('/', (req: Request, res: Response) => {
       total: result.total
     })
   } catch (error: any) {
-    const actionDurationMs = Date.now() - actionStartTime
-    console.error('[INTERNAL AUDIT] Query error:', error)
-    
-    res.status(500).json({
-      error: 'Failed to query internal audit logs',
-      code: 'INTERNAL_AUDIT_QUERY_ERROR'
-    })
+    console.error('internal audit query failed:', error)
+    res.status(500).json({ error: 'Failed to query audit logs' })
   }
 })
 

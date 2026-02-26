@@ -91,7 +91,7 @@ export function decrypt(encryptedValue: string): string {
   } catch (error: any) {
  
  
-    console.warn('[ENCRYPTION] Failed to decrypt value, treating as plain text:', error.message)
+    console.warn('failed to decrypt value, treating as plain text:', error.message)
     return encryptedValue
   }
 }

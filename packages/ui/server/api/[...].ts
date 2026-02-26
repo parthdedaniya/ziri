@@ -13,6 +13,7 @@ export default defineEventHandler(async (event) => {
 
   const forwardHeaders = [
     'authorization',
+    'x-api-key',
     'x-root-key',
     'x-project-id',
     'x-op-id',

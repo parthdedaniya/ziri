@@ -43,7 +43,7 @@ router.post('/check', requireAdmin, async (req: AdminRequest, res: Response) => 
       reason: result.reason
     })
   } catch (error: any) {
-    console.error('[AUTHZ] Authorization check error:', error)
+    console.error('authorization check failed:', error)
     res.status(500).json({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR',
@@ -98,7 +98,7 @@ router.post('/check-batch', requireAdmin, async (req: AdminRequest, res: Respons
       results
     })
   } catch (error: any) {
-    console.error('[AUTHZ] Batch authorization check error:', error)
+    console.error('batch authorization check failed:', error)
     res.status(500).json({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR',

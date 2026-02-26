@@ -157,14 +157,28 @@ const getStatusBadgeClass = (decision: string) => {
   }
 }
 
+const getPoliciesArray = (val: unknown): string[] => {
+  if (Array.isArray(val)) return val.filter((p): p is string => typeof p === 'string')
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val)
+      return Array.isArray(parsed) ? parsed.filter((p: unknown): p is string => typeof p === 'string') : []
+    } catch {
+      return val ? [val] : []
+    }
+  }
+  return []
+}
+
 const columns = [
-  { key: 'request_timestamp', header: 'Time', class: 'w-40', sortable: true },
-  { key: 'auth_id', header: 'User', class: 'w-32', sortable: true },
-  { key: 'model', header: 'Model', class: 'w-36', sortable: true },
-  { key: 'decision', header: 'Decision', class: 'w-24', sortable: true },
-  { key: 'auth_duration_ms', header: 'Duration', class: 'w-28', sortable: true },
-  { key: 'provider', header: 'Provider', class: 'w-24', sortable: true },
-  { key: 'spend', header: 'Cost', class: 'w-28', sortable: true }
+  { key: 'request_timestamp', header: 'Time', class: '', sortable: true },
+  { key: 'auth_id', header: 'User', class: '', sortable: true },
+  { key: 'model', header: 'Model', class: '', sortable: true },
+  { key: 'decision', header: 'Decision', class: '', sortable: true },
+  { key: 'policies_evaluated', header: 'Policies', class: '', sortable: false },
+  { key: 'auth_duration_ms', header: 'Duration', class: '', sortable: true },
+  { key: 'provider', header: 'Provider', class: '', sortable: true },
+  { key: 'spend', header: 'Cost', class: '', sortable: true }
 ]
 
 onMounted(() => {
@@ -275,6 +289,21 @@ onMounted(() => {
         <span :class="[getStatusBadgeClass(row.decision), 'badge']">
           {{ row.decision === 'permit' ? 'Permit' : 'Forbid' }}
         </span>
+      </template>
+
+      <template #policies_evaluated="{ row }">
+        <div class="flex flex-wrap gap-1">
+          <template v-if="getPoliciesArray(row.policies_evaluated).length">
+            <span
+              v-for="policy in getPoliciesArray(row.policies_evaluated)"
+              :key="policy"
+              class="badge badge-neutral text-xs"
+            >
+              {{ policy }}
+            </span>
+          </template>
+          <span v-else class="text-sm text-[rgb(var(--text-muted))]">-</span>
+        </div>
       </template>
 
       <template #auth_duration_ms="{ value }">

@@ -64,7 +64,7 @@ export function useUserAuth() {
 
   const logout = async () => {
     userAuthStore.clearAuth()
-    toast.info('Logged out successfully')
+    toast.info('Signed out')
     
  
     if (process.client) {

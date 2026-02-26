@@ -20,7 +20,7 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
   const provider = getEmailProvider(providerId)
 
   if (!provider) {
-    console.warn(`[EMAIL] Unknown provider "${providerId}", treating as manual`)
+    console.warn(`unknown email provider "${providerId}", treating as manual`)
     return true
   }
 
@@ -63,7 +63,7 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
   try {
     return await provider.send(options, cfg, from)
   } catch (error: any) {
-    console.error('[EMAIL] Failed to send email:', error)
+    console.error('email send failed:', error)
     return false
   }
 }

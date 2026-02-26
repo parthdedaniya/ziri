@@ -15,7 +15,8 @@ import { enforceUserRateLimit, runLlmPreflight } from './shared/llm-preflight.js
 import {
   buildAuthorizationContext,
   releaseAfterProviderFailure,
-  safeCatchReleaseReserved
+  releaseReservedSpendOrLog,
+  releaseQueueSlotOrLog
 } from './shared/llm-route-helpers.js'
 import { mapStandardLlmRouteError } from './shared/llm-error-mapping.js'
 
@@ -73,6 +74,7 @@ router.post('/', async (req: Request, res: Response) => {
         undefined
       )
     } catch (error: any) {
+      console.warn('failed to estimate embeddings cost:', error.message)
       costEstimate = {
         estimatedInputTokens: 0,
         estimatedOutputTokens: 0,
@@ -112,7 +114,7 @@ router.post('/', async (req: Request, res: Response) => {
     const spendResetResult = await spendResetService.checkAndResetSpend(userKeyEntity as any)
     const activeEntity = spendResetResult.updatedEntity || userKeyEntity
 
-    const reservation = await spendReservationService.reserveEstimatedSpend(
+    await spendReservationService.reserveEstimatedSpend(
       activeEntity as any,
       userKeyId,
       costEstimate.estimatedCost
@@ -182,12 +184,21 @@ router.post('/', async (req: Request, res: Response) => {
     })
 
     if (authResult.decision !== 'Allow') {
-      if (costReserved && userKeyId) {
-        await spendReservationService.releaseReservedSpend(userKeyId, reservedAmount)
-        costReserved = false
-      }
-      if (slotAcquired) {
-        queueManagerService.releaseSlot(userKeyId, requestId)
+      await releaseReservedSpendOrLog({
+        requestId,
+        userKeyId,
+        amount: reservedAmount,
+        spendReservationService,
+        reason: 'authorization denied'
+      })
+      costReserved = false
+      if (slotAcquired && userKeyId && requestId) {
+        releaseQueueSlotOrLog({
+          requestId,
+          userKeyId,
+          queueManagerService,
+          reason: 'authorization denied'
+        })
         slotAcquired = false
       }
       res.status(403).json({
@@ -269,8 +280,13 @@ router.post('/', async (req: Request, res: Response) => {
       0
     )
 
-    if (slotAcquired) {
-      queueManagerService.releaseSlot(userKeyId, requestId)
+    if (slotAcquired && userKeyId && requestId) {
+      releaseQueueSlotOrLog({
+        requestId,
+        userKeyId,
+        queueManagerService,
+        reason: 'response sent'
+      })
       slotAcquired = false
     }
 
@@ -282,8 +298,8 @@ router.post('/', async (req: Request, res: Response) => {
           estimated: costEstimate?.estimatedCost || 0,
           actual: costCalc.totalCost,
           inputTokens: usage.inputTokens,
-          outputTokens: 0,
-          cachedTokens: 0,
+          outputTokens: usage.outputTokens,
+          cachedTokens: usage.cachedTokens,
           totalCost: costCalc.totalCost,
           estimation: costEstimate ? {
             estimatedInputTokens: costEstimate.estimatedInputTokens,
@@ -299,24 +315,30 @@ router.post('/', async (req: Request, res: Response) => {
       },
     })
   } catch (error: any) {
-    await safeCatchReleaseReserved({
-      requestId,
-      userKeyId,
-      costReserved,
-      reservedAmount,
-      spendReservationService
-    })
+    if (costReserved) {
+      await releaseReservedSpendOrLog({
+        requestId,
+        userKeyId,
+        amount: reservedAmount,
+        spendReservationService,
+        reason: 'route error'
+      })
+      costReserved = false
+    }
     if (requestId && slotAcquired) {
-      try {
-        const uid = userKeyId || await keyService.getUserKeyIdForUser(extractUserIdFromApiKey(req.headers['x-api-key'] as string) || '')
-        if (uid) {
-          queueManagerService.releaseSlot(uid, requestId)
-        }
-      } catch {
+      const resolvedKeyId = await resolveUserKeyId(userKeyId, req)
+      if (resolvedKeyId) {
+        releaseQueueSlotOrLog({
+          requestId,
+          userKeyId: resolvedKeyId,
+          queueManagerService,
+          reason: 'route error'
+        })
+        slotAcquired = false
       }
     }
 
-    console.error('[EMBEDDINGS] Error:', error)
+    console.error('embeddings error:', error)
 
     if (requestId && auditLogId) {
       try {
@@ -345,3 +367,17 @@ router.post('/', async (req: Request, res: Response) => {
 
 export default router
 
+async function resolveUserKeyId(existingId: string | null, req: Request): Promise<string | null> {
+  if (existingId) {
+    return existingId
+  }
+  try {
+    const headerKey = req.headers['x-api-key'] as string | undefined
+    const fallbackUserId = headerKey ? extractUserIdFromApiKey(headerKey) : null
+    if (!fallbackUserId) return null
+    return await keyService.getUserKeyIdForUser(fallbackUserId)
+  } catch (error) {
+    console.warn('failed to resolve user key id for embeddings cleanup:', (error as Error).message)
+    return null
+  }
+}

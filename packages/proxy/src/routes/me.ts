@@ -1,269 +1,153 @@
-import { Router, type Request, type Response } from 'express'
+import { Router, type Response } from 'express'
 import { requireAuth, type AuthenticatedRequest } from '../middleware/jwt-auth.js'
 import { getDatabase } from '../db/index.js'
 import { decrypt } from '../utils/encryption.js'
 import { serviceFactory } from '../services/service-factory.js'
 import * as keyService from '../services/key-service.js'
-import { SUCCESS_MESSAGES } from '../utils/success-messages.js'
+import { wrap } from '../utils/route.js'
 
 const router: Router = Router()
 
-const parseDecimal = (value: any): number => {
+function parseDecimal(value: any): number {
   if (typeof value === 'number') return value
   if (typeof value === 'string') return parseFloat(value) || 0
-  if (value && typeof value === 'object' && value.__extn && value.__extn.fn === 'decimal') {
-    return parseFloat(value.__extn.arg) || 0
-  }
+  if (value?.__extn?.fn === 'decimal') return parseFloat(value.__extn.arg) || 0
   return 0
 }
 
- 
+function findUserKey(entities: any[], userId: string) {
+  return entities.find(e =>
+    e.uid.type === 'UserKey' &&
+    (e.attrs as any).user?.__entity?.id === userId
+  )
+}
+
 router.use(requireAuth)
 
- 
 router.get('/', (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const db = getDatabase()
-    const user = db.prepare('SELECT * FROM auth WHERE id = ?').get(req.userId) as any
-    
-    if (!user) {
-      res.status(404).json({
-        error: 'User not found',
-        code: 'USER_NOT_FOUND'
-      })
-      return
-    }
-    
- 
-    let decryptedEmail: string
-    try {
-      decryptedEmail = decrypt(user.email)
-    } catch (error: any) {
-      decryptedEmail = user.email
-    }
-    
-    res.json({
-      userId: user.id,
-      email: decryptedEmail,
-      name: user.name || '',
-      role: user.id === 'ziri' ? 'admin' : 'user',
-      status: user.status,
-      createdAt: user.created_at,
-      updatedAt: user.updated_at,
-      lastLogin: user.last_sign_in || null
-    })
-  } catch (error: any) {
-    console.error('[ME] Get user error:', error)
-    res.status(500).json({
-      error: 'Failed to get user info',
-      code: 'GET_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
+  const db = getDatabase()
+  const user = db.prepare('SELECT * FROM auth WHERE id = ?').get(req.userId) as any
+
+  if (!user) {
+    res.status(404).json({ error: 'User not found' })
+    return
   }
+
+  let email: string
+  try { email = decrypt(user.email) } catch { email = user.email }
+
+  res.json({
+    userId: user.id,
+    email,
+    name: user.name || '',
+    role: user.id === 'ziri' ? 'admin' : 'user',
+    status: user.status,
+    createdAt: user.created_at,
+    updatedAt: user.updated_at,
+    lastLogin: user.last_sign_in || null
+  })
 })
 
- 
-router.get('/keys', async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const userId = req.userId
-    if (!userId) {
-      res.status(401).json({
-        error: 'User ID not found in token',
-        code: 'INVALID_TOKEN'
-      })
-      return
-    }
-    
-    const entityStore = serviceFactory.getEntityStore()
-    const allEntitiesResult = await entityStore.getEntities()
-    const allEntities = allEntitiesResult.data
-    
-    const userKeyEntity = allEntities.find(e =>
-      e.uid.type === 'UserKey' &&
-      (e.attrs as any).user &&
-      (e.attrs as any).user.__entity &&
-      (e.attrs as any).user.__entity.id === userId
-    )
-    
-    if (!userKeyEntity) {
-      res.json({
-        data: []
-      })
-      return
-    }
-    
-    const db = getDatabase()
-    const dbKey = db.prepare(`
-      SELECT key_value FROM user_agent_keys
-      WHERE auth_id = ? AND status IN ('active', 'disabled')
-      ORDER BY created_at DESC LIMIT 1
-    `).get(userId) as { key_value: string } | undefined
+router.get('/keys', wrap(async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.userId
+  if (!userId) { res.status(401).json({ error: 'Missing user ID in token' }); return }
 
-    const keySuffix = dbKey && dbKey.key_value && dbKey.key_value.length <= 5
-      ? dbKey.key_value
-      : (dbKey ? '-----' : null)
+  const allEntities = (await serviceFactory.getEntityStore().getEntities()).data
+  const userKey = findUserKey(allEntities, userId)
 
-    const attrs = userKeyEntity.attrs || {}
-
-    res.json({
-      data: [{
-        ...userKeyEntity,
-        apiKey: null,
-        keySuffix,
-
-        currentDailySpend: parseDecimal(attrs.current_daily_spend),
-        currentMonthlySpend: parseDecimal(attrs.current_monthly_spend),
-        lastDailyReset: attrs.last_daily_reset || '',
-        lastMonthlyReset: attrs.last_monthly_reset || ''
-      }]
-    })
-  } catch (error: any) {
-    console.error('[ME] Get keys error:', error)
-    res.status(500).json({
-      error: 'Failed to get user keys',
-      code: 'GET_KEYS_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
+  if (!userKey) {
+    res.json({ data: [] })
+    return
   }
-})
 
- 
-router.get('/usage', async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const userId = req.userId
-    if (!userId) {
-      res.status(401).json({
-        error: 'User ID not found in token',
-        code: 'INVALID_TOKEN'
-      })
-      return
-    }
-    
-    const db = getDatabase()
-    
-    const entityStore = serviceFactory.getEntityStore()
-    const allEntitiesResult = await entityStore.getEntities()
-    const allEntities = allEntitiesResult.data
-    
-    const userKeyEntity = allEntities.find(e =>
-      e.uid.type === 'UserKey' &&
-      (e.attrs as any).user &&
-      (e.attrs as any).user.__entity &&
-      (e.attrs as any).user.__entity.id === userId
-    )
-    
-    if (!userKeyEntity) {
-      res.json({
-        currentDailySpend: 0,
-        dailySpendLimit: 0,
-        currentMonthlySpend: 0,
-        monthlySpendLimit: 0,
-        totalRequests: 0,
-        totalTokens: 0,
-        lastDailyReset: '',
-        lastMonthlyReset: ''
-      })
-      return
-    }
-    
-    const attrs = userKeyEntity.attrs || {}
-    
+  const db = getDatabase()
+  const dbKey = db.prepare(
+    `SELECT key_value FROM user_agent_keys WHERE auth_id = ? AND status IN ('active','disabled') ORDER BY created_at DESC LIMIT 1`
+  ).get(userId) as { key_value: string } | undefined
 
-    const userKeys = db.prepare('SELECT id FROM user_agent_keys WHERE auth_id = ?').all(userId) as Array<{ id: string }>
-    const executionKeys = userKeys.map(k => k.id)
-    
+  const kv = dbKey?.key_value
+  const keySuffix = kv && kv.length <= 5 ? kv : (dbKey ? '-----' : null)
+  const attrs = userKey.attrs || {}
 
-    let totalRequests = 0
-    if (executionKeys.length > 0) {
-      const placeholders = executionKeys.map(() => '?').join(',')
-      const requestsResult = db.prepare(`
-        SELECT COUNT(*) as count 
-        FROM audit_logs 
-        WHERE auth_id = ? AND decision = 'permit'
-      `).get(userId) as { count: number } | undefined
-      totalRequests = requestsResult?.count || 0
-    }
-    
-
-    let totalTokens = 0
-    if (executionKeys.length > 0) {
-      const placeholders = executionKeys.map(() => '?').join(',')
-      try {
-        const tokensResult = db.prepare(`
-          SELECT COALESCE(SUM(total_tokens), 0) as sum 
-          FROM cost_tracking 
-          WHERE execution_key IN (${placeholders})
-        `).get(...executionKeys) as { sum: number | null } | undefined
-        totalTokens = tokensResult?.sum || 0
-      } catch (error: any) {
-
-        console.warn('[ME] Failed to get total tokens:', error.message)
-      }
-    }
-    
-    res.json({
+  res.json({
+    data: [{
+      ...userKey,
+      apiKey: null,
+      keySuffix,
       currentDailySpend: parseDecimal(attrs.current_daily_spend),
-      dailySpendLimit: 0,
       currentMonthlySpend: parseDecimal(attrs.current_monthly_spend),
-      monthlySpendLimit: 0,
-      totalRequests,
-      totalTokens,
       lastDailyReset: attrs.last_daily_reset || '',
       lastMonthlyReset: attrs.last_monthly_reset || ''
-    })
-  } catch (error: any) {
-    console.error('[ME] Get usage error:', error)
-    res.status(500).json({
-      error: 'Failed to get usage stats',
-      code: 'GET_USAGE_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
-  }
-})
+    }]
+  })
+}))
 
-router.post('/rotate', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/usage', wrap(async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.userId
+  if (!userId) { res.status(401).json({ error: 'Missing user ID in token' }); return }
+
+  const db = getDatabase()
+  const allEntities = (await serviceFactory.getEntityStore().getEntities()).data
+  const userKey = findUserKey(allEntities, userId)
+
+  if (!userKey) {
+    res.json({
+      currentDailySpend: 0, dailySpendLimit: 0,
+      currentMonthlySpend: 0, monthlySpendLimit: 0,
+      totalRequests: 0, totalTokens: 0,
+      lastDailyReset: '', lastMonthlyReset: ''
+    })
+    return
+  }
+
+  const attrs = userKey.attrs || {}
+  const execKeys = (db.prepare('SELECT id FROM user_agent_keys WHERE auth_id = ?').all(userId) as { id: string }[]).map(k => k.id)
+
+  let totalRequests = 0
+  let totalTokens = 0
+
+  if (execKeys.length) {
+    totalRequests = (db.prepare(`SELECT COUNT(*) as n FROM audit_logs WHERE auth_id = ? AND decision = 'permit'`).get(userId) as any)?.n || 0
+    try {
+      const ph = execKeys.map(() => '?').join(',')
+      totalTokens = (db.prepare(`SELECT COALESCE(SUM(total_tokens),0) as n FROM cost_tracking WHERE execution_key IN (${ph})`).get(...execKeys) as any)?.n || 0
+    } catch { /* cost_tracking might not exist yet */ }
+  }
+
+  res.json({
+    currentDailySpend: parseDecimal(attrs.current_daily_spend),
+    dailySpendLimit: 0,
+    currentMonthlySpend: parseDecimal(attrs.current_monthly_spend),
+    monthlySpendLimit: 0,
+    totalRequests,
+    totalTokens,
+    lastDailyReset: attrs.last_daily_reset || '',
+    lastMonthlyReset: attrs.last_monthly_reset || ''
+  })
+}))
+
+router.post('/rotate', wrap(async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.userId
+  if (!userId) { res.status(401).json({ error: 'Missing user ID in token' }); return }
+
   try {
-    const userId = req.userId
-    if (!userId) {
-      res.status(401).json({
-        error: 'User ID not found in token',
-        code: 'INVALID_TOKEN'
-      })
-      return
-    }
-    
     const result = await keyService.rotateKey(userId)
-    
     res.json({
       apiKey: result.apiKey,
       userId: result.userId,
-      message: SUCCESS_MESSAGES.API_KEY_ROTATED
+      message: 'Key rotated. Save the new key — you won\'t see it again.'
     })
-  } catch (error: any) {
-    console.error('[ME] Rotate key error:', error)
-    
-    if (error.message === 'User not found') {
-      res.status(404).json({
-        error: error.message,
-        code: 'USER_NOT_FOUND'
-      })
+  } catch (err: any) {
+    if (err.message === 'User not found') {
+      res.status(404).json({ error: err.message })
       return
     }
-    
-    if (error.message.includes('UserKey entity not found')) {
-      res.status(404).json({
-        error: 'No API key found for your account. Please contact your administrator.',
-        code: 'KEY_NOT_FOUND'
-      })
+    if (err.message.includes('UserKey entity not found')) {
+      res.status(404).json({ error: 'No API key found for your account. Contact your admin.' })
       return
     }
-    
-    res.status(500).json({
-      error: 'Failed to rotate key',
-      code: 'ROTATE_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
+    throw err
   }
-})
+}))
 
 export default router

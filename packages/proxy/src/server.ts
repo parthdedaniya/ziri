@@ -20,92 +20,55 @@ const __dirname = dirname(__filename)
 let app: Express | null = null
 let server: any = null
 
+const API_ROUTES: [string, string][] = [
+  ['auth',               './routes/auth.js'],
+  ['authz',              './routes/authz.js'],
+  ['dashboard-users',    './routes/dashboard-users.js'],
+  ['config',             './routes/config.js'],
+  ['schema',             './routes/schema.js'],
+  ['policies',           './routes/policies.js'],
+  ['entities',           './routes/entities.js'],
+  ['roles',              './routes/roles.js'],
+  ['users',              './routes/users.js'],
+  ['keys',               './routes/keys.js'],
+  ['providers',          './routes/providers.js'],
+  ['chat',               './routes/chat.js'],
+  ['embeddings',         './routes/embeddings.js'],
+  ['images',             './routes/images.js'],
+  ['me',                 './routes/me.js'],
+  ['stats',              './routes/stats.js'],
+  ['audit',              './routes/audit.js'],
+  ['internal-audit-logs','./routes/internal-audit-logs.js'],
+  ['costs',              './routes/costs.js'],
+  ['events',             './routes/events.js'],
+  ['ai-policy',          './routes/ai-policy.js'],
+]
+
 export async function createServer(): Promise<Express> {
-  if (app) {
-    return app
-  }
+  if (app) return app
 
   app = express()
-
   app.use(cors())
   app.use(express.json())
   app.use(express.urlencoded({ extended: true }))
 
-  const healthHandler = async (req: any, res: any) => {
-    res.json({ 
-      status: 'ok', 
-      timestamp: new Date().toISOString(),
-      sessionId: getServerSessionId() || null
-    })
+  // health
+  const health = (_req: any, res: any) => res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    sessionId: getServerSessionId() || null
+  })
+  app.get('/health', health)
+  app.get('/api/health', health)
+
+  // mount all API routes
+  for (const [name, mod] of API_ROUTES) {
+    const router = (await import(mod)).default
+    app.use(`/api/${name}`, router)
   }
-  
-  app.get('/health', healthHandler)
-  app.get('/api/health', healthHandler)
 
-  const authRoutes = (await import('./routes/auth.js')).default
-  app.use('/api/auth', authRoutes)
-  
-  const authzRoutes = (await import('./routes/authz.js')).default
-  app.use('/api/authz', authzRoutes)
-  
-  const dashboardUserRoutes = (await import('./routes/dashboard-users.js')).default
-  app.use('/api/dashboard-users', dashboardUserRoutes)
-  
-  const configRoutes = (await import('./routes/config.js')).default
-  app.use('/api/config', configRoutes)
-  
-  const schemaRoutes = (await import('./routes/schema.js')).default
-  app.use('/api/schema', schemaRoutes)
-  
-  const policiesRoutes = (await import('./routes/policies.js')).default
-  app.use('/api/policies', policiesRoutes)
-  
-  const entitiesRoutes = (await import('./routes/entities.js')).default
-  app.use('/api/entities', entitiesRoutes)
-
-  const rolesRoutes = (await import('./routes/roles.js')).default
-  app.use('/api/roles', rolesRoutes)
-  
-  const userRoutes = (await import('./routes/users.js')).default
-  app.use('/api/users', userRoutes)
-  
-  const keyRoutes = (await import('./routes/keys.js')).default
-  app.use('/api/keys', keyRoutes)
-  
-  const providerRoutes = (await import('./routes/providers.js')).default
-  app.use('/api/providers', providerRoutes)
-  
-  const chatRoutes = (await import('./routes/chat.js')).default
-  app.use('/api/chat', chatRoutes)
-  
-  const embeddingsRoutes = (await import('./routes/embeddings.js')).default
-  app.use('/api/embeddings', embeddingsRoutes)
-  
-  const imagesRoutes = (await import('./routes/images.js')).default
-  app.use('/api/images', imagesRoutes)
-  
-  const meRoutes = (await import('./routes/me.js')).default
-  app.use('/api/me', meRoutes)
-  
-  const statsRoutes = (await import('./routes/stats.js')).default
-  app.use('/api/stats', statsRoutes)
-  
-  const auditRoutes = (await import('./routes/audit.js')).default
-  app.use('/api/audit', auditRoutes)
-  
-  const internalAuditLogsRoutes = (await import('./routes/internal-audit-logs.js')).default
-  app.use('/api/internal-audit-logs', internalAuditLogsRoutes)
-  
-  const costsRoutes = (await import('./routes/costs.js')).default
-  app.use('/api/costs', costsRoutes)
-
-  const eventsRoutes = (await import('./routes/events.js')).default
-  app.use('/api/events', eventsRoutes)
-
-  const aiPolicyRoutes = (await import('./routes/ai-policy.js')).default
-  app.use('/api/ai-policy', aiPolicyRoutes)
-
-  const possibleUiPaths = [
+  // serve the UI if a built copy exists
+  const uiCandidates = [
     path.resolve(__dirname, '../ui'),
     path.resolve(__dirname, './ui'),
     path.resolve(__dirname, '../../ui/.output/public'),
@@ -113,33 +76,21 @@ export async function createServer(): Promise<Express> {
     path.resolve(process.cwd(), 'packages/ui/.output/public'),
     path.resolve(process.cwd(), 'dist/ui'),
   ]
-  
-  let uiPath: string | null = null
-  for (const possiblePath of possibleUiPaths) {
-    if (existsSync(possiblePath)) {
-      uiPath = possiblePath
-      break
-    }
-  }
-  
+  const uiPath = uiCandidates.find(p => existsSync(p))
+
   if (uiPath) {
     app.use(express.static(uiPath))
-    
     app.get('*', (req, res, next) => {
-      if (req.path.startsWith('/api/')) {
-        return next()
-      }
-      res.sendFile(path.join(uiPath!, 'index.html'))
+      if (req.path.startsWith('/api/')) return next()
+      res.sendFile(path.join(uiPath, 'index.html'))
     })
-    
-    console.log(`[SERVER] UI served from: ${uiPath}`)
+    console.log(`UI served from ${uiPath}`)
   } else {
-    console.warn('[SERVER] UI not found. Build UI first: npm run build:ui')
+    console.warn('UI build not found. Run: npm run build:ui')
   }
 
   app.use(notFoundHandler)
   app.use(errorHandler)
-
   return app
 }
 
@@ -147,82 +98,53 @@ let initialized = false
 
 async function ensureInitialization() {
   if (initialized) return
-  
+
   initializeRootKey()
   initializeEncryptionKey()
   getDatabase()
   serviceFactory.initialize()
-  const sessionId = initializeServerSession()
-  console.log(`[PROXY] Server session initialized: ${sessionId}`)
-  
-  const { initializeAdminUser, initializeInternalAuth } = await import('./db/index.js')
-  await initializeAdminUser().catch((error) => {
-    console.warn('[PROXY] Failed to initialize admin user:', error)
-  })
-  
 
-  await initializeInternalAuth().catch((error) => {
-    console.error('[PROXY] Failed to initialize internal authorization:', error)
-    throw error 
+  const sessionId = initializeServerSession()
+  console.log(`session ${sessionId}`)
+
+  const { initializeAdminUser, initializeInternalAuth } = await import('./db/index.js')
+
+  await initializeAdminUser().catch(err => {
+    console.warn('could not init admin user:', err)
   })
-  
+
+  // internal authz is required — let it throw
+  await initializeInternalAuth()
+
   const config = loadConfig()
   if (config.mode === 'local') {
-    import('./db/seed.js').then(({ seedDefaults }) => {
-      seedDefaults().catch((error: any) => {
-        console.warn('[PROXY] Failed to seed default data:', error)
-      })
-    }).catch((error) => {
-      console.warn('[PROXY] Failed to load seed defaults:', error)
+    import('./db/seed.js').then(({ seedDefaults }) => seedDefaults()).catch(err => {
+      console.warn('seed failed:', err)
     })
   }
-  
+
   initialized = true
 }
 
-function createListener(app: Express, config: ReturnType<typeof loadConfig>) {
-  if (config.ssl?.enabled) {
-    const certPath = config.ssl.cert
-    const keyPath = config.ssl.key
-    if (!existsSync(certPath) || !existsSync(keyPath)) {
-      console.error(`[SERVER] SSL enabled but cert/key files not found:`)
-      console.error(`  cert: ${certPath} (${existsSync(certPath) ? 'found' : 'MISSING'})`)
-      console.error(`  key:  ${keyPath} (${existsSync(keyPath) ? 'found' : 'MISSING'})`)
-      console.error(`[SERVER] Falling back to HTTP`)
-      return null
-    }
-    return https.createServer(
-      { cert: readFileSync(certPath), key: readFileSync(keyPath) },
-      app
-    )
+function tryCreateHttpsServer(app: Express, config: ReturnType<typeof loadConfig>) {
+  if (!config.ssl?.enabled) return null
+
+  const { cert, key } = config.ssl
+  if (!existsSync(cert) || !existsSync(key)) {
+    console.error(`SSL cert/key missing (cert: ${existsSync(cert)}, key: ${existsSync(key)}), falling back to HTTP`)
+    return null
   }
-  return null
+  return https.createServer({ cert: readFileSync(cert), key: readFileSync(key) }, app)
 }
 
-function printStartupBanner(config: ReturnType<typeof loadConfig>, localUrl: string) {
-  console.log('='.repeat(70))
-  console.log('🚀 ZIRI PROXY SERVER')
-  console.log('='.repeat(70))
-  console.log(`Mode: ${config.mode || 'local'}`)
-  console.log(`Local URL: ${localUrl}`)
-  if (config.ssl?.enabled) {
-    console.log('🔒 SSL: Enabled')
-  }
-  if (config.publicUrl && config.publicUrl !== localUrl) {
-    console.log(`Public URL: ${config.publicUrl}`)
-    console.log('')
-    console.log('⚠️  Share this Public URL with users for API access')
-  }
-  console.log(`API Endpoints: ${localUrl}/api/*`)
-  console.log(`Health Check: ${localUrl}/health`)
-  console.log('')
-  if (config.email?.enabled) {
-    console.log(`📧 Email: Enabled (${config.email.provider || 'manual'})`)
-  } else {
-    console.log('📧 Email: Disabled')
-  }
-  console.log('='.repeat(70))
-  console.log('')
+function printBanner(config: ReturnType<typeof loadConfig>, url: string) {
+  const lines = [
+    `ziri ${config.mode || 'local'} — ${url}`,
+    config.ssl?.enabled ? '  ssl: on' : null,
+    config.publicUrl && config.publicUrl !== url ? `  public: ${config.publicUrl}` : null,
+    `  email: ${config.email?.enabled ? config.email.provider || 'manual' : 'off'}`,
+  ].filter(Boolean)
+  console.log(lines.join('\n'))
 }
 
 export async function startServer(): Promise<{ port: number; url: string }> {
@@ -230,85 +152,44 @@ export async function startServer(): Promise<{ port: number; url: string }> {
 
   const app = await createServer()
   const config = loadConfig()
-
   const host = config.host || '127.0.0.1'
+  const port = await findFreePort(config.port)
 
-  let port: number
-  try {
-    port = await findFreePort(config.port)
-  } catch (error) {
-    console.error('[SERVER] Failed to find free port:', error)
-    throw error
-  }
+  const httpsServer = tryCreateHttpsServer(app, config)
+  const protocol = httpsServer ? 'https' : 'http'
+  const displayHost = host === '0.0.0.0' ? 'localhost' : host
+  const url = `${protocol}://${displayHost}:${port}`
 
-  const httpsServer = createListener(app, config)
-  const useHttps = httpsServer !== null
-  const protocol = useHttps ? 'https' : 'http'
-  const localUrl = `${protocol}://${host === '0.0.0.0' ? 'localhost' : host}:${port}`
-
-  return new Promise((resolve, reject) => {
-    if (useHttps) {
-      server = httpsServer.listen(port, host, () => {
-        printStartupBanner(config, localUrl)
-        resolve({ port, url: localUrl })
-      })
-    } else {
-      server = app.listen(port, host, () => {
-        printStartupBanner(config, localUrl)
-        resolve({ port, url: localUrl })
-      })
-    }
-
-    server.on('error', (error: NodeJS.ErrnoException) => {
-      if (error.code === 'EADDRINUSE') {
-        console.log(`[SERVER] Port ${port} became unavailable, finding new port...`)
-        findFreePort(port + 1).then((newPort) => {
-          if (server) {
-            server.close()
-          }
-          const newLocalUrl = `${protocol}://${host === '0.0.0.0' ? 'localhost' : host}:${newPort}`
-          const retryConfig = loadConfig()
-          if (useHttps) {
-            server = httpsServer.listen(newPort, host, () => {
-              printStartupBanner(retryConfig, newLocalUrl)
-              resolve({ port: newPort, url: newLocalUrl })
-            })
-          } else {
-            server = app.listen(newPort, host, () => {
-              printStartupBanner(retryConfig, newLocalUrl)
-              resolve({ port: newPort, url: newLocalUrl })
-            })
-          }
-        }).catch((findError) => {
-          reject(new Error(`Failed to find available port: ${findError.message}`))
-        })
+  const listen = (p: number) => new Promise<{ port: number; url: string }>((resolve, reject) => {
+    const target = httpsServer || app
+    server = (target as any).listen(p, host, () => {
+      printBanner(config, `${protocol}://${displayHost}:${p}`)
+      resolve({ port: p, url: `${protocol}://${displayHost}:${p}` })
+    })
+    server.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE') {
+        server?.close()
+        findFreePort(p + 1).then(listen).then(resolve).catch(reject)
       } else {
-        reject(error)
+        reject(err)
       }
     })
   })
+
+  return listen(port)
 }
 
 export async function stopServer(): Promise<void> {
   try {
     const { queueManagerService } = await import('./services/queue-manager-service.js')
-    console.log('[SERVER] Closing queues...')
     await queueManagerService.closeAll()
-    console.log('[SERVER] Queues closed')
-  } catch (error: any) {
-    console.warn('[SERVER] Error closing queues:', error.message)
+  } catch (err: any) {
+    console.warn('queue close error:', err.message)
   }
-  
-  return new Promise((resolve) => {
-    if (server) {
-      server.close(() => {
-        server = null
-        console.log('[SERVER] Server stopped')
-        resolve()
-      })
-    } else {
-      resolve()
-    }
+
+  return new Promise(resolve => {
+    if (!server) return resolve()
+    server.close(() => { server = null; resolve() })
   })
 }
 

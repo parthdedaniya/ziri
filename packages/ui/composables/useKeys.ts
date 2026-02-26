@@ -212,7 +212,7 @@ export function useKeys() {
             }
 
             await listKeys()
-            toast.success('Key deleted successfully')
+            toast.success('Key deleted')
         })
     }
 
@@ -231,7 +231,7 @@ export function useKeys() {
             }
 
             await listKeys()
-            toast.success('Keys deleted successfully')
+            toast.success('Keys removed')
         })
     }
 
@@ -278,7 +278,7 @@ export function useKeys() {
             }
             
             await listKeys()
-            toast.success('Key updated successfully')
+            toast.success('Key updated')
         })
     }
 

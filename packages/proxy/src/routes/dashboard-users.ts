@@ -5,7 +5,6 @@ import * as keyService from '../services/key-service.js'
 import { internalEntityStore } from '../services/internal/internal-entity-store.js'
 import { internalAuthorizationService } from '../services/internal/internal-authorization-service.js'
 import { logInternalAction } from '../utils/internal-audit-helpers.js'
-import { SUCCESS_MESSAGES } from '../utils/success-messages.js'
 
 const router: Router = Router()
 
@@ -22,7 +21,7 @@ router.get('/', async (req: Request, res: Response) => {
       sortBy,
       sortOrder
     } = req.query
-    
+
     const result = dashboardUserService.listDashboardUsers({
       search: search as string | undefined,
       limit: limit ? parseInt(limit as string, 10) : undefined,
@@ -30,19 +29,15 @@ router.get('/', async (req: Request, res: Response) => {
       sortBy: sortBy as string | undefined,
       sortOrder: (sortOrder === 'asc' || sortOrder === 'desc') ? sortOrder as 'asc' | 'desc' : undefined
     })
-    
+
     res.json({
       users: result.data,
       total: result.total
     })
   } catch (error: any) {
-    
-    console.error('[DASHBOARD USERS] List error:', error)
-    res.status(500).json({
-      error: 'Failed to list dashboard users',
-      code: 'LIST_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
+
+    console.error('dashboard users list failed:', error)
+    res.status(500).json({ error: 'Failed to list dashboard users' })
   }
 })
 
@@ -51,7 +46,7 @@ router.get('/:userId', async (req: Request, res: Response) => {
   try {
     const { userId } = req.params
     const user = dashboardUserService.getDashboardUser(userId)
-    
+
     if (!user) {
       res.status(404).json({
         error: 'Dashboard user not found',
@@ -59,16 +54,12 @@ router.get('/:userId', async (req: Request, res: Response) => {
       })
       return
     }
-    
+
     res.json({ user })
   } catch (error: any) {
-    
-    console.error('[DASHBOARD USERS] Get error:', error)
-    res.status(500).json({
-      error: 'Failed to get dashboard user',
-      code: 'GET_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
+
+    console.error('dashboard user get failed:', error)
+    res.status(500).json({ error: 'Failed to fetch dashboard user' })
   }
 })
 
@@ -77,7 +68,7 @@ router.post('/', async (req: AdminRequest, res: Response) => {
   const actionStart = Date.now()
   try {
     const { email, name, role } = req.body
-    
+
     if (!email || !name || !role) {
       res.status(400).json({
         error: 'email, name, and role are required',
@@ -85,7 +76,7 @@ router.post('/', async (req: AdminRequest, res: Response) => {
       })
       return
     }
-    
+
     if (!['admin', 'viewer', 'user_admin', 'policy_admin'].includes(role)) {
       res.status(400).json({
         error: 'Invalid role. Must be one of: admin, viewer, user_admin, policy_admin',
@@ -93,7 +84,7 @@ router.post('/', async (req: AdminRequest, res: Response) => {
       })
       return
     }
-    
+
 
     if (role === 'admin') {
       const principalUserId = req.admin!.userId
@@ -107,7 +98,7 @@ router.post('/', async (req: AdminRequest, res: Response) => {
           })
           return
         }
-        
+
         const principalUid = `DashboardUser::"${principalUserId}"`
         const authzResult = await internalAuthorizationService.authorize({
           principal: principalUid,
@@ -115,7 +106,7 @@ router.post('/', async (req: AdminRequest, res: Response) => {
           resourceType: 'dashboard_users',
           context: {}
         })
-        
+
         if (!authzResult.allowed) {
           res.status(403).json({
             error: 'Only ziri can create admin dashboard users',
@@ -125,49 +116,35 @@ router.post('/', async (req: AdminRequest, res: Response) => {
         }
       }
     }
-    
-    const result = await dashboardUserService.createDashboardUser({ 
-      email, 
-      name, 
+
+    const result = await dashboardUserService.createDashboardUser({
+      email,
+      name,
       role
     })
-    
-    if (result.emailSent) {
-      res.status(201).json({
-        user: result.user,
-        message: SUCCESS_MESSAGES.DASHBOARD_USER_CREATED_EMAIL_SENT
-      })
-    } else {
-      res.status(201).json({
-        user: result.user,
-        password: result.password,
-        message: SUCCESS_MESSAGES.DASHBOARD_USER_CREATED_EMAIL_NOT_SENT
-      })
-    }
+
+    res.status(201).json({
+      user: result.user,
+      password: result.emailSent ? undefined : result.password,
+      message: result.emailSent
+        ? 'Dashboard user created. Credentials sent via email.'
+        : 'Dashboard user created. Save the password — it won\'t be shown again.'
+    })
 
     logInternalAction(req, {
       action: 'create_dashboard_user',
       resourceType: 'dashboard_user',
       resourceId: result.user.userId,
+      decisionReason: res.locals.decisionReason ?? null,
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
-    console.error('[DASHBOARD USERS] Create error:', error)
-    
     if (error.message.includes('already exists')) {
-      res.status(409).json({
-        error: error.message,
-        code: 'USER_EXISTS'
-      })
-
+      res.status(409).json({ error: error.message })
       return
     }
-    
-    res.status(500).json({
-      error: 'Failed to create dashboard user',
-      code: 'CREATE_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
+    console.error('dashboard user create failed:', error)
+    res.status(500).json({ error: 'Failed to create dashboard user' })
 
   }
 })
@@ -179,7 +156,7 @@ router.put('/:userId', async (req: AdminRequest, res: Response) => {
     const { userId } = req.params
     const { email, name, role } = req.body
     const principalUserId = req.admin!.userId
-    
+
 
     if (principalUserId === userId) {
       res.status(403).json({
@@ -188,7 +165,7 @@ router.put('/:userId', async (req: AdminRequest, res: Response) => {
       })
       return
     }
-    
+
 
     const targetEntity = await internalEntityStore.getEntity(userId)
     if (!targetEntity) {
@@ -198,11 +175,11 @@ router.put('/:userId', async (req: AdminRequest, res: Response) => {
       })
       return
     }
-    
+
     const targetUserRole = targetEntity.attrs.role
     const isUpdatingToAdmin = role === 'admin'
     const isTargetAdmin = targetUserRole === 'admin'
-    
+
 
     if (isTargetAdmin || isUpdatingToAdmin) {
       if (principalUserId !== 'ziri') {
@@ -215,7 +192,7 @@ router.put('/:userId', async (req: AdminRequest, res: Response) => {
           })
           return
         }
-        
+
         const principalUid = `DashboardUser::"${principalUserId}"`
         const authzResult = await internalAuthorizationService.authorize({
           principal: principalUid,
@@ -223,7 +200,7 @@ router.put('/:userId', async (req: AdminRequest, res: Response) => {
           resourceType: 'dashboard_users',
           context: {}
         })
-        
+
         if (!authzResult.allowed) {
           res.status(403).json({
             error: 'Only ziri can modify admin dashboard users or promote users to admin',
@@ -233,9 +210,16 @@ router.put('/:userId', async (req: AdminRequest, res: Response) => {
         }
       }
     }
-    
+
+    if (email !== undefined) {
+      res.status(400).json({
+        error: 'Email cannot be changed for dashboard users',
+        code: 'EMAIL_IMMUTABLE'
+      })
+      return
+    }
+
     const updates: any = {}
-    if (email !== undefined) updates.email = email
     if (name !== undefined) updates.name = name
     if (role !== undefined) {
       if (!['admin', 'viewer', 'user_admin', 'policy_admin'].includes(role)) {
@@ -247,42 +231,29 @@ router.put('/:userId', async (req: AdminRequest, res: Response) => {
       }
       updates.role = role
     }
-    
+
     const user = await dashboardUserService.updateDashboardUser(userId, updates)
-    
+
     res.json({ user })
 
     logInternalAction(req, {
       action: 'update_dashboard_user',
       resourceType: 'dashboard_user',
       resourceId: user.userId,
+      decisionReason: res.locals.decisionReason ?? null,
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
-    console.error('[DASHBOARD USERS] Update error:', error)
-    
     if (error.message === 'Dashboard user not found') {
-      res.status(404).json({
-        error: error.message,
-        code: 'USER_NOT_FOUND'
-      })
-
+      res.status(404).json({ error: error.message })
       return
     }
-    
     if (error.message.includes('already in use')) {
-      res.status(409).json({
-        error: error.message,
-        code: 'EMAIL_EXISTS'
-      })
+      res.status(409).json({ error: error.message })
       return
     }
-    
-    res.status(500).json({
-      error: 'Failed to update dashboard user',
-      code: 'UPDATE_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
+    console.error('dashboard user update failed:', error)
+    res.status(500).json({ error: 'Failed to update dashboard user' })
 
   }
 })
@@ -293,7 +264,7 @@ router.delete('/:userId', async (req: AdminRequest, res: Response) => {
   try {
     const { userId } = req.params
     const principalUserId = req.admin!.userId
-    
+
 
     if (principalUserId === userId) {
       res.status(403).json({
@@ -302,7 +273,7 @@ router.delete('/:userId', async (req: AdminRequest, res: Response) => {
       })
       return
     }
-    
+
 
     const targetEntity = await internalEntityStore.getEntity(userId)
     if (!targetEntity) {
@@ -312,9 +283,9 @@ router.delete('/:userId', async (req: AdminRequest, res: Response) => {
       })
       return
     }
-    
+
     const targetUserRole = targetEntity.attrs.role
-    
+
 
     if (targetUserRole === 'admin') {
       if (principalUserId !== 'ziri') {
@@ -327,7 +298,7 @@ router.delete('/:userId', async (req: AdminRequest, res: Response) => {
           })
           return
         }
-        
+
         const principalUid = `DashboardUser::"${principalUserId}"`
         const authzResult = await internalAuthorizationService.authorize({
           principal: principalUid,
@@ -335,7 +306,7 @@ router.delete('/:userId', async (req: AdminRequest, res: Response) => {
           resourceType: 'dashboard_users',
           context: {}
         })
-        
+
         if (!authzResult.allowed) {
           res.status(403).json({
             error: 'Only ziri can delete admin dashboard users',
@@ -375,6 +346,7 @@ router.delete('/:userId', async (req: AdminRequest, res: Response) => {
       action: 'delete_dashboard_user',
       resourceType: 'dashboard_user',
       resourceId: userId,
+      decisionReason: res.locals.decisionReason ?? null,
       actionDurationMs: Date.now() - actionStart
     })
     if (hadKeys) {
@@ -382,25 +354,17 @@ router.delete('/:userId', async (req: AdminRequest, res: Response) => {
         action: 'delete_keys',
         resourceType: 'api_key',
         resourceId: userId,
+        decisionReason: res.locals.decisionReason ?? null,
         actionDurationMs: Date.now() - actionStart
       })
     }
   } catch (error: any) {
-    console.error('[DASHBOARD USERS] Delete error:', error)
-    
     if (error.message === 'Dashboard user not found' || error.message.includes('Cannot delete')) {
-      res.status(400).json({
-        error: error.message,
-        code: error.message.includes('Cannot delete') ? 'CANNOT_DELETE' : 'USER_NOT_FOUND'
-      })
+      res.status(400).json({ error: error.message })
       return
     }
-    
-    res.status(500).json({
-      error: 'Failed to delete dashboard user',
-      code: 'DELETE_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
+    console.error('dashboard user delete failed:', error)
+    res.status(500).json({ error: 'Failed to delete dashboard user' })
 
   }
 })
@@ -411,7 +375,7 @@ router.post('/:userId/disable', async (req: AdminRequest, res: Response) => {
   try {
     const { userId } = req.params
     const principalUserId = req.admin!.userId
-    
+
 
     if (principalUserId === userId) {
       res.status(403).json({
@@ -420,7 +384,7 @@ router.post('/:userId/disable', async (req: AdminRequest, res: Response) => {
       })
       return
     }
-    
+
 
     const targetEntity = await internalEntityStore.getEntity(userId)
     if (!targetEntity) {
@@ -430,9 +394,9 @@ router.post('/:userId/disable', async (req: AdminRequest, res: Response) => {
       })
       return
     }
-    
+
     const targetUserRole = targetEntity.attrs.role
-    
+
 
     if (targetUserRole === 'admin') {
       if (principalUserId !== 'ziri') {
@@ -445,7 +409,7 @@ router.post('/:userId/disable', async (req: AdminRequest, res: Response) => {
           })
           return
         }
-        
+
         const principalUid = `DashboardUser::"${principalUserId}"`
         const authzResult = await internalAuthorizationService.authorize({
           principal: principalUid,
@@ -453,7 +417,7 @@ router.post('/:userId/disable', async (req: AdminRequest, res: Response) => {
           resourceType: 'dashboard_users',
           context: {}
         })
-        
+
         if (!authzResult.allowed) {
           res.status(403).json({
             error: 'Only ziri can disable admin dashboard users',
@@ -463,33 +427,25 @@ router.post('/:userId/disable', async (req: AdminRequest, res: Response) => {
         }
       }
     }
-    
+
     const user = await dashboardUserService.disableDashboardUser(userId)
-    
+
     res.json({ user })
 
     logInternalAction(req, {
       action: 'disable_dashboard_user',
       resourceType: 'dashboard_user',
       resourceId: user.userId,
+      decisionReason: res.locals.decisionReason ?? null,
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
-    console.error('[DASHBOARD USERS] Disable error:', error)
-    
     if (error.message === 'Dashboard user not found' || error.message.includes('Cannot disable')) {
-      res.status(400).json({
-        error: error.message,
-        code: error.message.includes('Cannot disable') ? 'CANNOT_DISABLE' : 'USER_NOT_FOUND'
-      })
+      res.status(400).json({ error: error.message })
       return
     }
-    
-    res.status(500).json({
-      error: 'Failed to disable dashboard user',
-      code: 'DISABLE_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
+    console.error('dashboard user disable failed:', error)
+    res.status(500).json({ error: 'Failed to disable user' })
 
   }
 })
@@ -500,7 +456,7 @@ router.post('/:userId/enable', async (req: AdminRequest, res: Response) => {
   try {
     const { userId } = req.params
     const principalUserId = req.admin!.userId
-    
+
 
     if (principalUserId === userId) {
       res.status(403).json({
@@ -509,7 +465,7 @@ router.post('/:userId/enable', async (req: AdminRequest, res: Response) => {
       })
       return
     }
-    
+
 
     const targetEntity = await internalEntityStore.getEntity(userId)
     if (!targetEntity) {
@@ -519,9 +475,9 @@ router.post('/:userId/enable', async (req: AdminRequest, res: Response) => {
       })
       return
     }
-    
+
     const targetUserRole = targetEntity.attrs.role
-    
+
 
     if (targetUserRole === 'admin') {
       if (principalUserId !== 'ziri') {
@@ -534,7 +490,7 @@ router.post('/:userId/enable', async (req: AdminRequest, res: Response) => {
           })
           return
         }
-        
+
         const principalUid = `DashboardUser::"${principalUserId}"`
         const authzResult = await internalAuthorizationService.authorize({
           principal: principalUid,
@@ -542,7 +498,7 @@ router.post('/:userId/enable', async (req: AdminRequest, res: Response) => {
           resourceType: 'dashboard_users',
           context: {}
         })
-        
+
         if (!authzResult.allowed) {
           res.status(403).json({
             error: 'Only ziri can enable admin dashboard users',
@@ -552,33 +508,25 @@ router.post('/:userId/enable', async (req: AdminRequest, res: Response) => {
         }
       }
     }
-    
+
     const user = await dashboardUserService.enableDashboardUser(userId)
-    
+
     res.json({ user })
 
     logInternalAction(req, {
       action: 'enable_dashboard_user',
       resourceType: 'dashboard_user',
       resourceId: user.userId,
+      decisionReason: res.locals.decisionReason ?? null,
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
-    console.error('[DASHBOARD USERS] Enable error:', error)
-    
     if (error.message === 'Dashboard user not found') {
-      res.status(404).json({
-        error: error.message,
-        code: 'USER_NOT_FOUND'
-      })
+      res.status(404).json({ error: error.message })
       return
     }
-    
-    res.status(500).json({
-      error: 'Failed to enable dashboard user',
-      code: 'ENABLE_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
+    console.error('dashboard user enable failed:', error)
+    res.status(500).json({ error: 'Failed to enable user' })
 
   }
 })
@@ -629,34 +577,26 @@ router.post('/:userId/reset-password', async (req: AdminRequest, res: Response) 
       }
     }
     const result = await dashboardUserService.resetDashUserPw(userId)
-    if (result.emailSent) {
-      res.json({ message: SUCCESS_MESSAGES.DASH_USER_PW_RESET_SENT })
-    } else {
-      res.json({
-        password: result.password,
-        message: SUCCESS_MESSAGES.DASH_USER_PW_RESET_NOT_SENT
-      })
-    }
+    res.json({
+      password: result.emailSent ? undefined : result.password,
+      message: result.emailSent
+        ? 'Password reset. New password sent via email.'
+        : 'Password reset. Save the password below — email was not sent.'
+    })
     logInternalAction(req, {
       action: 'reset_dashboard_user_password',
       resourceType: 'dashboard_user',
       resourceId: userId,
+      decisionReason: res.locals.decisionReason ?? null,
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
-    console.error('[DASHBOARD USERS] Reset password error:', error)
     if (error.message === 'Dashboard user not found' || error.message.includes('Cannot reset')) {
-      res.status(400).json({
-        error: error.message,
-        code: error.message.includes('ziri') ? 'CANNOT_RESET_ZIRI' : 'USER_NOT_FOUND'
-      })
+      res.status(400).json({ error: error.message })
       return
     }
-    res.status(500).json({
-      error: 'Failed to reset password',
-      code: 'RESET_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
+    console.error('dashboard user pw reset failed:', error)
+    res.status(500).json({ error: 'Password reset failed' })
   }
 })
 

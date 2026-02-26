@@ -139,7 +139,7 @@ const handleCreateUser = async () => {
       showPasswordModal.value = true
       toast.warning('Email was not sent. Please save the password below.')
     } else {
-      toast.success('User created successfully. Credentials have been sent to the user\'s email address.')
+      toast.success('User created. Credentials sent via email.')
     }
     if (result.apiKey) {
       generatedApiKey.value = result.apiKey
@@ -201,7 +201,7 @@ const handleDeleteUser = async () => {
     await deleteUser(userToDelete.value.userId)
     showDeleteModal.value = false
     userToDelete.value = null
-    toast.success('User deleted successfully')
+    toast.success('User deleted')
   } catch (error: any) {
     toast.error(`Failed to delete user: ${getUserMessage(error)}`)
   } finally {
@@ -224,11 +224,9 @@ const handleResetPassword = async () => {
       showPasswordModal.value = true
       toast.warning('Email was not sent. Please save the password below.')
     } else if (result.emailSent) {
- 
-      toast.success('Password reset successfully. The new password has been sent to the user\'s email address.')
+      toast.success('Password reset. New password sent via email.')
     } else {
- 
-      toast.success('Password reset successfully.')
+      toast.success('Password reset.')
     }
     
     userToResetPassword.value = null

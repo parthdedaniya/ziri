@@ -1,0 +1,47 @@
+{
+  "roles": ["admin", "analyst", "engineer"],
+  "dashboardUsers": [
+    { "name": "Dipen", "email": "dipen.admin@example.com", "role": "admin", "createKey": true },
+    { "name": "Amit", "email": "amit.admin@example.com", "role": "admin", "createKey": true },
+    { "name": "John", "email": "john.viewer@example.com", "role": "viewer" },
+    { "name": "Sarah", "email": "sarah.useradmin@example.com", "role": "user_admin" },
+    { "name": "Alex", "email": "alex.policyadmin@example.com", "role": "policy_admin" }
+  ],
+  "users": [
+    {
+      "name": "Alice Johnson",
+      "email": "alice@eng.example.com",
+      "tenant": "engineering",
+      "roleId": "admin",
+      "createKey": true
+    },
+    {
+      "name": "Bob Smith",
+      "email": "bob@sales.example.com",
+      "tenant": "sales",
+      "roleId": "analyst",
+      "createKey": true
+    },
+    {
+      "name": "Carol Davis",
+      "email": "carol@marketing.example.com",
+      "tenant": "marketing",
+      "roleId": "engineer",
+      "createKey": true
+    },
+    {
+      "name": "Dave Miller",
+      "email": "dave@eng.example.com",
+      "tenant": "engineering",
+      "roleId": "analyst",
+      "createKey": false
+    },
+    {
+      "name": "Eve Wilson",
+      "email": "eve@marketing.example.com",
+      "tenant": "marketing",
+      "createKey": false
+    }
+  ]
+}
+

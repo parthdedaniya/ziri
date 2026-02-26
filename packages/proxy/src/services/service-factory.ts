@@ -9,68 +9,56 @@ import { liveEntityStore } from './live/live-entity-store.js'
 import { liveSchemaStore } from './live/live-schema-store.js'
 import { loadConfig } from '../config.js'
 
+type Mode = 'local' | 'live'
+
 class ServiceFactory {
-  private _authorizationService: IAuthorizationService | null = null
-  private _policyStore: IPolicyStore | null = null
-  private _entityStore: IEntityStore | null = null
-  private _schemaStore: ISchemaStore | null = null
-  private _mode: 'local' | 'live' | null = null
+  private readonly mode: Mode
+  private readonly authorizationService: IAuthorizationService
+  private readonly policyStore: IPolicyStore
+  private readonly entityStore: IEntityStore
+  private readonly schemaStore: ISchemaStore
+
+  constructor() {
+    const config = loadConfig()
+    this.mode = config.mode === 'live' ? 'live' : 'local'
+
+    if (this.mode === 'local') {
+      this.authorizationService = new LocalAuthorizationService()
+      this.policyStore = localPolicyStore
+      this.entityStore = localEntityStore
+      this.schemaStore = localSchemaStore
+    } else {
+      this.authorizationService = liveAuthorizationService
+      this.policyStore = livePolicyStore
+      this.entityStore = liveEntityStore
+      this.schemaStore = liveSchemaStore
+    }
+
+    console.log(`services: ${this.mode} mode`)
+  }
 
   initialize(): void {
-    const config = loadConfig()
-    const mode = config.mode || 'local'
-
-    if (this._mode === mode && this._authorizationService) {
-      return
-    }
-    this._mode = mode
-    if (mode === 'local') {
-      this._authorizationService = new LocalAuthorizationService()
-      this._policyStore = localPolicyStore
-      this._entityStore = localEntityStore
-      this._schemaStore = localSchemaStore
-    } else {
-      this._authorizationService = liveAuthorizationService
-      this._policyStore = livePolicyStore
-      this._entityStore = liveEntityStore
-      this._schemaStore = liveSchemaStore
-    }
-    console.log(`[SERVICE FACTORY] Initialized in ${mode} mode`)
+    // kept for backward compatibility with older startup paths
   }
 
   getAuthorizationService(): IAuthorizationService {
-    if (!this._authorizationService) {
-      this.initialize()
-    }
-    return this._authorizationService!
+    return this.authorizationService
   }
 
   getPolicyStore(): IPolicyStore {
-    if (!this._policyStore) {
-      this.initialize()
-    }
-    return this._policyStore!
+    return this.policyStore
   }
 
   getEntityStore(): IEntityStore {
-    if (!this._entityStore) {
-      this.initialize()
-    }
-    return this._entityStore!
+    return this.entityStore
   }
 
   getSchemaStore(): ISchemaStore {
-    if (!this._schemaStore) {
-      this.initialize()
-    }
-    return this._schemaStore!
+    return this.schemaStore
   }
 
-  getMode(): 'local' | 'live' {
-    if (!this._mode) {
-      this.initialize()
-    }
-    return this._mode!
+  getMode(): Mode {
+    return this.mode
   }
 }
 

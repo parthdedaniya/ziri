@@ -18,12 +18,12 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
       sortBy,
       sortOrder
     } = req.query
-    
+
     const db = getDatabase()
-    
+
     let whereClause = "WHERE obj_type = 'policy'"
     const args: any[] = []
-    
+
     let orderByClause = 'ORDER BY created_at ASC'
     if (sortBy && sortOrder && (sortOrder === 'asc' || sortOrder === 'desc')) {
       const columnMap: Record<string, string> = {
@@ -39,11 +39,11 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
         orderByClause = `ORDER BY ${dbColumn} ${order}`
       }
     }
-    
+
     let countSql = `SELECT COUNT(*) as total FROM schema_policy ${whereClause}`
     const countResult = db.prepare(countSql).get(...args) as { total: number }
     let total = countResult.total
-    
+
     const limitValue = limit ? parseInt(limit as string, 10) : 100
     const offsetValue = offset ? parseInt(offset as string, 10) : 0
     const dataSql = `
@@ -61,14 +61,14 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
       isActive: row.status === 1,
       effect: row.content.toLowerCase().includes('permit(') ? 'permit' : 'forbid' as 'permit' | 'forbid'
     }))
-    
+
     if (search) {
       const searchLower = (search as string).toLowerCase()
-      policies = policies.filter(p => 
+      policies = policies.filter(p =>
         p.description.toLowerCase().includes(searchLower) ||
         p.policy.toLowerCase().includes(searchLower)
       )
- 
+
       const allRows = db.prepare(`
         SELECT content, description, status 
         FROM schema_policy 
@@ -81,13 +81,13 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
         isActive: row.status === 1,
         effect: row.content.toLowerCase().includes('permit(') ? 'permit' : 'forbid' as 'permit' | 'forbid'
       }))
-      const filtered = allPolicies.filter(p => 
+      const filtered = allPolicies.filter(p =>
         p.description.toLowerCase().includes(searchLower) ||
         p.policy.toLowerCase().includes(searchLower)
       )
       total = filtered.length
     }
-    
+
     if (effect && (effect === 'permit' || effect === 'forbid')) {
       policies = policies.filter(p => p.effect === effect)
       if (search) {
@@ -104,9 +104,9 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
           effect: row.content.toLowerCase().includes('permit(') ? 'permit' : 'forbid' as 'permit' | 'forbid'
         }))
         const searchLower = (search as string).toLowerCase()
-        const filtered = allPolicies.filter(p => 
+        const filtered = allPolicies.filter(p =>
           (p.description.toLowerCase().includes(searchLower) ||
-          p.policy.toLowerCase().includes(searchLower)) &&
+            p.policy.toLowerCase().includes(searchLower)) &&
           p.effect === effect
         )
         total = filtered.length
@@ -127,14 +127,14 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
         total = filtered.length
       }
     }
-    
+
     if (sortBy === 'effect' && sortOrder && (sortOrder === 'asc' || sortOrder === 'desc')) {
       policies.sort((a, b) => {
         const comparison = a.effect.localeCompare(b.effect)
         return sortOrder === 'asc' ? comparison : -comparison
       })
     }
-    
+
     res.json({
       data: {
         policies
@@ -142,11 +142,10 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
       total
     })
   } catch (error: any) {
-    
+
     res.status(500).json({
       error: 'Failed to get policies',
       code: 'POLICIES_GET_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })
@@ -155,7 +154,7 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
   const actionStart = Date.now()
   try {
     const { policy, description } = req.body
-    
+
     if (!policy || !description) {
       res.status(400).json({
         error: 'Policy and description are required',
@@ -163,7 +162,7 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
       })
       return
     }
-    
+
     if (!parsePolicyId(policy)) {
       res.status(400).json({
         error: 'Policy must include @id("your-id") at the start.',
@@ -171,20 +170,18 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
       })
       return
     }
-    
+
     const policyStore = serviceFactory.getPolicyStore()
     await policyStore.createPolicy(policy, description)
     const policyId = parsePolicyId(policy)
 
-    res.json({
-      success: true,
-      message: 'Policy created successfully'
-    })
+    res.json({ success: true })
 
     logInternalAction(req, {
       action: 'create_policy',
       resourceType: 'policy',
       resourceId: policyId ?? undefined,
+      decisionReason: res.locals.decisionReason ?? null,
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
@@ -198,7 +195,6 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
     res.status(500).json({
       error: 'Failed to create policy',
       code: 'POLICY_CREATE_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })
@@ -207,7 +203,7 @@ router.put('/', requireAdmin, async (req: Request, res: Response) => {
   const actionStart = Date.now()
   try {
     const { oldPolicy, policy, description } = req.body
-    
+
     if (!oldPolicy || !policy || !description) {
       res.status(400).json({
         error: 'oldPolicy, policy, and description are required',
@@ -215,7 +211,7 @@ router.put('/', requireAdmin, async (req: Request, res: Response) => {
       })
       return
     }
-    
+
     if (!parsePolicyId(policy)) {
       res.status(400).json({
         error: 'Policy must include @id("your-id") at the start.',
@@ -223,20 +219,18 @@ router.put('/', requireAdmin, async (req: Request, res: Response) => {
       })
       return
     }
-    
+
     const policyStore = serviceFactory.getPolicyStore()
     await policyStore.updatePolicy(oldPolicy, policy, description)
     const policyId = parsePolicyId(policy)
 
-    res.json({
-      success: true,
-      message: 'Policy updated successfully'
-    })
+    res.json({ success: true })
 
     logInternalAction(req, {
       action: 'update_policy',
       resourceType: 'policy',
       resourceId: policyId ?? undefined,
+      decisionReason: res.locals.decisionReason ?? null,
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
@@ -250,7 +244,6 @@ router.put('/', requireAdmin, async (req: Request, res: Response) => {
     res.status(500).json({
       error: 'Failed to update policy',
       code: 'POLICY_UPDATE_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })
@@ -269,12 +262,12 @@ router.patch('/status', requireAdmin, async (req: Request, res: Response) => {
     }
 
     const db = getDatabase()
-    
+
     const existing = db.prepare(`
       SELECT id FROM schema_policy 
       WHERE obj_type = 'policy' AND content = ?
     `).get(policy) as { id: string } | undefined
-    
+
     if (!existing) {
       res.status(404).json({
         error: 'Policy not found',
@@ -310,13 +303,13 @@ router.patch('/status', requireAdmin, async (req: Request, res: Response) => {
       action: 'patch_policy_status',
       resourceType: 'policy',
       resourceId: policyId ?? undefined,
+      decisionReason: res.locals.decisionReason ?? null,
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
     res.status(500).json({
       error: 'Failed to update policy status',
       code: 'POLICY_STATUS_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
 
   }
@@ -326,7 +319,7 @@ router.delete('/', requireAdmin, async (req: Request, res: Response) => {
   const actionStart = Date.now()
   try {
     const { policy } = req.body
-    
+
     if (!policy) {
       res.status(400).json({
         error: 'Policy is required',
@@ -335,27 +328,24 @@ router.delete('/', requireAdmin, async (req: Request, res: Response) => {
 
       return
     }
-    
+
     const policyStore = serviceFactory.getPolicyStore()
     await policyStore.deletePolicy(policy)
     const policyId = parsePolicyId(policy)
 
-    res.json({
-      success: true,
-      message: 'Policy deleted successfully'
-    })
+    res.json({ success: true })
 
     logInternalAction(req, {
       action: 'delete_policy',
       resourceType: 'policy',
       resourceId: policyId ?? undefined,
+      decisionReason: res.locals.decisionReason ?? null,
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
     res.status(500).json({
       error: 'Failed to delete policy',
       code: 'POLICY_DELETE_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
 
   }
@@ -364,16 +354,15 @@ router.delete('/', requireAdmin, async (req: Request, res: Response) => {
 router.get('/templates', requireAdmin, async (req: Request, res: Response) => {
   try {
     const templates = getPolicyTemplates()
-    
+
     res.json({
       templates
     })
   } catch (error: any) {
-    
+
     res.status(500).json({
       error: 'Failed to get policy templates',
       code: 'POLICY_TEMPLATES_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
     })
   }
 })

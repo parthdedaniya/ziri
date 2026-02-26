@@ -269,8 +269,8 @@ const saveConfig = async () => {
     await nextTick()
     await new Promise(resolve => setTimeout(resolve, 100))
     
-    toast.success('Configuration saved successfully')
-    toast.info('Restart the proxy server for server settings to take effect')
+    toast.success('Config saved')
+    toast.info('Restart the server for changes to take effect')
   } catch (e: any) {
     toast.error(getUserMessage(e))
   } finally {

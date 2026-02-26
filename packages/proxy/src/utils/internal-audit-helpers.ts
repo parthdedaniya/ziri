@@ -7,6 +7,7 @@ export interface LogInternalActionPayload {
   resourceId?: string | null
   actionDurationMs?: number
   authDurationMs?: number
+  decisionReason?: string | null
 }
 
 export function logInternalAction(req: Request, payload: LogInternalActionPayload): void {
@@ -24,6 +25,7 @@ export function logInternalAction(req: Request, payload: LogInternalActionPayloa
       resourceType: payload.resourceType,
       resourceId: payload.resourceId ?? null,
       decision: 'permit',
+      decisionReason: payload.decisionReason ?? null,
       authDurationMs: payload.authDurationMs ?? null,
       actionDurationMs: payload.actionDurationMs ?? null,
       outcomeStatus: 'success',

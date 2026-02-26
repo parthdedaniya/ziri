@@ -17,7 +17,7 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
       sortBy,
       sortOrder
     } = req.query
-    
+
     const entityStore = serviceFactory.getEntityStore()
     const result = await entityStore.getEntities(uid, {
       search: search as string | undefined,
@@ -27,9 +27,9 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
       sortBy: sortBy as string | undefined || null,
       sortOrder: (sortOrder === 'asc' || sortOrder === 'desc') ? sortOrder as 'asc' | 'desc' : null
     })
-    
+
     const entities = result.data
-    
+
     if (includeApiKeys) {
       const { getDatabase } = await import('../db/index.js')
       const db = getDatabase()
@@ -82,12 +82,9 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
         total: result.total
       })
     }
-  } catch (error: any) {
-    res.status(500).json({
-      error: 'Failed to get entities',
-      code: 'ENTITIES_GET_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
+  } catch (err: any) {
+    console.error('entity fetch failed:', err)
+    res.status(500).json({ error: 'Failed to get entities' })
   }
 })
 
@@ -129,25 +126,20 @@ router.put('/', requireAdmin, async (req: Request, res: Response) => {
     const entityStatus = status !== undefined ? status : 1
 
     await entityStore.updateEntity(entity, entityStatus)
-    
+
     const resourceId = entity?.uid?.id ? `${entity.uid.type}::${entity.uid.id}` : null
     logInternalAction(req, {
       action: 'update_entity',
       resourceType: 'entity',
       resourceId,
+      decisionReason: res.locals.decisionReason ?? null,
       actionDurationMs: Date.now() - actionStart
     })
 
-    res.json({
-      success: true,
-      message: 'Entity updated successfully'
-    })
-  } catch (error: any) {
-    res.status(500).json({
-      error: 'Failed to update entity',
-      code: 'ENTITY_UPDATE_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
+    res.json({ success: true })
+  } catch (err: any) {
+    console.error('entity update failed:', err)
+    res.status(500).json({ error: 'Failed to update entity' })
   }
 })
 

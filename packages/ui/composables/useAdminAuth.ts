@@ -73,7 +73,7 @@ export function useAdminAuth() {
 
   const logout = async () => {
     adminAuthStore.clearAuth()
-    toast.info('Logged out successfully')
+    toast.info('Signed out')
     
  
     if (process.client) {

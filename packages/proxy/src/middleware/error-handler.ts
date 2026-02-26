@@ -1,5 +1,3 @@
- 
-
 import type { Request, Response, NextFunction } from 'express'
 import { mapToUserMessage } from '../utils/error-messages.js'
 
@@ -13,33 +11,18 @@ export function errorHandler(
   error: ApiError,
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ): void {
-  const statusCode = error.statusCode || 500
-  const message = mapToUserMessage(error.message) || error.message || 'Internal server error'
-  
-  console.error(`[ERROR] ${req.method} ${req.path}:`, {
-    statusCode,
-    message,
-    code: error.code,
-    stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-  })
-  
-  res.status(statusCode).json({
-    error: message,
-    code: error.code,
-    ...(error.detail && process.env.NODE_ENV !== 'production' && { detail: error.detail }),
-    ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
-  })
+  const status = error.statusCode || 500
+  const msg = mapToUserMessage(error.message) || error.message || 'Internal server error'
+
+  if (status >= 500) {
+    console.error(`${req.method} ${req.path} ->`, error)
+  }
+
+  res.status(status).json({ error: msg })
 }
 
-export function notFoundHandler(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void {
-  res.status(404).json({
-    error: `Route not found: ${req.method} ${req.path}`,
-    code: 'ROUTE_NOT_FOUND'
-  })
+export function notFoundHandler(req: Request, res: Response, _next: NextFunction): void {
+  res.status(404).json({ error: `Not found: ${req.method} ${req.path}` })
 }

@@ -24,7 +24,7 @@ export function getDatabase(): Database.Database {
   db.pragma('foreign_keys = ON')
 
   schemaInitPromise = initializeSchema(db).catch((error) => {
-    console.error('[DB] Schema initialization failed:', error.message)
+    console.error('schema initialization failed:', error.message)
     throw error
   })
 
@@ -46,7 +46,7 @@ async function initializeSchema(database: Database.Database): Promise<void> {
       database.exec(schema)
     } catch (error: any) {
       if (!error.message?.includes('already exists')) {
-        console.warn('[DB] Schema execution warning:', error.message)
+        console.warn('schema exec warning:', error.message)
       }
     }
   }
@@ -73,7 +73,7 @@ async function initializeSchema(database: Database.Database): Promise<void> {
       database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_email_hash_active ON auth(email_hash) WHERE status != 0")
     } catch (idxError: any) {
       if (!idxError.message?.includes('already exists')) {
-        console.warn('[DB] idx_auth_email_hash_active warning:', idxError.message)
+        console.warn('idx_auth_email_hash_active warning:', idxError.message)
       }
     }
 
@@ -120,11 +120,11 @@ async function initializeSchema(database: Database.Database): Promise<void> {
       `)
     } catch (idxError: any) {
       if (!idxError.message?.includes('already exists')) {
-        console.warn('[DB] idx_schema_policy_policy_id warning:', idxError.message)
+        console.warn('idx_schema_policy_policy_id warning:', idxError.message)
       }
     }
   } catch (error: any) {
-    console.warn('[DB] Column addition warning:', error.message)
+    console.warn('column addition warning:', error.message)
   }
 
   try {
@@ -132,7 +132,7 @@ async function initializeSchema(database: Database.Database): Promise<void> {
     seedPricing(database)
   } catch (error: any) {
     if (!error.message?.includes('Cannot find module')) {
-      console.warn('[DB] Pricing seed failed:', error.message)
+      console.warn('pricing seed failed:', error.message)
     }
   }
 }
@@ -152,7 +152,7 @@ export async function initializeAdminUser(): Promise<void> {
 
   const rootKey = getRootKey()
   if (!rootKey) {
-    console.error('[DB] Root key not found, skipping admin user initialization')
+    console.error('root key not found, skipping admin user initialization')
     return
   }
 

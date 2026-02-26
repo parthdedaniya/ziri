@@ -69,7 +69,7 @@ router.get('/', authenticateSSE, (req: Request, res: Response) => {
       const data = JSON.stringify(event)
       res.write(`data: ${data}\n\n`)
     } catch (error) {
-      console.error('[EVENTS] Error sending event:', error)
+      console.error('error sending event:', error)
     }
   }
 

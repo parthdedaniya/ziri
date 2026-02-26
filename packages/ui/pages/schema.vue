@@ -309,7 +309,7 @@ const handleSave = async () => {
     await loadSchema()
     
     isEditing.value = false
-    toast.success('Schema saved successfully')
+    toast.success('Schema saved')
   } catch (e: any) {
     toast.error(getUserMessage(e))
   } finally {

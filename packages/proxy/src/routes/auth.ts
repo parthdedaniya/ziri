@@ -141,13 +141,13 @@ router.post('/admin/login', async (req: Request, res: Response) => {
         })
         return
       } else {
-        console.log(`[AUTH] Root key authentication failed for ziri`)
+        console.log(`root key authentication failed for ziri`)
         if (!rootKey) {
-          console.error(`[AUTH] Root key is null or undefined`)
+          console.error(`root key is null or undefined`)
         } else if (password !== rootKey) {
-          console.error(`[AUTH] Password does not match root key`)
-          console.error(`[AUTH] Expected key (first 8): ${rootKey.substring(0, 8)}...`)
-          console.error(`[AUTH] Provided password (first 8): ${password?.substring(0, 8)}...`)
+          console.error(`password does not match root key`)
+          console.error(`expected key (first 8): ${rootKey.substring(0, 8)}...`)
+          console.error(`provided password (first 8): ${password?.substring(0, 8)}...`)
         }
       }
     }
@@ -158,7 +158,7 @@ router.post('/admin/login', async (req: Request, res: Response) => {
       code: 'INVALID_CREDENTIALS'
     })
   } catch (error: any) {
-    console.error('[AUTH] Admin login error:', error)
+    console.error('admin login failed:', error)
     res.status(500).json({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR'
@@ -258,7 +258,7 @@ router.post('/login', async (req: Request, res: Response) => {
       }
     })
   } catch (error: any) {
-    console.error('[AUTH] Login error:', error)
+    console.error('login failed:', error)
     res.status(500).json({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR'
@@ -314,7 +314,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
     
  
     if (storedToken.used_at) {
-      console.error(`[AUTH] SECURITY BREACH: Token reuse detected for user ${payload.userId}, token hash: ${tokenHash.substring(0, 8)}...`)
+      console.error(`token reuse detected for user ${payload.userId}, token hash: ${tokenHash.substring(0, 8)}...`)
       
  
       db.prepare(`
@@ -370,7 +370,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
           userRole = user.role
         }
       } catch (error: any) {
-        console.warn('[AUTH] Failed to fetch role from entity store, using DB role:', error.message)
+        console.warn('failed to fetch role from entity store, using db role:', error.message)
         userRole = user.role
       }
     } else {
@@ -414,7 +414,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
       tokenType: 'Bearer'
     })
   } catch (error: any) {
-    console.error('[AUTH] Refresh error:', error)
+    console.error('token refresh failed:', error)
     res.status(500).json({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR'
@@ -441,7 +441,7 @@ router.post('/logout', async (req: Request, res: Response) => {
     
     res.json({ success: true })
   } catch (error: any) {
-    console.error('[AUTH] Logout error:', error)
+    console.error('logout failed:', error)
     res.status(500).json({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR'

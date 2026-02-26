@@ -182,7 +182,7 @@ const handleAddProvider = async () => {
       apiKey: newProvider.apiKey
     })
     
-    toast.success(`Provider '${newProvider.name}' added successfully`)
+    toast.success(`${newProvider.name} added`)
     showCreateModal.value = false
     
  
@@ -206,7 +206,7 @@ const handleRemoveProvider = async () => {
   
   try {
     await removeProvider(providerToDelete.value.name)
-    toast.success(`Provider '${providerToDelete.value.name}' removed successfully`)
+    toast.success(`${providerToDelete.value.name} removed`)
     showDeleteModal.value = false
     providerToDelete.value = null
   } catch (e: any) {

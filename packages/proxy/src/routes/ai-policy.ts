@@ -256,7 +256,6 @@ router.post('/generate', requireAdmin, async (req: Request, res: Response) => {
     let policy = ''
     if (response.choices && response.choices.length > 0) {
       policy = response.choices[0].message.content || ''
-      
 
       policy = policy.replace(/^```(?:cedar|policy)?\n?/gm, '').replace(/```$/gm, '').trim()
     }
@@ -264,6 +263,7 @@ router.post('/generate', requireAdmin, async (req: Request, res: Response) => {
     logInternalAction(req, {
       action: 'generate_policy',
       resourceType: 'policy',
+      decisionReason: res.locals.decisionReason ?? null,
       actionDurationMs: Date.now() - actionStart
     })
 

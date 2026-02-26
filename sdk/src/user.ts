@@ -1,163 +1,204 @@
 export interface UserSDKConfig {
   apiKey: string
-  proxyUrl?: string
+  proxyUrl?: string | URL
+  fetch?: typeof fetch
+  timeoutMs?: number
 }
 
+type UnknownRecord = Record<string, unknown>
+
+export type ChatMessageRole = 'system' | 'user' | 'assistant' | (string & {})
+
+export interface ChatMessage {
+  role: ChatMessageRole
+  content: string
+}
+
+export interface ChatCompletionParams extends UnknownRecord {
+  provider: string
+  model: string
+  messages: ChatMessage[]
+  ipAddress?: string
+  context?: Record<string, unknown>
+}
+
+export interface EmbeddingsParams extends UnknownRecord {
+  provider: string
+  model: string
+  input: string | string[] | Array<string | number[]>
+}
+
+export interface ImageGenerationParams extends UnknownRecord {
+  provider: string
+  model: string
+  prompt: string
+  n?: number
+  size?: string
+  quality?: string
+  response_format?: 'url' | 'b64_json'
+}
+
+const DEFAULT_PROXY_URL = 'http://localhost:3100'
+const DEFAULT_TIMEOUT_MS = 30_000
+
 export class UserSDK {
-  private config: UserSDKConfig
-  private userId: string
+  private readonly apiKey: string
+  private readonly baseUrl: string
+  private readonly fetchImpl: typeof fetch
+  private readonly timeoutMs: number
+  private readonly userId: string
 
   constructor(config: UserSDKConfig) {
-    let finalConfig = { ...config }
-    
-    if (!finalConfig.proxyUrl) {
-      finalConfig.proxyUrl = process.env.ZIRI_PROXY_URL || 'http://localhost:3100'
-    }
-    
- 
-    if (!finalConfig.apiKey) {
+    const apiKey = config.apiKey?.trim()
+    if (!apiKey) {
       throw new Error('apiKey is required')
     }
-    
-    if (!finalConfig.proxyUrl) {
-      throw new Error('proxyUrl is required. Provide in config or set ZIRI_PROXY_URL env var')
+    this.validateApiKey(apiKey)
+
+    const fetchImpl = config.fetch ?? globalThis.fetch
+    if (typeof fetchImpl !== 'function') {
+      throw new Error('global fetch is not available; pass a fetch implementation in config')
     }
-    
- 
-    this.validateApiKey(finalConfig.apiKey)
-    
- 
-    this.userId = this.extractUserId(finalConfig.apiKey)
-    
-    this.config = finalConfig
+
+    const proxyUrl = this.resolveProxyUrl(config.proxyUrl)
+
+    this.apiKey = apiKey
+    this.userId = this.extractUserId(apiKey)
+    this.baseUrl = proxyUrl
+    this.fetchImpl = fetchImpl
+    this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS
   }
 
-  private validateApiKey(apiKey: string): void {
-    if (!apiKey.startsWith('ziri-')) {
-      throw new Error('Invalid API key format. Expected format: ziri-{userId}-{hash}')
+  async chatCompletions<T = unknown>(params: ChatCompletionParams): Promise<T> {
+    const { provider, model, messages, ...extra } = params
+    if (!provider) {
+      throw new Error('provider is required')
     }
-  }
-
-  private extractUserId(apiKey: string): string {
-    const withoutPrefix = apiKey.substring(5)
-    const lastHyphen = withoutPrefix.lastIndexOf('-')
-    if (lastHyphen === -1 || lastHyphen === 0) {
-      throw new Error('Invalid API key format')
+    if (!model) {
+      throw new Error('model is required')
     }
-    return withoutPrefix.substring(0, lastHyphen)
-  }
+    if (!Array.isArray(messages) || messages.length === 0) {
+      throw new Error('messages must be a non-empty array')
+    }
 
-
-   
-  async chatCompletions(params: {
-    provider: string
-    model: string
-    messages: Array<{ role: string; content: string }>
-    ipAddress?: string
-    context?: Record<string, any>
-    [key: string]: any
-  }): Promise<any> {
- 
-    const response = await fetch(`${this.config.proxyUrl}/api/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': this.config.apiKey
-      },
-      body: JSON.stringify({
-        provider: params.provider,
-        model: params.model,
-        messages: params.messages,
-        ...Object.fromEntries(
-          Object.entries(params).filter(([key]) => 
-            !['provider', 'ipAddress', 'context'].includes(key)
-          )
-        )
-      })
+    return this.request('/api/chat/completions', {
+      provider,
+      model,
+      messages,
+      ...extra
     })
-    
-    if (!response.ok) {
-      const error = await response.text()
-      throw new Error(`Request failed: ${response.status} ${error}`)
-    }
-    
-    return response.json()
   }
 
-   
+  async embeddings<T = unknown>(params: EmbeddingsParams): Promise<T> {
+    const { provider, model, input, ...extra } = params
+    if (!provider || !model) {
+      throw new Error('provider and model are required for embeddings requests')
+    }
+    if (input === undefined) {
+      throw new Error('input is required for embeddings requests')
+    }
+
+    return this.request('/api/embeddings', {
+      provider,
+      model,
+      input,
+      ...extra
+    })
+  }
+
+  async images<T = unknown>(params: ImageGenerationParams): Promise<T> {
+    const { provider, model, prompt, ...extra } = params
+    if (!provider || !model) {
+      throw new Error('provider and model are required for image generation requests')
+    }
+    if (!prompt) {
+      throw new Error('prompt is required for image generation requests')
+    }
+
+    return this.request('/api/images/generations', {
+      provider,
+      model,
+      prompt,
+      ...extra
+    })
+  }
+
   getUserId(): string {
     return this.userId
   }
 
-  async embeddings(params: {
-    provider: string
-    model: string
-    input: string | string[] | Array<string | number[]>
-    [key: string]: any
-  }): Promise<any> {
-    const response = await fetch(`${this.config.proxyUrl}/api/embeddings`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': this.config.apiKey
-      },
-      body: JSON.stringify({
-        provider: params.provider,
-        model: params.model,
-        input: params.input,
-        ...Object.fromEntries(
-          Object.entries(params).filter(([key]) =>
-            !['provider', 'model', 'input'].includes(key)
-          )
-        )
+  private async request<T>(path: string, payload: UnknownRecord): Promise<T> {
+    const url = this.buildUrl(path)
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs)
+
+    try {
+      const response = await this.fetchImpl(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': this.apiKey
+        },
+        body: JSON.stringify(this.stripUndefined(payload)),
+        signal: controller.signal
       })
-    })
 
-    if (!response.ok) {
-      const error = await response.text()
-      throw new Error(`Request failed: ${response.status} ${error}`)
+      if (!response.ok) {
+        const body = await response.text().catch(() => '')
+        const message = body || response.statusText || 'unknown error'
+        throw new Error(`Request failed: ${response.status} ${message}`.trim())
+      }
+
+      return response.json() as Promise<T>
+    } catch (error: unknown) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(`Request timed out after ${this.timeoutMs}ms`)
+      }
+      throw error
+    } finally {
+      clearTimeout(timeout)
     }
-
-    return response.json()
   }
 
-  async images(params: {
-    provider: string
-    model: string
-    prompt: string
-    n?: number
-    size?: string
-    quality?: string
-    response_format?: 'url' | 'b64_json'
-    [key: string]: any
-  }): Promise<any> {
-    const response = await fetch(`${this.config.proxyUrl}/api/images/generations`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': this.config.apiKey
-      },
-      body: JSON.stringify({
-        provider: params.provider,
-        model: params.model,
-        prompt: params.prompt,
-        n: params.n,
-        size: params.size,
-        quality: params.quality,
-        response_format: params.response_format,
-        ...Object.fromEntries(
-          Object.entries(params).filter(([key]) =>
-            !['provider', 'model', 'prompt', 'n', 'size', 'quality', 'response_format'].includes(key)
-          )
-        )
-      })
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      throw new Error(`Request failed: ${response.status} ${error}`)
+  private stripUndefined(payload: UnknownRecord): UnknownRecord {
+    const result: UnknownRecord = {}
+    for (const [key, value] of Object.entries(payload)) {
+      if (value !== undefined) {
+        result[key] = value
+      }
     }
+    return result
+  }
 
-    return response.json()
+  private buildUrl(path: string): string {
+    if (!path.startsWith('/')) {
+      path = `/${path}`
+    }
+    return `${this.baseUrl}${path}`
+  }
+
+  private resolveProxyUrl(candidate?: string | URL): string {
+    const raw = candidate ?? process.env.ZIRI_PROXY_URL ?? DEFAULT_PROXY_URL
+    try {
+      const url = raw instanceof URL ? raw : new URL(raw)
+      return url.href.replace(/\/+$/, '')
+    } catch (err) {
+      throw new Error('proxyUrl must be an absolute URL')
+    }
+  }
+
+  private validateApiKey(apiKey: string): void {
+    if (!apiKey.startsWith('ziri-')) {
+      throw new Error('Invalid API key format. Expected prefix: ziri-')
+    }
+  }
+
+  private extractUserId(apiKey: string): string {
+    const withoutPrefix = apiKey.slice('ziri-'.length)
+    const separatorIndex = withoutPrefix.lastIndexOf('-')
+    if (separatorIndex <= 0) {
+      throw new Error('Invalid API key format; missing user identifier segment')
+    }
+    return withoutPrefix.slice(0, separatorIndex)
   }
 }

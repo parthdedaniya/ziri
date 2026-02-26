@@ -34,7 +34,7 @@ export async function authorizeRequest(request: PDPRequest): Promise<PDPResponse
       }
     }
     
-    console.log('[PDP] Authorization request:', JSON.stringify(requestBody, null, 2))
+    console.log('pdp authorization request:', JSON.stringify(requestBody, null, 2))
     
     const response = await fetch(`${config.pdpUrl}/authorize`, {
       method: 'POST',

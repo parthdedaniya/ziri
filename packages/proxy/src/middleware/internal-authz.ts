@@ -145,7 +145,7 @@ export function requireInternalAuthz(
         })
         return
       }
-
+      res.locals.decisionReason = result.reason;
       next()
     })
     .catch((error: any) => {

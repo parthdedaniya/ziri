@@ -1,6 +1,6 @@
 # Multi-stage build for ZIRI Proxy
 # Stage 1: Builder
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 # Install build dependencies for native modules (better-sqlite3)
 RUN apk add --no-cache python3 make g++
@@ -20,10 +20,12 @@ COPY packages/proxy ./packages/proxy
 COPY packages/ui ./packages/ui
 
 # Build proxy (which builds UI and copies it)
+# Override memory limit - 12GB default is excessive for CI/Docker
+ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN npm run build --workspace=packages/proxy
 
 # Stage 2: Runtime
-FROM node:20-alpine
+FROM node:24-alpine
 
 # Install runtime dependencies for native modules
 RUN apk add --no-cache python3 make g++

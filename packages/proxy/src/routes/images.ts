@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express'
+import { randomUUID } from 'crypto'
 import { extractUserIdFromApiKey } from '../utils/api-key.js'
 import * as keyService from '../services/key-service.js'
 import { serviceFactory } from '../services/service-factory.js'
@@ -14,13 +15,15 @@ import { enforceUserRateLimit, runLlmPreflight } from './shared/llm-preflight.js
 import {
   buildAuthorizationContext,
   releaseAfterProviderFailure,
-  safeCatchReleaseReserved
+  releaseReservedSpendOrLog,
+  releaseQueueSlotOrLog
 } from './shared/llm-route-helpers.js'
 import { mapStandardLlmRouteError } from './shared/llm-error-mapping.js'
+import { getDatabase } from '../db/index.js'
 
 const router: Router = Router()
 
-router.post('/generations', async (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   const requestStartTime = Date.now()
   let requestId: string | null = null
   let auditLogId: number | null = null
@@ -33,10 +36,18 @@ router.post('/generations', async (req: Request, res: Response) => {
     const preflight = await runLlmPreflight(req, res)
     if (!preflight) return
     requestId = preflight.requestId
-    const { userId, apiKeyId, allEntities, userKeyEntity, db } = preflight
+    const { userId, apiKeyId, allEntities, userKeyEntity } = preflight
     userKeyId = preflight.userKeyId
 
-    const { provider, model, prompt, n, size, quality, response_format, ...otherParams } = req.body
+    const {
+      provider,
+      model,
+      prompt,
+      n = 1,
+      size: imageSize = '1024x1024',
+      quality: imageQuality = 'standard',
+      ...otherParams
+    } = req.body
 
     if (!provider || !model || !prompt) {
       res.status(400).json({
@@ -46,10 +57,6 @@ router.post('/generations', async (req: Request, res: Response) => {
       })
       return
     }
-
-    const numImages = typeof n === 'number' && n > 0 ? n : 1
-    const imageSize = size || '1024x1024'
-    const imageQuality = quality || 'standard'
 
     const userEntity = await enforceUserRateLimit(res, { userId, apiKeyId, allEntities, requestId })
     if (!userEntity) return
@@ -64,6 +71,7 @@ router.post('/generations', async (req: Request, res: Response) => {
       return
     }
 
+    const db = getDatabase()
     const pricingRow = db.prepare(`
       SELECT price_per_image, max_images_per_request
       FROM image_pricing
@@ -81,16 +89,16 @@ router.post('/generations', async (req: Request, res: Response) => {
       return
     }
 
-    if (numImages > (pricingRow.max_images_per_request || 1)) {
+    if (n > (pricingRow.max_images_per_request || 1)) {
       res.status(400).json({
-        error: `Requested number of images (${numImages}) exceeds maximum allowed (${pricingRow.max_images_per_request})`,
+        error: `Requested number of images (${n}) exceeds maximum allowed (${pricingRow.max_images_per_request})`,
         code: 'IMAGE_REQUEST_TOO_LARGE',
         requestId
       })
       return
     }
 
-    const estimatedCost = numImages * pricingRow.price_per_image
+    const estimatedCost = n * pricingRow.price_per_image
 
     try {
       await queueManagerService.acquireSlot(
@@ -138,7 +146,7 @@ router.post('/generations', async (req: Request, res: Response) => {
     const { now, ipAddress, context } = buildAuthorizationContext(req, {
       model,
       provider,
-      isEmergency: false
+      isEmergency: otherParams.isEmergency || false
     })
 
     const authStartTime = Date.now()
@@ -193,8 +201,21 @@ router.post('/generations', async (req: Request, res: Response) => {
     })
 
     if (authResult.decision !== 'Allow') {
-      if (slotAcquired) {
-        queueManagerService.releaseSlot(userKeyId, requestId)
+      await releaseReservedSpendOrLog({
+        requestId,
+        userKeyId,
+        amount: reservedAmount,
+        spendReservationService,
+        reason: 'authorization denied'
+      })
+      costReserved = false
+      if (slotAcquired && userKeyId && requestId) {
+        releaseQueueSlotOrLog({
+          requestId,
+          userKeyId,
+          queueManagerService,
+          reason: 'authorization denied'
+        })
         slotAcquired = false
       }
       res.status(403).json({
@@ -213,10 +234,9 @@ router.post('/generations', async (req: Request, res: Response) => {
         provider,
         model,
         prompt,
-        n: numImages,
+        n,
         size: imageSize,
         quality: imageQuality,
-        response_format,
         ...otherParams
       })
     } catch (llmError: any) {
@@ -235,24 +255,26 @@ router.post('/generations', async (req: Request, res: Response) => {
     }
     const llmResponseTime = Date.now()
 
+    const providerRequestId = llmResponse.id || randomUUID()
     const totalCost = estimatedCost
 
-    const costTrackingId = await costTrackingService.trackImageCost({
+    const costTrackingId = await costTrackingService.trackCost({
       requestId,
       executionKey: apiKeyId,
       auditLogId,
       provider,
-      providerRequestId: llmResponse.id,
+      providerRequestId,
       modelRequested: model,
-      modelUsed: model,
-      totalCost,
-      numImages,
-      imageQuality,
-      imageSize,
+      modelUsed: llmResponse.model || model,
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      cachedTokens: 0,
       requestTimestamp: new Date(llmRequestStartTime).toISOString(),
       responseTimestamp: new Date(llmResponseTime).toISOString(),
       latencyMs: llmResponseTime - llmRequestStartTime,
       status: 'completed',
+      action: 'image_generation',
     })
 
     eventEmitterService.emitEvent('cost_tracked', {
@@ -260,13 +282,18 @@ router.post('/generations', async (req: Request, res: Response) => {
       requestId,
       timestamp: new Date().toISOString(),
       provider,
-      model,
+      model: llmResponse.model || model,
     })
 
-    await auditLogService.updateWithProviderResponse(requestId, llmResponse.id, costTrackingId)
+    await auditLogService.updateWithProviderResponse(requestId, providerRequestId, costTrackingId)
 
-    if (slotAcquired) {
-      queueManagerService.releaseSlot(userKeyId, requestId)
+    if (slotAcquired && userKeyId && requestId) {
+      releaseQueueSlotOrLog({
+        requestId,
+        userKeyId,
+        queueManagerService,
+        reason: 'response sent'
+      })
       slotAcquired = false
     }
 
@@ -290,24 +317,30 @@ router.post('/generations', async (req: Request, res: Response) => {
       },
     })
   } catch (error: any) {
-    await safeCatchReleaseReserved({
-      requestId,
-      userKeyId,
-      costReserved,
-      reservedAmount,
-      spendReservationService
-    })
+    if (costReserved) {
+      await releaseReservedSpendOrLog({
+        requestId,
+        userKeyId,
+        amount: reservedAmount,
+        spendReservationService,
+        reason: 'route error'
+      })
+      costReserved = false
+    }
     if (requestId && slotAcquired) {
-      try {
-        const uid = userKeyId || await keyService.getUserKeyIdForUser(extractUserIdFromApiKey(req.headers['x-api-key'] as string) || '')
-        if (uid) {
-          queueManagerService.releaseSlot(uid, requestId)
-        }
-      } catch {
+      const resolvedKeyId = await resolveUserKeyId(userKeyId, req)
+      if (resolvedKeyId) {
+        releaseQueueSlotOrLog({
+          requestId,
+          userKeyId: resolvedKeyId,
+          queueManagerService,
+          reason: 'route error'
+        })
+        slotAcquired = false
       }
     }
 
-    console.error('[IMAGES] Generation error:', error)
+    console.error('image generation error:', error)
 
     if (requestId && auditLogId) {
       try {
@@ -336,3 +369,17 @@ router.post('/generations', async (req: Request, res: Response) => {
 
 export default router
 
+async function resolveUserKeyId(existingId: string | null, req: Request): Promise<string | null> {
+  if (existingId) {
+    return existingId
+  }
+  try {
+    const headerKey = req.headers['x-api-key'] as string | undefined
+    const fallbackUserId = headerKey ? extractUserIdFromApiKey(headerKey) : null
+    if (!fallbackUserId) return null
+    return await keyService.getUserKeyIdForUser(fallbackUserId)
+  } catch (error) {
+    console.warn('failed to resolve user key id for image cleanup:', (error as Error).message)
+    return null
+  }
+}

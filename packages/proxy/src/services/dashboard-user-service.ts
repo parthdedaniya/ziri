@@ -240,7 +240,6 @@ export function getDashboardUser(userId: string): DashboardUser | null {
 
 export async function updateDashboardUser(userId: string, updates: {
   name?: string
-  email?: string
   role?: 'admin' | 'viewer' | 'user_admin' | 'policy_admin'
 }): Promise<DashboardUser> {
   const db = getDatabase()
@@ -256,18 +255,6 @@ export async function updateDashboardUser(userId: string, updates: {
   if (updates.name !== undefined) {
     updateFields.push('name = ?')
     updateValues.push(updates.name)
-  }
-  
-  if (updates.email !== undefined) {
-    const emailHash = hashEmail(updates.email)
-    const conflict = db.prepare('SELECT id FROM auth WHERE email_hash = ? AND id != ? AND status != 0').get(emailHash, userId) as any
-    if (conflict) {
-      throw new Error('User with this email already exists')
-    }
-    const encryptedEmail = encrypt(updates.email)
-    updateFields.push('email = ?')
-    updateFields.push('email_hash = ?')
-    updateValues.push(encryptedEmail, emailHash)
   }
   
   if (updates.role !== undefined) {
@@ -289,27 +276,15 @@ export async function updateDashboardUser(userId: string, updates: {
   `).run(...updateValues)
   
 
+  const entityUpdates: any = {}
   if (updates.role !== undefined) {
-    const entityUpdates: any = { role: updates.role }
-    if (updates.email !== undefined) {
-      entityUpdates.email = updates.email
-    }
-    if (updates.name !== undefined) {
-      entityUpdates.name = updates.name
-    }
+    entityUpdates.role = updates.role
+  }
+  if (updates.name !== undefined) {
+    entityUpdates.name = updates.name
+  }
+  if (Object.keys(entityUpdates).length > 0) {
     await internalEntityStore.updateEntity(userId, entityUpdates)
-  } else {
-
-    const entityUpdates: any = {}
-    if (updates.email !== undefined) {
-      entityUpdates.email = updates.email
-    }
-    if (updates.name !== undefined) {
-      entityUpdates.name = updates.name
-    }
-    if (Object.keys(entityUpdates).length > 0) {
-      await internalEntityStore.updateEntity(userId, entityUpdates)
-    }
   }
   
   const updated = db.prepare('SELECT * FROM auth WHERE id = ?').get(userId) as any

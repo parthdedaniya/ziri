@@ -46,42 +46,58 @@ export async function releaseAfterProviderFailure(params: {
   let slotAcquired = params.slotAcquired
 
   if (costReserved && params.userKeyId) {
-    await params.spendReservationService.releaseReservedSpend(params.userKeyId, params.reservedAmount)
-    costReserved = false
+    const released = await releaseReservedSpendOrLog({
+      userKeyId: params.userKeyId,
+      requestId: params.requestId,
+      amount: params.reservedAmount,
+      spendReservationService: params.spendReservationService,
+      reason: 'provider failure'
+    })
+    costReserved = !released
   }
-  if (slotAcquired) {
-    params.queueManagerService.releaseSlot(params.userKeyId as string, params.requestId as string)
-    slotAcquired = false
+
+  if (slotAcquired && params.userKeyId && params.requestId) {
+    const released = releaseQueueSlotOrLog({
+      userKeyId: params.userKeyId,
+      requestId: params.requestId,
+      queueManagerService: params.queueManagerService,
+      reason: 'provider failure'
+    })
+    slotAcquired = !released
   }
 
   return { costReserved, slotAcquired }
 }
 
-export async function safeCatchReleaseReserved(params: {
+export async function releaseReservedSpendOrLog(params: {
   requestId: string | null
   userKeyId: string | null
-  costReserved: boolean
-  reservedAmount: number
+  amount: number
   spendReservationService: SpendReservationLike
-}): Promise<void> {
-  if (params.requestId && params.userKeyId && params.costReserved) {
-    try {
-      await params.spendReservationService.releaseReservedSpend(params.userKeyId, params.reservedAmount)
-    } catch {
-    }
+  reason: string
+}): Promise<boolean> {
+  if (!params.requestId || !params.userKeyId) return false
+  try {
+    await params.spendReservationService.releaseReservedSpend(params.userKeyId, params.amount)
+    return true
+  } catch (error) {
+    console.warn(`failed to release spend for ${params.userKeyId} (${params.reason}) [${params.requestId}]:`, (error as Error).message)
+    return false
   }
 }
 
-export function safeCatchReleaseQueue(params: {
+export function releaseQueueSlotOrLog(params: {
   requestId: string | null
   userKeyId: string | null
-  slotAcquired: boolean
   queueManagerService: QueueManagerLike
-}): void {
-  if (params.requestId && params.slotAcquired && params.userKeyId) {
-    try {
-      params.queueManagerService.releaseSlot(params.userKeyId, params.requestId)
-    } catch {
-    }
+  reason: string
+}): boolean {
+  if (!params.requestId || !params.userKeyId) return false
+  try {
+    params.queueManagerService.releaseSlot(params.userKeyId, params.requestId)
+    return true
+  } catch (error) {
+    console.warn(`failed to release queue slot for ${params.userKeyId} (${params.reason}) [${params.requestId}]:`, (error as Error).message)
+    return false
   }
 }

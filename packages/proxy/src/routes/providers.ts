@@ -2,178 +2,103 @@ import { Router, type Request, type Response } from 'express'
 import { requireAdmin } from '../middleware/auth.js'
 import * as providerService from '../services/provider-service.js'
 import { logInternalAction } from '../utils/internal-audit-helpers.js'
+import { wrap } from '../utils/route.js'
 
 const router: Router = Router()
 
 router.use(requireAdmin)
 
-router.get('/', async (req: Request, res: Response) => {
-  try {
-    const {
-      search,
-      limit,
-      offset,
-      sortBy,
-      sortOrder
-    } = req.query
-    
-    const result = providerService.listProviders({
-      search: search as string | undefined,
-      limit: limit ? parseInt(limit as string, 10) : undefined,
-      offset: offset ? parseInt(offset as string, 10) : undefined,
-      sortBy: sortBy as string | undefined || null,
-      sortOrder: (sortOrder === 'asc' || sortOrder === 'desc') ? sortOrder as 'asc' | 'desc' : null
-    })
-    
-    res.json({
-      providers: result.data,
-      total: result.total
-    })
-  } catch (error: any) {
-    
-    console.error('[PROVIDERS] List error:', error)
-    res.status(500).json({
-      error: 'Failed to list providers',
-      code: 'LIST_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
-  }
-})
+router.get('/', wrap(async (req, res) => {
+  const { search, limit, offset, sortBy, sortOrder } = req.query
+  const result = providerService.listProviders({
+    search: search as string | undefined,
+    limit: limit ? parseInt(limit as string, 10) : undefined,
+    offset: offset ? parseInt(offset as string, 10) : undefined,
+    sortBy: sortBy as string | undefined || null,
+    sortOrder: (sortOrder === 'asc' || sortOrder === 'desc') ? sortOrder : null
+  })
+  res.json({ providers: result.data, total: result.total })
+}))
 
-router.get('/:name', async (req: Request, res: Response) => {
-  try {
-    const { name } = req.params
-    const provider = providerService.getProvider(name)
-    
-    if (!provider) {
-      res.status(404).json({
-        error: 'Provider not found',
-        code: 'PROVIDER_NOT_FOUND'
-      })
-      return
-    }
-    
-    res.json({ provider })
-  } catch (error: any) {
-    console.error('[PROVIDERS] Get error:', error)
-    res.status(500).json({
-      error: 'Failed to get provider',
-      code: 'GET_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
+router.get('/:name', wrap(async (req, res) => {
+  const provider = providerService.getProvider(req.params.name)
+  if (!provider) {
+    res.status(404).json({ error: 'Provider not found' })
+    return
   }
-})
+  res.json({ provider })
+}))
 
 router.post('/', (req: Request, res: Response) => {
-  const actionStart = Date.now()
+  const t0 = Date.now()
+  const { name, apiKey, metadata } = req.body
+
+  if (!name || !apiKey) {
+    res.status(400).json({ error: 'name and apiKey are required' })
+    return
+  }
+
   try {
-    const { name, apiKey, metadata } = req.body
-    
-    if (!name || !apiKey) {
-      res.status(400).json({
-        error: 'name and apiKey are required',
-        code: 'MISSING_FIELDS'
-      })
-      return
-    }
-    
     const provider = providerService.createOrUpdateProvider({ name, apiKey, metadata })
-    
     res.json({ provider })
 
     logInternalAction(req, {
       action: 'create_provider',
       resourceType: 'provider',
       resourceId: provider.name,
-      actionDurationMs: Date.now() - actionStart
+      decisionReason: res.locals.decisionReason ?? null,
+      actionDurationMs: Date.now() - t0
     })
-  } catch (error: any) {
-    console.error('[PROVIDERS] Create/Update error:', error)
-    
-    if (error.message.includes('Invalid API key')) {
-      res.status(400).json({
-        error: error.message,
-        code: 'INVALID_API_KEY'
-      })
-
+  } catch (err: any) {
+    if (err.message.includes('Invalid API key')) {
+      res.status(400).json({ error: err.message })
       return
     }
-    
-    res.status(500).json({
-      error: 'Failed to create/update provider',
-      code: 'CREATE_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
-
+    console.error('provider create/update failed:', err)
+    res.status(500).json({ error: 'Failed to save provider' })
   }
 })
 
 router.delete('/:name', (req: Request, res: Response) => {
-  const actionStart = Date.now()
+  const t0 = Date.now()
   try {
-    const { name } = req.params
-    providerService.deleteProvider(name)
-    
+    providerService.deleteProvider(req.params.name)
     res.json({ success: true })
 
     logInternalAction(req, {
       action: 'delete_provider',
       resourceType: 'provider',
-      resourceId: name,
-      actionDurationMs: Date.now() - actionStart
+      resourceId: req.params.name,
+      decisionReason: res.locals.decisionReason ?? null,
+      actionDurationMs: Date.now() - t0
     })
-  } catch (error: any) {
-    console.error('[PROVIDERS] Delete error:', error)
-    
-    if (error.message === 'Provider not found') {
-      res.status(404).json({
-        error: error.message,
-        code: 'PROVIDER_NOT_FOUND'
-      })
-
+  } catch (err: any) {
+    if (err.message === 'Provider not found') {
+      res.status(404).json({ error: err.message })
       return
     }
-    
-    res.status(500).json({
-      error: 'Failed to delete provider',
-      code: 'DELETE_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
-
+    console.error('provider delete failed:', err)
+    res.status(500).json({ error: 'Failed to delete provider' })
   }
 })
 
-router.post('/:name/test', async (req: Request, res: Response) => {
-  const actionStart = Date.now()
-  try {
-    const { name } = req.params
-    const result = await providerService.testProviderApiKey(name)
-    
-    if (result.success) {
-      res.json({ success: true, message: 'Provider connection successful' })
+router.post('/:name/test', wrap(async (req, res) => {
+  const t0 = Date.now()
+  const result = await providerService.testProviderApiKey(req.params.name)
 
-      logInternalAction(req, {
-        action: 'test_provider',
-        resourceType: 'provider',
-        resourceId: name,
-        actionDurationMs: Date.now() - actionStart
-      })
-    } else {
-      res.status(400).json({
-        error: result.error || 'Provider connection failed',
-        code: 'CONNECTION_FAILED'
-      })
-
-    }
-  } catch (error: any) {
-    console.error('[PROVIDERS] Test error:', error)
-    res.status(500).json({
-      error: 'Failed to test provider',
-      code: 'TEST_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
-
+  if (!result.success) {
+    res.status(400).json({ error: result.error || 'Connection failed' })
+    return
   }
-})
+
+  res.json({ success: true, message: 'Provider connection successful' })
+  logInternalAction(req, {
+    action: 'test_provider',
+    resourceType: 'provider',
+    resourceId: req.params.name,
+    decisionReason: res.locals.decisionReason ?? null,
+    actionDurationMs: Date.now() - t0
+  })
+}))
 
 export default router

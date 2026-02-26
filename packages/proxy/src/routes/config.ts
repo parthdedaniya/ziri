@@ -8,12 +8,9 @@ import { listEmailProviders } from '../email-providers/index.js'
 
 const router: Router = Router()
 
- 
 router.get('/', requireAdmin, async (req: Request, res: Response) => {
   try {
     const config = loadConfig()
-    
- 
 
     res.json({
       mode: config.mode,
@@ -25,13 +22,9 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
       email: config.email,
       logLevel: config.logLevel
     })
-  } catch (error: any) {
-
-    res.status(500).json({
-      error: 'Failed to load configuration',
-      code: 'CONFIG_LOAD_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
+  } catch (err: any) {
+    console.error('config load failed:', err)
+    res.status(500).json({ error: 'Failed to load config' })
   }
 })
 
@@ -45,7 +38,6 @@ router.get('/email-providers', requireAdmin, async (_req: Request, res: Response
   res.json({ providers })
 })
 
- 
 router.post('/', requireAdmin, (req: Request, res: Response) => {
   const actionStart = Date.now()
   try {
@@ -90,12 +82,10 @@ router.post('/', requireAdmin, (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      message: 'Configuration saved successfully. Restart the proxy server for server settings to take effect.',
+      message: 'Config saved. Restart the server for changes to take effect.',
       config: {
-        mode: updatedConfig.mode,
-        server: updatedConfig.server,
-        publicUrl: updatedConfig.publicUrl,
-        email: updatedConfig.email,
+        mode: updatedConfig.mode, server: updatedConfig.server,
+        publicUrl: updatedConfig.publicUrl, email: updatedConfig.email,
         logLevel: updatedConfig.logLevel
       }
     })
@@ -104,16 +94,12 @@ router.post('/', requireAdmin, (req: Request, res: Response) => {
       action: 'update_config',
       resourceType: 'config',
       resourceId: 'global',
+      decisionReason: res.locals.decisionReason ?? null,
       actionDurationMs: Date.now() - actionStart
     })
-  } catch (error: any) {
-    console.error('[CONFIG] Failed to update configuration:', error)
-    res.status(500).json({
-      error: 'Failed to save configuration',
-      code: 'CONFIG_SAVE_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
-    })
-
+  } catch (err: any) {
+    console.error('config save failed:', err)
+    res.status(500).json({ error: 'Failed to save config' })
   }
 })
 

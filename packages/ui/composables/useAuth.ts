@@ -124,7 +124,7 @@ export function useAuth() {
  
     adminAuthStore.clearAuth()
     userAuthStore.clearAuth()
-    toast.info('Logged out successfully')
+    toast.info('Signed out')
     
  
     if (process.client) {

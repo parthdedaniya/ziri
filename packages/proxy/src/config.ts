@@ -64,7 +64,7 @@ export function loadConfig(): ProxyConfig {
     fileConfig = readConfig()
   } catch (error) {
  
-    console.warn('[CONFIG] Config file not found, using defaults')
+    console.warn('no config file found, using defaults')
   }
   
   let rootKey = getRootKey()

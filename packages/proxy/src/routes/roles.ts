@@ -49,6 +49,7 @@ router.post('/', async (req: Request, res: Response) => {
       action: 'create_role',
       resourceType: 'roles',
       resourceId: roleId,
+      decisionReason: res.locals.decisionReason ?? null,
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {
@@ -79,6 +80,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
       action: 'delete_role',
       resourceType: 'roles',
       resourceId: id,
+      decisionReason: res.locals.decisionReason ?? null,
       actionDurationMs: Date.now() - actionStart
     })
   } catch (error: any) {

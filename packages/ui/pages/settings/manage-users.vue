@@ -55,11 +55,9 @@ const newUser = reactive<CreateDashboardUserInput>({
 
 const editUser = reactive<{
   name: string
-  email: string
   role: 'admin' | 'viewer' | 'user_admin' | 'policy_admin'
 }>({
   name: '',
-  email: '',
   role: 'viewer'
 })
 
@@ -152,7 +150,7 @@ const handleCreateUser = async () => {
       showPasswordModal.value = true
       toast.warning('Email was not sent. Please save the password below.')
     } else {
-      toast.success('Dashboard user created successfully. Credentials have been sent to the user\'s email address.')
+      toast.success('Dashboard user created. Credentials sent via email.')
     }
     
     Object.assign(newUser, {
@@ -172,7 +170,6 @@ const handleCreateUser = async () => {
 const openEditModal = (user: DashboardUser) => {
   selectedUser.value = user
   editUser.name = user.name
-  editUser.email = user.email
   editUser.role = user.role as 'admin' | 'viewer' | 'user_admin' | 'policy_admin'
   showEditModal.value = true
 }
@@ -185,7 +182,7 @@ const handleUpdateUser = async () => {
     await updateUser(selectedUser.value.userId, editUser)
     showEditModal.value = false
     selectedUser.value = null
-    toast.success('Dashboard user updated successfully')
+    toast.success('User updated')
     await fetchUsers()
   } catch (error: any) {
     toast.error(getUserMessage(error))
@@ -228,7 +225,7 @@ const handleDeleteUser = async () => {
     await deleteUser(userToDelete.value.userId)
     showDeleteModal.value = false
     userToDelete.value = null
-    toast.success('Dashboard user deleted successfully')
+    toast.success('User deleted')
     await fetchUsers()
   } catch (error: any) {
     toast.error(getUserMessage(error))
@@ -265,10 +262,10 @@ const handleToggleStatus = async (user: DashboardUser) => {
     isTogglingStatus.value = true
     if (user.status === 1) {
       await disableUser(user.userId)
-      toast.success('Dashboard user disabled successfully')
+      toast.success('User disabled')
     } else {
       await enableUser(user.userId)
-      toast.success('Dashboard user enabled successfully')
+      toast.success('User enabled')
     }
     await fetchUsers()
   } catch (error: any) {
@@ -608,7 +605,7 @@ const getRoleBadgeColor = (role: string) => {
     <!-- Edit User Modal -->
     <UiModal v-model="showEditModal" title="Edit Dashboard User">
       <form @submit.prevent="handleUpdateUser" class="space-y-4">
-        <UiInput v-model="editUser.email" label="Email" type="email" required />
+        <UiInput :model-value="selectedUser?.email || ''" label="Email" type="email" disabled />
         <UiInput v-model="editUser.name" label="Name" required />
         <div>
           <label class="block text-sm font-medium mb-2 text-[rgb(var(--text))]">Role</label>

@@ -5,8 +5,27 @@ import { serviceFactory } from '../../services/service-factory.js'
 import { getDatabase } from '../../db/index.js'
 import { auditLogService } from '../../services/audit-log-service.js'
 import { rateLimiterService } from '../../services/rate-limiter-service.js'
+import type { Entity } from '../../services/interfaces.js'
 
-type AnyEntity = any
+interface UserEntity extends Entity {
+  uid: {
+    type: 'User'
+    id: string
+  }
+  attrs: Entity['attrs'] & {
+    limit_requests_per_minute?: number | null
+  }
+}
+
+interface UserKeyEntity extends Entity {
+  uid: {
+    type: 'UserKey'
+    id: string
+  }
+  attrs: Entity['attrs'] & {
+    status?: 'active' | 'disabled' | 'deleted'
+  }
+}
 
 export interface LlmPreflightResult {
   requestId: string
@@ -14,8 +33,8 @@ export interface LlmPreflightResult {
   userId: string
   apiKeyId: string
   userKeyId: string
-  userKeyEntity: AnyEntity
-  allEntities: AnyEntity[]
+  userKeyEntity: UserKeyEntity
+  allEntities: Entity[]
   db: ReturnType<typeof getDatabase>
 }
 
@@ -86,10 +105,7 @@ export async function runLlmPreflight(req: Request, res: Response): Promise<LlmP
   const entityStore = serviceFactory.getEntityStore()
   const allEntitiesResult = await entityStore.getEntities()
   const allEntities = allEntitiesResult.data
-  const userKeyEntity = allEntities.find((e: AnyEntity) =>
-    e.uid.type === 'UserKey' &&
-    e.uid.id === foundUserKeyId
-  )
+  const userKeyEntity = allEntities.find(e => isUserKeyEntity(e, foundUserKeyId))
 
   if (!userKeyEntity) {
     res.status(403).json({
@@ -100,7 +116,7 @@ export async function runLlmPreflight(req: Request, res: Response): Promise<LlmP
     return null
   }
 
-  const keyStatus = (userKeyEntity.attrs as any).status
+  const keyStatus = userKeyEntity.attrs.status
   if (keyStatus === 'disabled' || keyStatus === 'deleted') {
     res.status(403).json({
       error: 'API key is disabled or has been deleted',
@@ -127,14 +143,11 @@ export async function enforceUserRateLimit(
   params: {
     userId: string
     apiKeyId: string
-    allEntities: AnyEntity[]
+    allEntities: Entity[]
     requestId: string
   }
-): Promise<AnyEntity | null> {
-  const userEntity = params.allEntities.find((e: AnyEntity) =>
-    e.uid.type === 'User' &&
-    e.uid.id === params.userId
-  )
+): Promise<UserEntity | null> {
+  const userEntity = params.allEntities.find(entity => isUserEntity(entity, params.userId))
 
   if (!userEntity) {
     res.status(403).json({
@@ -145,7 +158,7 @@ export async function enforceUserRateLimit(
     return null
   }
 
-  const limitRequestsPerMinute = (userEntity.attrs as any).limit_requests_per_minute ?? null
+  const limitRequestsPerMinute = userEntity.attrs.limit_requests_per_minute ?? null
   const effectiveLimit = limitRequestsPerMinute === 0 ? null : limitRequestsPerMinute
   const rateLimitResult = await rateLimiterService.checkRateLimit(
     'api_key',
@@ -170,4 +183,12 @@ export async function enforceUserRateLimit(
   }
 
   return userEntity
+}
+
+function isUserEntity(entity: Entity, userId: string): entity is UserEntity {
+  return entity.uid.type === 'User' && entity.uid.id === userId
+}
+
+function isUserKeyEntity(entity: Entity, userKeyId: string): entity is UserKeyEntity {
+  return entity.uid.type === 'UserKey' && entity.uid.id === userKeyId
 }

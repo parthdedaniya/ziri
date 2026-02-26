@@ -119,7 +119,7 @@ export function useSchema() {
             schemaStore.version = data.data.version
             schemaStore.lastSyncedAt = new Date()
             
-            toast.success('Schema updated successfully')
+            toast.success('Schema saved')
             return {
                 schema: data.data.schema,
                 schemaJson: data.data.schemaJson || (typeof data.data.schema === 'object' ? data.data.schema : null),

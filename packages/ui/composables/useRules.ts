@@ -95,7 +95,7 @@ export function useRules() {
             }
 
             await listRules()
-            toast.success('Rule created successfully')
+            toast.success('Rule created')
             })
         } catch (e: any) {
             throw e
@@ -130,7 +130,7 @@ export function useRules() {
             }
 
             await listRules()
-            toast.success('Rule updated successfully')
+            toast.success('Rule saved')
             })
         } catch (e: any) {
             throw e
@@ -161,7 +161,7 @@ export function useRules() {
             }
 
             await listRules()
-            toast.success('Rule deleted successfully')
+            toast.success('Rule removed')
             })
         } catch (e: any) {
             throw e
@@ -193,7 +193,7 @@ export function useRules() {
             }
 
             await listRules()
-            toast.success(`Rule ${isActive ? 'activated' : 'deactivated'} successfully`)
+            toast.success(`Rule ${isActive ? 'enabled' : 'disabled'}`)
             })
         } catch (e: any) {
             throw e

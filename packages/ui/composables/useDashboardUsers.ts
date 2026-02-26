@@ -86,7 +86,6 @@ export const useDashboardUsers = () => {
   
   const updateUser = async (userId: string, updates: {
     name?: string
-    email?: string
     role?: 'admin' | 'viewer' | 'user_admin' | 'policy_admin'
   }) => {
     const token = adminAuthStore.accessToken
