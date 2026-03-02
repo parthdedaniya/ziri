@@ -196,10 +196,6 @@ watch([debouncedSearchQuery, currentPage, itemsPerPage, sortBy, sortOrder], () =
   fetchKeys()
 })
 
-watch([filterStatus], () => {
- 
-})
-
 const columns = [
   { key: 'userId', header: 'User ID', sortable: true },
   { key: 'name', header: 'Name', sortable: true },

@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { getCookie, removeCookie, setCookie } from '~/utils/cookies'
 
 export interface AdminUser {
   userId: string
@@ -7,28 +8,24 @@ export interface AdminUser {
   name: string
 }
 
- 
-const getCookie = (name: string): string | null => {
-  if (typeof document === 'undefined') return null
-  const value = `; ${document.cookie}`
-  const parts = value.split(`; ${name}=`)
-  if (parts.length === 2) return parts.pop()?.split(';').shift() || null
-  return null
-}
-
-const setCookie = (name: string, value: string, days: number = 30) => {
-  if (typeof document === 'undefined') return
-  const expires = new Date()
-  expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000)
-  document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/;SameSite=Lax`
-}
-
-const removeCookie = (name: string) => {
-  if (typeof document === 'undefined') return
-  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/;`
-}
-
 const COOKIE_NAME = 'admin-auth'
+
+function persistAdminAuthCookie(payload: {
+  accessToken: string
+  refreshToken: string
+  tokenExpiry: Date
+  user: AdminUser
+  serverSessionId: string | null
+}) {
+  if (!process.client) return
+  setCookie(COOKIE_NAME, JSON.stringify({
+    accessToken: payload.accessToken,
+    refreshToken: payload.refreshToken,
+    tokenExpiry: payload.tokenExpiry.toISOString(),
+    user: payload.user,
+    serverSessionId: payload.serverSessionId
+  }), 30)
+}
 
 export const useAdminAuthStore = defineStore('adminAuth', {
   state: () => ({
@@ -52,22 +49,17 @@ export const useAdminAuthStore = defineStore('adminAuth', {
     setTokens(accessToken: string, refreshToken: string, expiresIn: number, user: AdminUser) {
       this.accessToken = accessToken
       this.refreshToken = refreshToken
- 
       this.tokenExpiry = new Date(Date.now() + (expiresIn - 60) * 1000)
       this.user = user
       this.error = null
-      
- 
-      if (process.client) {
-        const authData = {
-          accessToken,
-          refreshToken,
-          tokenExpiry: this.tokenExpiry.toISOString(),
-          user,
-          serverSessionId: this.serverSessionId
-        }
-        setCookie(COOKIE_NAME, JSON.stringify(authData), 30)
-      }
+
+      persistAdminAuthCookie({
+        accessToken,
+        refreshToken,
+        tokenExpiry: this.tokenExpiry,
+        user,
+        serverSessionId: this.serverSessionId
+      })
     },
 
     clearAuth() {
@@ -77,8 +69,7 @@ export const useAdminAuthStore = defineStore('adminAuth', {
       this.user = null
       this.serverSessionId = null
       this.error = null
-      
- 
+
       if (process.client) {
         removeCookie(COOKIE_NAME)
       }
@@ -86,14 +77,13 @@ export const useAdminAuthStore = defineStore('adminAuth', {
 
     loadFromStorage() {
       if (!process.client) return
-      
+
       try {
         const stored = getCookie(COOKIE_NAME)
         if (stored) {
           const data = JSON.parse(stored)
           const expiry = new Date(data.tokenExpiry)
-          
- 
+
           if (expiry > new Date()) {
             this.accessToken = data.accessToken
             this.refreshToken = data.refreshToken
@@ -101,7 +91,6 @@ export const useAdminAuthStore = defineStore('adminAuth', {
             this.user = data.user
             this.serverSessionId = data.serverSessionId || null
           } else {
- 
             this.clearAuth()
           }
         }
@@ -120,21 +109,19 @@ export const useAdminAuthStore = defineStore('adminAuth', {
 
     setServerSessionId(sessionId: string | null) {
       this.serverSessionId = sessionId
- 
-      if (process.client && this.accessToken && this.refreshToken && this.tokenExpiry && this.user) {
-        const authData = {
+
+      if (this.accessToken && this.refreshToken && this.tokenExpiry && this.user) {
+        persistAdminAuthCookie({
           accessToken: this.accessToken,
           refreshToken: this.refreshToken,
-          tokenExpiry: this.tokenExpiry.toISOString(),
+          tokenExpiry: this.tokenExpiry,
           user: this.user,
           serverSessionId: sessionId
-        }
-        setCookie(COOKIE_NAME, JSON.stringify(authData), 30)
+        })
       }
     },
 
     async checkServerSession(): Promise<boolean> {
- 
       try {
         const response = await fetch('/api/health')
         if (!response.ok) {
@@ -143,14 +130,12 @@ export const useAdminAuthStore = defineStore('adminAuth', {
         const data = await response.json()
         const currentSessionId = data.sessionId
 
- 
         if (this.serverSessionId && currentSessionId && this.serverSessionId !== currentSessionId) {
           console.warn('[AUTH] Server session changed - server restarted, logging out')
           this.clearAuth()
           return false
         }
 
- 
         if (currentSessionId && (!this.serverSessionId || this.serverSessionId !== currentSessionId)) {
           this.setServerSessionId(currentSessionId)
         }

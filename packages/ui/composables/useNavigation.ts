@@ -40,7 +40,7 @@ export function getNavSections(isDashboardUser: boolean): NavSection[] {
         adminOnly: false,
         items: [
           { name: 'Schema', path: '/schema', icon: 'schema', adminOnly: false },
-          { name: 'Policies', path: '/policies', icon: 'rules', adminOnly: false }
+          { name: 'Policies', path: '/rules', icon: 'rules', adminOnly: false }
         ]
       },
       {

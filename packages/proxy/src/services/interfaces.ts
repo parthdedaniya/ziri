@@ -1,4 +1,5 @@
 import type { Entity } from '../types/entity.js'
+import type { EntityQueryParams } from './entity-query-utils.js'
 
  
 export type { Entity }
@@ -55,14 +56,7 @@ export interface IPolicyStore {
  
 export interface IEntityStore {
    
-  getEntities(uid?: string, params?: {
-    search?: string
-    limit?: number
-    offset?: number
-    entityType?: string
-    sortBy?: string | null
-    sortOrder?: 'asc' | 'desc' | null
-  }): Promise<{ data: Entity[]; total: number }>
+  getEntities(uid?: string, params?: EntityQueryParams): Promise<{ data: Entity[]; total: number }>
   
    
   createEntity(entity: Entity, status: number): Promise<void>

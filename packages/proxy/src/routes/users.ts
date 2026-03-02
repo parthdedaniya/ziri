@@ -3,17 +3,40 @@ import { requireAdmin, type AdminRequest } from '../middleware/auth.js'
 import * as userService from '../services/user-service.js'
 import * as dashboardUserService from '../services/dashboard-user-service.js'
 import * as keyService from '../services/key-service.js'
-import { internalAuthorizationService } from '../services/internal/internal-authorization-service.js'
-import { logInternalAction } from '../utils/internal-audit-helpers.js'
 import { wrap } from '../utils/route.js'
+import { authorizeInternalAdminAction, logAdminRouteAction } from './shared/internal-admin-route-helpers.js'
 import type { User } from '../services/user-service.js'
 
 const router: Router = Router()
 
 router.use(requireAdmin)
 
+function parseSortOrder(value: unknown): 'asc' | 'desc' | null {
+  return value === 'asc' || value === 'desc' ? value : null
+}
+
+async function requireAdminPermission(
+  req: AdminRequest,
+  res: Response,
+  action: string,
+  resourceType: string
+): Promise<boolean> {
+  const authzResult = await authorizeInternalAdminAction({
+    adminUserId: req.admin!.userId,
+    action,
+    resourceType,
+    context: {}
+  })
+  if (!authzResult.allowed) {
+    res.status(403).json({ error: 'Access denied', reason: authzResult.reason })
+    return false
+  }
+  return true
+}
+
 router.get('/', wrap(async (req: Request, res: Response) => {
   const { search, limit, offset, sortBy, sortOrder, forApiKeys } = req.query
+  const parsedSortOrder = parseSortOrder(sortOrder)
 
   let result: { data: User[]; total: number }
 
@@ -24,13 +47,13 @@ router.get('/', wrap(async (req: Request, res: Response) => {
         search: search as string | undefined,
         limit: 1000, offset: 0,
         sortBy: sortBy as string | undefined || null,
-        sortOrder: (sortOrder === 'asc' || sortOrder === 'desc') ? sortOrder : null
+        sortOrder: parsedSortOrder
       }),
       dashboardUserService.listDashboardUsers({
         search: search as string | undefined,
         limit: 1000, offset: 0,
         sortBy: sortBy as string | undefined || null,
-        sortOrder: (sortOrder === 'asc' || sortOrder === 'desc') ? sortOrder : null
+        sortOrder: parsedSortOrder
       })
     ])
 
@@ -52,7 +75,7 @@ router.get('/', wrap(async (req: Request, res: Response) => {
       limit: limit ? parseInt(limit as string, 10) : undefined,
       offset: offset ? parseInt(offset as string, 10) : undefined,
       sortBy: sortBy as string | undefined || null,
-      sortOrder: (sortOrder === 'asc' || sortOrder === 'desc') ? sortOrder : null
+      sortOrder: parsedSortOrder
     })
   }
 
@@ -88,17 +111,8 @@ router.post('/', async (req: AdminRequest, res: Response) => {
     const wantsKey = createApiKey === true || createApiKey === 'true'
 
     if (wantsKey && req.admin) {
-      const principal = `DashboardUser::"${req.admin.userId}"`
-      const authzResult = await internalAuthorizationService.authorize({
-        principal,
-        action: 'Action::"create_key"',
-        resourceType: 'keys',
-        context: {}
-      })
-      if (!authzResult.allowed) {
-        res.status(403).json({ error: 'Access denied', reason: authzResult.reason })
-        return
-      }
+      const allowed = await requireAdminPermission(req, res, 'Action::"create_key"', 'keys')
+      if (!allowed) return
     }
 
     const result = await userService.createUser({
@@ -120,18 +134,22 @@ router.post('/', async (req: AdminRequest, res: Response) => {
       message: msg
     })
 
-    logInternalAction(req, {
-      action: 'create_user', resourceType: 'user',
+    logAdminRouteAction({
+      req,
+      res,
+      action: 'create_user',
+      resourceType: 'user',
       resourceId: result.user.userId,
-      decisionReason: res.locals.decisionReason ?? null,
-      actionDurationMs: Date.now() - t0
+      startedAt: t0
     })
     if (result.apiKey) {
-      logInternalAction(req, {
-        action: 'create_key', resourceType: 'api_key',
+      logAdminRouteAction({
+        req,
+        res,
+        action: 'create_key',
+        resourceType: 'api_key',
         resourceId: result.user.userId,
-        decisionReason: res.locals.decisionReason ?? null,
-        actionDurationMs: Date.now() - t0
+        startedAt: t0
       })
     }
   } catch (err: any) {
@@ -157,10 +175,13 @@ router.put('/:userId', async (req: Request, res: Response) => {
     })
     res.json({ user })
 
-    logInternalAction(req, {
-      action: 'update_user', resourceType: 'user',
+    logAdminRouteAction({
+      req,
+      res,
+      action: 'update_user',
+      resourceType: 'user',
       resourceId: user.userId,
-      actionDurationMs: Date.now() - t0
+      startedAt: t0
     })
   } catch (err: any) {
     if (err.message?.startsWith('Role not found')) {
@@ -183,32 +204,29 @@ router.delete('/:userId', async (req: AdminRequest, res: Response) => {
     const hadKeys = keyService.getKeysByUserId(userId).length > 0
 
     if (hadKeys && req.admin) {
-      const principal = `DashboardUser::"${req.admin.userId}"`
-      const authzResult = await internalAuthorizationService.authorize({
-        principal,
-        action: 'Action::"delete_keys_by_user"',
-        resourceType: 'keys',
-        context: {}
-      })
-      if (!authzResult.allowed) {
-        res.status(403).json({ error: 'Access denied', reason: authzResult.reason })
-        return
-      }
+      const allowed = await requireAdminPermission(req, res, 'Action::"delete_keys_by_user"', 'keys')
+      if (!allowed) return
     }
 
     await userService.deleteUser(userId)
     res.json({ success: true })
 
-    logInternalAction(req, {
-      action: 'delete_user', resourceType: 'user', resourceId: userId,
-      decisionReason: res.locals.decisionReason ?? null,
-      actionDurationMs: Date.now() - t0
+    logAdminRouteAction({
+      req,
+      res,
+      action: 'delete_user',
+      resourceType: 'user',
+      resourceId: userId,
+      startedAt: t0
     })
     if (hadKeys) {
-      logInternalAction(req, {
-        action: 'delete_keys', resourceType: 'api_key', resourceId: userId,
-        decisionReason: res.locals.decisionReason ?? null,
-        actionDurationMs: Date.now() - t0
+      logAdminRouteAction({
+        req,
+        res,
+        action: 'delete_keys',
+        resourceType: 'api_key',
+        resourceId: userId,
+        startedAt: t0
       })
     }
   } catch (err: any) {
@@ -233,11 +251,13 @@ router.post('/:userId/reset-password', wrap(async (req: Request, res: Response) 
       : 'Password reset. Save the password — it won\'t be shown again.'
   })
 
-  logInternalAction(req, {
-    action: 'reset_password', resourceType: 'user',
+  logAdminRouteAction({
+    req,
+    res,
+    action: 'reset_password',
+    resourceType: 'user',
     resourceId: req.params.userId,
-    decisionReason: res.locals.decisionReason ?? null,
-    actionDurationMs: Date.now() - t0
+    startedAt: t0
   })
 }))
 

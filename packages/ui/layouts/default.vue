@@ -47,6 +47,7 @@ const pageTitle = computed(() => {
     '/analytics': 'Analytics',
     '/logs': 'Logs',
     '/schema': 'Schema',
+    '/rules': 'Policies',
     '/policies': 'Policies',
     '/users': 'Users',
     '/keys': 'API Keys',

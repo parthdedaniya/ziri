@@ -1,31 +1,11 @@
 import { defineStore } from 'pinia'
+import { getCookie, removeCookie, setCookie } from '~/utils/cookies'
 
-export interface User {
+interface AuthUser {
   userId: string
   email: string
   role: string
   name: string
-}
-
- 
-const getCookie = (name: string): string | null => {
-  if (typeof document === 'undefined') return null
-  const value = `; ${document.cookie}`
-  const parts = value.split(`; ${name}=`)
-  if (parts.length === 2) return parts.pop()?.split(';').shift() || null
-  return null
-}
-
-const setCookie = (name: string, value: string, days: number = 30) => {
-  if (typeof document === 'undefined') return
-  const expires = new Date()
-  expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000)
-  document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/;SameSite=Lax`
-}
-
-const removeCookie = (name: string) => {
-  if (typeof document === 'undefined') return
-  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/;`
 }
 
 const COOKIE_NAME = 'user-auth'
@@ -35,7 +15,7 @@ export const useUserAuthStore = defineStore('userAuth', {
     accessToken: null as string | null,
     refreshToken: null as string | null,
     tokenExpiry: null as Date | null,
-    user: null as User | null,
+    user: null as AuthUser | null,
     isLoading: false,
     error: null as string | null
   }),
@@ -54,15 +34,13 @@ export const useUserAuthStore = defineStore('userAuth', {
   },
 
   actions: {
-    setTokens(accessToken: string, refreshToken: string, expiresIn: number, user: User) {
+    setTokens(accessToken: string, refreshToken: string, expiresIn: number, user: AuthUser) {
       this.accessToken = accessToken
       this.refreshToken = refreshToken
- 
       this.tokenExpiry = new Date(Date.now() + (expiresIn - 60) * 1000)
       this.user = user
       this.error = null
-      
- 
+
       if (process.client) {
         const authData = {
           accessToken,
@@ -80,8 +58,7 @@ export const useUserAuthStore = defineStore('userAuth', {
       this.tokenExpiry = null
       this.user = null
       this.error = null
-      
- 
+
       if (process.client) {
         removeCookie(COOKIE_NAME)
       }
@@ -89,21 +66,19 @@ export const useUserAuthStore = defineStore('userAuth', {
 
     loadFromStorage() {
       if (!process.client) return
-      
+
       try {
         const stored = getCookie(COOKIE_NAME)
         if (stored) {
           const data = JSON.parse(stored)
           const expiry = new Date(data.tokenExpiry)
-          
- 
+
           if (expiry > new Date()) {
             this.accessToken = data.accessToken
             this.refreshToken = data.refreshToken
             this.tokenExpiry = expiry
             this.user = data.user
           } else {
- 
             this.clearAuth()
           }
         }

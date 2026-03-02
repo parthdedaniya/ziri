@@ -1,611 +1,52 @@
 <script setup lang="ts">
-import { useRules } from '~/composables/useRules'
-import { useConfigStore } from '~/stores/config'
-import { useToast } from '~/composables/useToast'
-import { extractApiErrorMessage, useApiError } from '~/composables/useApiError'
-import { useSchema } from '~/composables/useSchema'
-import { useCedarWasm } from '~/composables/useCedarWasm'
-import { useDebounce } from '~/composables/useDebounce'
-import { useAdminAuth } from '~/composables/useAdminAuth'
-import { useInternalAuth } from '~/composables/useInternalAuth'
 import AIPolicyChatModal from '~/components/AIPolicyChatModal.vue'
-import { parsePolicyId, stripPolicyId, formatPolicyWithId } from '~/utils/cedar'
-import type { Policy, CreatePolicyInput } from '~/types/cedar'
-import type { ValidationError } from '~/composables/useCedarWasm'
-import type * as Monaco from 'monaco-editor'
-
-const configStore = useConfigStore()
-const { listRules, createRule, updateRule, deleteRule, setRuleStatus, rules, loading } = useRules()
-const { getSchema } = useSchema()
-const { validatePolicies, formatPolicy } = useCedarWasm()
-const toast = useToast()
-const { checkActions, checkAction } = useInternalAuth()
-const { getUserMessage } = useApiError()
-
-
-const permissionsLoading = ref(true)
-const canCreatePolicy = ref(false)
-const canUpdatePolicy = ref(false)
-const canDeletePolicy = ref(false)
-const canPatchPolicyStatus = ref(false)
-const canGeneratePolicyWithAI = ref(false)
-
- 
-const showCreateModal = ref(false)
-const showEditModal = ref(false)
-const showDeleteModal = ref(false)
-const showTemplateModal = ref(false)
-const showAIChatModal = ref(false)
-const ruleToDelete = ref<Policy | null>(null)
-const ruleToEdit = ref<Policy | null>(null)
-const isOpeningFromTemplate = ref(false)
-
-interface PolicyTemplate {
-  id: string
-  category: string
-  title: string
-  description: string
-  policy: string
-}
-
-const templates = ref<PolicyTemplate[]>([])
-const templatesLoading = ref(false)
-
- 
-const searchQuery = ref('')
-const filterEffect = ref<'' | 'permit' | 'forbid'>('')
-
- 
-const currentPage = ref(1)
-const itemsPerPage = ref(20)
-const totalRules = ref(0)
-
- 
-const sortBy = ref<string | null>(null)
-const sortOrder = ref<'asc' | 'desc' | null>(null)
-
- 
-const newRule = reactive<CreatePolicyInput & { isActive: boolean; policyId: string }>({
-  policy: '',
-  description: '',
-  isActive: true,
-  policyId: ''
-})
-
- 
-const validationErrors = ref<ValidationError[]>([])
-const validationWarnings = ref<ValidationError[]>([])
-const isValidating = ref(false)
-
- 
-const debouncedSearchQuery = useDebounce(searchQuery, 300)
-
- 
-const fetchRules = async () => {
-  try {
-    const result = await listRules({
-      search: debouncedSearchQuery.value || undefined,
-      effect: filterEffect.value || undefined,
-      limit: itemsPerPage.value,
-      offset: (currentPage.value - 1) * itemsPerPage.value,
-      sortBy: sortBy.value,
-      sortOrder: sortOrder.value
-    })
-    totalRules.value = result.total || 0
-  } catch (e) {
- 
-  }
-}
-
- 
-const handleSort = (newSortBy: string | null, newSortOrder: 'asc' | 'desc' | null) => {
-  sortBy.value = newSortBy
-  sortOrder.value = newSortOrder
- 
-  currentPage.value = 1
-}
-
- 
-watch([debouncedSearchQuery, filterEffect, currentPage, itemsPerPage, sortBy, sortOrder], () => {
-  fetchRules()
-})
-
- 
-watch(showCreateModal, (isOpen) => {
-  if (isOpen) {
-    if (!isOpeningFromTemplate.value) {
-      newRule.policy = ''
-      newRule.description = ''
-      newRule.policyId = ''
-      newRule.isActive = true
-      validationErrors.value = []
-      validationWarnings.value = []
-      ruleToEdit.value = null
-    }
-    isOpeningFromTemplate.value = false
-  }
-})
-
-watch(showTemplateModal, async (isOpen) => {
-  if (isOpen) {
-    if (templates.value.length === 0 && !templatesLoading.value) {
-      await fetchTemplates()
-    }
-  }
-})
-
-const fetchTemplates = async () => {
-  templatesLoading.value = true
-  try {
-    const { getAuthHeader } = useAdminAuth()
-    const authHeader = getAuthHeader()
-
-    if (!authHeader) {
-      templatesLoading.value = false
-      return
-    }
-    
-    const response = await fetch('/api/policies/templates', {
-      headers: {
-        'Authorization': authHeader
-      }
-    })
-
-    if (response.ok) {
-      const data = await response.json()
-      templates.value = data.templates || []
-    } else {
-      const error = await response.json().catch(() => ({ error: response.statusText }))
-      throw new Error(extractApiErrorMessage({ data: error }, 'Failed to load templates'))
-    }
-  } catch (error: any) {
-    toast.error(getUserMessage(error))
-  } finally {
-    templatesLoading.value = false
-  }
-}
-
-const useTemplate = async (template: PolicyTemplate) => {
-  showTemplateModal.value = false
-  
-  await nextTick()
-  
-  isOpeningFromTemplate.value = true
-  const parsedId = parsePolicyId(template.policy)
-  newRule.policyId = parsedId ?? ''
-  newRule.policy = parsedId ? stripPolicyId(template.policy) : template.policy
-  newRule.description = template.title
-  newRule.isActive = true
-  validationErrors.value = []
-  validationWarnings.value = []
-  
-  showCreateModal.value = true
-  
-  await nextTick()
-  validatePolicy(parsedId ? formatPolicyWithId(parsedId, newRule.policy) : template.policy)
-}
-
-const handleOpenTemplateModal = async () => {
-  showTemplateModal.value = true
-  if (templates.value.length === 0 && !templatesLoading.value) {
-    await fetchTemplates()
-  }
-}
-
-const groupedTemplates = computed(() => {
-  const grouped: Record<string, PolicyTemplate[]> = {}
-  templates.value.forEach(template => {
-    if (!grouped[template.category]) {
-      grouped[template.category] = []
-    }
-    grouped[template.category].push(template)
-  })
-  return grouped
-})
-
- 
-onMounted(async () => {
-
-  permissionsLoading.value = true
-  try {
-    const permissions = await checkActions([
-      { action: 'create_policy', resourceType: 'policies' },
-      { action: 'update_policy', resourceType: 'policies' },
-      { action: 'delete_policy', resourceType: 'policies' },
-      { action: 'patch_policy_status', resourceType: 'policies' },
-      { action: 'generate_policy_with_ai', resourceType: 'policies' }
-    ])
-    
-    canCreatePolicy.value = permissions.results.find(r => r.action === 'create_policy')?.allowed || false
-    canUpdatePolicy.value = permissions.results.find(r => r.action === 'update_policy')?.allowed || false
-    canDeletePolicy.value = permissions.results.find(r => r.action === 'delete_policy')?.allowed || false
-    canPatchPolicyStatus.value = permissions.results.find(r => r.action === 'patch_policy_status')?.allowed || false
-    canGeneratePolicyWithAI.value = permissions.results.find(r => r.action === 'generate_policy_with_ai')?.allowed || false
-  } finally {
-    permissionsLoading.value = false
-  }
-  
-  await nextTick()
-  
-
-  const route = useRoute()
-  if (route.query.create === 'true' && route.query.policy) {
-    try {
-      const policyText = decodeURIComponent(route.query.policy as string)
-      isOpeningFromTemplate.value = true
-      const parsedId = parsePolicyId(policyText)
-      newRule.policyId = parsedId ?? ''
-      newRule.policy = parsedId ? stripPolicyId(policyText) : policyText
-      newRule.description = 'AI Generated Policy'
-      newRule.isActive = true
-      validationErrors.value = []
-      validationWarnings.value = []
-      
-
-      await navigateTo('/rules', { replace: true })
-      
-
-      await nextTick()
-      await new Promise(resolve => setTimeout(resolve, 100))
-      
-
-      showCreateModal.value = true
-      await nextTick()
-      validatePolicy(parsedId ? formatPolicyWithId(parsedId, newRule.policy) : policyText)
-    } catch (e: any) {
-      toast.error(getUserMessage(e))
-    }
-  }
-  
-  if (configStore.isConfigured) {
-    await fetchRules()
-  }
-})
-
-const columns = [
-  { key: 'effect', header: 'Effect', class: 'w-24', sortable: true },
-  { key: 'description', header: 'Description', sortable: true },
-  { key: 'status', header: 'Status', class: 'w-32', sortable: true },
-  { key: 'actions', header: '', class: 'w-32' }
-]
-
- 
-const validatePolicy = async (policyText: string) => {
-  if (!policyText.trim()) {
-    validationErrors.value = []
-    validationWarnings.value = []
-    await setPolicyMarkers([])
-    return
-  }
-  
-  isValidating.value = true
-  try {
- 
-    const schemaData = await getSchema('json')
-    const schema = schemaData.schemaJson || schemaData.schema
-    
-    const result = await validatePolicies(policyText, schema)
-    validationErrors.value = result.errors
-    validationWarnings.value = result.warnings
-  } catch (e: any) {
-    validationErrors.value = [{
-      message: `Validation failed: ${e.message}`,
-      help: null,
-      sourceLocations: []
-    }]
-    validationWarnings.value = []
-  } finally {
-    isValidating.value = false
-  }
-
-
-  await setPolicyMarkers(validationErrors.value)
-}
-
- 
-let validationTimer: NodeJS.Timeout | null = null
-const debouncedValidate = (policyText: string) => {
-  if (validationTimer) {
-    clearTimeout(validationTimer)
-  }
-  
-  validationTimer = setTimeout(() => {
-    validatePolicy(policyText)
-  }, 500)
-}
-
- 
-const formatPolicyText = async (policyText: string) => {
-  if (!policyText.trim()) return policyText
-  
-  try {
-    const result = await formatPolicy(policyText, 4)
-    if ('formatted' in result) {
-      return result.formatted
-    } else {
- 
-      if (result.errors && result.errors.length > 0) {
-        result.errors.forEach((error) => {
-          if (error.sourceLocations && error.sourceLocations.length > 0) {
-            error.sourceLocations.forEach((location) => {
-            })
-          }
-        })
-      }
-      return policyText
-    }
-  } catch (e: any) {
-    return policyText
-  }
-}
-
- 
-const onPolicyChange = (value: string) => {
-  newRule.policy = value
-  debouncedValidate(value)
-}
-
- 
-const onPolicyBlur = async () => {
-  if (newRule.policy.trim()) {
-    const formatted = await formatPolicyText(newRule.policy)
-    if (formatted !== newRule.policy) {
-      newRule.policy = formatted
- 
-      debouncedValidate(formatted)
-    }
-  }
-}
-
-
-const monacoEditor = useMonacoEditor()
-const policyEditorInstance = shallowRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
-const policyCursorPos = ref({ line: 1, column: 1 })
-
-const setPolicyMarkers = async (errors: ValidationError[]) => {
-  const editor = policyEditorInstance.value
-  if (!editor) return
-  const model = editor.getModel()
-  if (!model || model.isDisposed()) return
-
-  const markers: Monaco.editor.IMarkerData[] = errors.map((err) => {
-    if (err.sourceLocations && err.sourceLocations.length > 0) {
-      const loc = err.sourceLocations[0]
-      const startPos = model.getPositionAt(loc.start)
-      const endPos = model.getPositionAt(loc.end)
-      return {
-        severity: 8,
-        message: err.message + (err.help ? `\n${err.help}` : ''),
-        startLineNumber: startPos.lineNumber,
-        startColumn: startPos.column,
-        endLineNumber: endPos.lineNumber,
-        endColumn: endPos.column,
-      }
-    }
-    return {
-      severity: 8,
-      message: err.message + (err.help ? `\n${err.help}` : ''),
-      startLineNumber: 1,
-      startColumn: 1,
-      endLineNumber: 1,
-      endColumn: model.getLineMaxColumn(1),
-    }
-  })
-
-  await monacoEditor.setEditorMarker(model, markers)
-}
-
-const onPolicyEditorLoad = (editor: Monaco.editor.IStandaloneCodeEditor) => {
-  policyEditorInstance.value = editor
-  monacoEditor.setTheme()
-
-
-  editor.onDidChangeCursorPosition(({ position }) => {
-    policyCursorPos.value = { line: position.lineNumber, column: position.column }
-  })
-
-
-  if (newRule.policy.trim()) {
-    validatePolicy(newRule.policy)
-  }
-
-
-  editor.onDidChangeModelContent(() => {
-    const value = editor.getValue()
-    newRule.policy = value
-    debouncedValidate(value)
-  })
-}
-
-
-const onPolicyMarkerChanges = async (editor: Monaco.editor.IStandaloneCodeEditor) => {
-  const monaco = await useMonaco()
-  const model = editor.getModel()
-  if (monaco && model) {
-    monaco.editor.onDidChangeMarkers((uris: Monaco.Uri[]) => {
-      if (uris.some((uri: Monaco.Uri) => uri.toString() === model.uri.toString())) {
-
-      }
-    })
-  }
-}
-
-const handleCreateRule = async () => {
-
-  const check = await checkAction('create_policy', 'policies')
-  if (!check.allowed) {
-    toast.error('You do not have permission to create policies')
-    return
-  }
-  
-  if (!newRule.policyId.trim()) {
-    toast.warning('Policy ID is required')
-    return
-  }
-  
-  if (!newRule.policy.trim() || !newRule.description.trim()) {
-    toast.warning('Please fill in all fields')
-    return
-  }
-  
-  if (validationErrors.value.length > 0) {
-    toast.warning('Please fix validation errors before saving')
-    return
-  }
-  
-  const fullPolicy = formatPolicyWithId(newRule.policyId.trim(), newRule.policy)
-  
-  try {
-    await createRule({ policy: fullPolicy, description: newRule.description })
- 
-    if (!newRule.isActive) {
-
-      const statusCheck = await checkAction('patch_policy_status', 'policies')
-      if (!statusCheck.allowed) {
-        toast.error('You do not have permission to change policy status')
-        return
-      }
-      await setRuleStatus(fullPolicy, false)
-    }
-    showCreateModal.value = false
-    newRule.policy = ''
-    newRule.description = ''
-    newRule.policyId = ''
-    newRule.isActive = true
-    validationErrors.value = []
-    validationWarnings.value = []
-  } catch (e) {
- 
-  }
-}
-
-const handleEditRule = async (rule: Policy) => {
-  ruleToEdit.value = rule
-  newRule.description = rule.description
-  newRule.isActive = rule.isActive
-  validationErrors.value = []
-  validationWarnings.value = []
-  
-  const parsedId = parsePolicyId(rule.policy)
-  newRule.policyId = parsedId ?? ''
-  const body = parsedId ? stripPolicyId(rule.policy) : rule.policy
-  
-  try {
-    const formatted = await formatPolicyText(body)
-    newRule.policy = formatted
-    validatePolicy(parsedId ? formatPolicyWithId(parsedId, formatted) : formatted)
-  } catch (e) {
-    newRule.policy = body
-    validatePolicy(rule.policy)
-  }
-  
-  showEditModal.value = true
-}
-
-const handleUpdateRule = async () => {
-  if (!ruleToEdit.value) return
-  
-
-  const check = await checkAction('update_policy', 'policies')
-  if (!check.allowed) {
-    toast.error('You do not have permission to update policies')
-    return
-  }
-  
-  if (!newRule.policyId.trim()) {
-    toast.warning('Policy ID is required')
-    return
-  }
-  
-  if (!newRule.policy.trim() || !newRule.description.trim()) {
-    toast.warning('Please fill in all fields')
-    return
-  }
-  
-  if (validationErrors.value.length > 0) {
-    toast.warning('Please fix validation errors before saving')
-    return
-  }
-  
-  const fullPolicy = formatPolicyWithId(newRule.policyId.trim(), newRule.policy)
-  
-  try {
- 
- 
-    if (newRule.isActive !== ruleToEdit.value.isActive) {
-
-      const statusCheck = await checkAction('patch_policy_status', 'policies')
-      if (!statusCheck.allowed) {
-        toast.error('You do not have permission to change policy status')
-        return
-      }
-      await setRuleStatus(ruleToEdit.value.policy, newRule.isActive)
-    }
- 
-    if (ruleToEdit.value.policy !== fullPolicy || ruleToEdit.value.description !== newRule.description) {
-      await updateRule(ruleToEdit.value.policy, { policy: fullPolicy, description: newRule.description })
-    }
-    showEditModal.value = false
-    ruleToEdit.value = null
-    newRule.policy = ''
-    newRule.description = ''
-    newRule.policyId = ''
-    newRule.isActive = true
-    validationErrors.value = []
-    validationWarnings.value = []
-  } catch (e) {
- 
-  }
-}
-
-const handleCancelEdit = () => {
-  showEditModal.value = false
-  ruleToEdit.value = null
-  newRule.policy = ''
-  newRule.description = ''
-  newRule.policyId = ''
-  newRule.isActive = true
-  validationErrors.value = []
-  validationWarnings.value = []
-}
-
-const confirmDelete = async (rule: Policy) => {
-
-  const check = await checkAction('delete_policy', 'policies')
-  if (!check.allowed) {
-    toast.error('You do not have permission to delete policies')
-    return
-  }
-  
-  ruleToDelete.value = rule
-  showDeleteModal.value = true
-}
-
-const handleDeleteRule = async () => {
-  if (!ruleToDelete.value) return
-  
-  try {
-    await deleteRule(ruleToDelete.value.policy)
-    showDeleteModal.value = false
-    ruleToDelete.value = null
-  } catch (e) {
- 
-  }
-}
-
-const handleUseAIPolicy = async (policy: string) => {
-
-  const check = await checkAction('generate_policy_with_ai', 'policies')
-  if (!check.allowed) {
-    toast.error('You do not have permission to generate policies with AI')
-    return
-  }
-
-}
-
-const formatValidationMessage = (message: string) => {
-  return getUserMessage({ message })
-}
+import RuleFormModal from '~/components/rules/RuleFormModal.vue'
+import { useRulesPageState } from '~/composables/useRulesPageState'
+
+const {
+  permissionsLoading,
+  canCreatePolicy,
+  canUpdatePolicy,
+  canDeletePolicy,
+  canGeneratePolicyWithAI,
+  showCreateModal,
+  showEditModal,
+  showDeleteModal,
+  showTemplateModal,
+  showAIChatModal,
+  templates,
+  templatesLoading,
+  searchQuery,
+  filterEffect,
+  currentPage,
+  itemsPerPage,
+  totalRules,
+  sortBy,
+  sortOrder,
+  newRule,
+  validationErrors,
+  validationWarnings,
+  isValidating,
+  groupedTemplates,
+  rules,
+  loading,
+  columns,
+  policyCursorPos,
+  monacoEditor,
+  handleSort,
+  useTemplate,
+  handleOpenTemplateModal,
+  onPolicyEditorLoad,
+  onPolicyMarkerChanges,
+  handleCreateRule,
+  handleEditRule,
+  handleUpdateRule,
+  handleCancelCreate,
+  handleCancelEdit,
+  confirmDelete,
+  handleDeleteRule,
+  formatValidationMessage
+} = useRulesPageState()
 </script>
 
 <template>
@@ -838,103 +279,23 @@ const formatValidationMessage = (message: string) => {
     </UiTable>
 
     <!-- Create Modal -->
-    <UiModal v-model="showCreateModal" title="Create Policy">
-      <form @submit.prevent="handleCreateRule" class="space-y-5">
-        <div>
-          <label class="block text-xs font-semibold text-[rgb(var(--text-secondary))] mb-1.5">Description</label>
-          <input 
-            v-model="newRule.description"
-            type="text"
-            placeholder="Allow engineers to query LLM"
-            class="input"
-          />
-        </div>
-
-        <div>
-          <label class="block text-xs font-semibold text-[rgb(var(--text-secondary))] mb-1.5">Policy ID (required)</label>
-          <input 
-            v-model="newRule.policyId"
-            type="text"
-            placeholder="e.g. basic-allow-user"
-            class="input"
-          />
-        </div>
-
-        <!-- Status Toggle -->
-        <div class="flex items-center justify-between p-4 rounded-lg border-2 border-[rgb(var(--border))] bg-[rgb(var(--surface-elevated))]">
-          <div>
-            <label class="block text-sm font-semibold text-[rgb(var(--text))] mb-0.5">Policy Status</label>
-            <p class="text-xs text-[rgb(var(--text-muted))]">Enable or disable this policy</p>
-          </div>
-          <label class="relative inline-flex items-center cursor-pointer">
-            <input 
-              type="checkbox" 
-              v-model="newRule.isActive"
-              class="sr-only peer"
-            />
-            <div class="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-emerald-500 dark:peer-checked:bg-emerald-600"></div>
-            <span class="ml-3 text-sm font-medium text-[rgb(var(--text))]">
-              {{ newRule.isActive ? 'Enabled' : 'Disabled' }}
-            </span>
-          </label>
-        </div>
-        
-        <div>
-          <div class="flex items-center justify-between mb-1.5">
-            <label class="block text-xs font-semibold text-[rgb(var(--text-secondary))]">Policy</label>
-            <span v-if="isValidating" class="text-xs text-[rgb(var(--text-muted))]">Validating...</span>
-            <span v-else-if="validationErrors.length > 0" class="text-xs text-red-500">{{ validationErrors.length }} error(s)</span>
-            <span v-else-if="newRule.policy.trim()" class="text-xs text-green-500">Valid</span>
-          </div>
-          <div class="rounded-lg overflow-hidden border-2" :class="validationErrors.length > 0 ? 'border-red-500' : 'border-[rgb(var(--border))]'">
-            <MonacoEditor
-              v-model="newRule.policy"
-              lang="cedar-policy"
-              :options="monacoEditor.options"
-              class="h-44"
-              @load="(editor) => { onPolicyEditorLoad(editor); onPolicyMarkerChanges(editor); }"
-            />
-            <div class="flex items-center justify-between text-xs px-2 py-0.5 bg-neutral-200 dark:bg-slate-900 text-neutral-500 dark:text-neutral-400">
-              <span class="font-medium uppercase tracking-wide">Cedar</span>
-              <span>Ln {{ policyCursorPos.line }}, Col {{ policyCursorPos.column }}</span>
-            </div>
-          </div>
-          
-          <!-- Validation Errors -->
-          <div v-if="validationErrors.length > 0" class="mt-2 space-y-1 max-h-40 overflow-y-auto">
-            <div 
-              v-for="(error, idx) in validationErrors" 
-              :key="idx"
-              class="p-2 rounded bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800"
-            >
-              <p class="text-xs text-red-700 dark:text-red-300">{{ formatValidationMessage(error.message) }}</p>
-              <p v-if="error.help" class="text-xs text-red-600 dark:text-red-400 mt-0.5">{{ error.help }}</p>
-            </div>
-          </div>
-          
-          <!-- Validation Warnings -->
-          <div v-if="validationWarnings.length > 0" class="mt-2 space-y-1 max-h-40 overflow-y-auto">
-            <div 
-              v-for="(warning, idx) in validationWarnings" 
-              :key="idx"
-              class="p-2 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800"
-            >
-              <p class="text-xs text-amber-700 dark:text-amber-300">{{ formatValidationMessage(warning.message) }}</p>
-              <p v-if="warning.help" class="text-xs text-amber-600 dark:text-amber-400 mt-0.5">{{ warning.help }}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div class="flex gap-3 justify-end pt-2">
-          <UiButton type="button" variant="outline" @click="showCreateModal = false; newRule.policyId = ''; newRule.policy = ''; newRule.description = ''; newRule.isActive = true; validationErrors = []; validationWarnings = []">
-            Cancel
-          </UiButton>
-          <UiButton type="submit" :loading="loading" :disabled="validationErrors.length > 0">
-            Create Policy
-          </UiButton>
-        </div>
-      </form>
-    </UiModal>
+    <RuleFormModal
+      v-model="showCreateModal"
+      title="Create Policy"
+      submit-label="Create Policy"
+      :loading="loading"
+      :is-validating="isValidating"
+      :validation-errors="validationErrors"
+      :validation-warnings="validationWarnings"
+      :policy-cursor-pos="policyCursorPos"
+      :monaco-options="monacoEditor.options"
+      :form-state="newRule"
+      :on-policy-editor-load="onPolicyEditorLoad"
+      :on-policy-marker-changes="onPolicyMarkerChanges"
+      :format-validation-message="formatValidationMessage"
+      @submit="handleCreateRule"
+      @cancel="handleCancelCreate"
+    />
 
     <!-- Template Selector Modal -->
     <UiModal v-model="showTemplateModal" title="Policy Templates" size="lg">
@@ -987,103 +348,23 @@ const formatValidationMessage = (message: string) => {
     </UiModal>
 
     <!-- Edit Modal -->
-    <UiModal v-model="showEditModal" title="Edit Policy">
-      <form @submit.prevent="handleUpdateRule" class="space-y-5">
-        <div>
-          <label class="block text-xs font-semibold text-[rgb(var(--text-secondary))] mb-1.5">Description</label>
-          <input 
-            v-model="newRule.description"
-            type="text"
-            placeholder="Allow engineers to query LLM"
-            class="input"
-          />
-        </div>
-
-        <div>
-          <label class="block text-xs font-semibold text-[rgb(var(--text-secondary))] mb-1.5">Policy ID (required)</label>
-          <input 
-            v-model="newRule.policyId"
-            type="text"
-            placeholder="e.g. basic-allow-user"
-            class="input"
-          />
-        </div>
-
-        <!-- Status Toggle -->
-        <div class="flex items-center justify-between p-4 rounded-lg border-2 border-[rgb(var(--border))] bg-[rgb(var(--surface-elevated))]">
-          <div>
-            <label class="block text-sm font-semibold text-[rgb(var(--text))] mb-0.5">Policy Status</label>
-            <p class="text-xs text-[rgb(var(--text-muted))]">Enable or disable this policy</p>
-          </div>
-          <label class="relative inline-flex items-center cursor-pointer">
-            <input 
-              type="checkbox" 
-              v-model="newRule.isActive"
-              class="sr-only peer"
-            />
-            <div class="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-emerald-500 dark:peer-checked:bg-emerald-600"></div>
-            <span class="ml-3 text-sm font-medium text-[rgb(var(--text))]">
-              {{ newRule.isActive ? 'Enabled' : 'Disabled' }}
-            </span>
-          </label>
-        </div>
-        
-        <div>
-          <div class="flex items-center justify-between mb-1.5">
-            <label class="block text-xs font-semibold text-[rgb(var(--text-secondary))]">Policy</label>
-            <span v-if="isValidating" class="text-xs text-[rgb(var(--text-muted))]">Validating...</span>
-            <span v-else-if="validationErrors.length > 0" class="text-xs text-red-500">{{ validationErrors.length }} error(s)</span>
-            <span v-else-if="newRule.policy.trim()" class="text-xs text-green-500">Valid</span>
-          </div>
-          <div class="rounded-lg overflow-hidden border-2" :class="validationErrors.length > 0 ? 'border-red-500' : 'border-[rgb(var(--border))]'">
-            <MonacoEditor
-              v-model="newRule.policy"
-              lang="cedar-policy"
-              :options="monacoEditor.options"
-              class="h-44"
-              @load="(editor) => { onPolicyEditorLoad(editor); onPolicyMarkerChanges(editor); }"
-            />
-            <div class="flex items-center justify-between text-xs px-2 py-0.5 bg-neutral-200 dark:bg-slate-900 text-neutral-500 dark:text-neutral-400">
-              <span class="font-medium uppercase tracking-wide">Cedar</span>
-              <span>Ln {{ policyCursorPos.line }}, Col {{ policyCursorPos.column }}</span>
-            </div>
-          </div>
-          
-          <!-- Validation Errors -->
-          <div v-if="validationErrors.length > 0" class="mt-2 space-y-1 max-h-40 overflow-y-auto">
-            <div 
-              v-for="(error, idx) in validationErrors" 
-              :key="idx"
-              class="p-2 rounded bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800"
-            >
-              <p class="text-xs text-red-700 dark:text-red-300">{{ formatValidationMessage(error.message) }}</p>
-              <p v-if="error.help" class="text-xs text-red-600 dark:text-red-400 mt-0.5">{{ error.help }}</p>
-            </div>
-          </div>
-          
-          <!-- Validation Warnings -->
-          <div v-if="validationWarnings.length > 0" class="mt-2 space-y-1 max-h-40 overflow-y-auto">
-            <div 
-              v-for="(warning, idx) in validationWarnings" 
-              :key="idx"
-              class="p-2 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800"
-            >
-              <p class="text-xs text-amber-700 dark:text-amber-300">{{ formatValidationMessage(warning.message) }}</p>
-              <p v-if="warning.help" class="text-xs text-amber-600 dark:text-amber-400 mt-0.5">{{ warning.help }}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div class="flex gap-3 justify-end pt-2">
-          <UiButton type="button" variant="outline" @click="handleCancelEdit">
-            Cancel
-          </UiButton>
-          <UiButton type="submit" :loading="loading" :disabled="validationErrors.length > 0">
-            Update Policy
-          </UiButton>
-        </div>
-      </form>
-    </UiModal>
+    <RuleFormModal
+      v-model="showEditModal"
+      title="Edit Policy"
+      submit-label="Update Policy"
+      :loading="loading"
+      :is-validating="isValidating"
+      :validation-errors="validationErrors"
+      :validation-warnings="validationWarnings"
+      :policy-cursor-pos="policyCursorPos"
+      :monaco-options="monacoEditor.options"
+      :form-state="newRule"
+      :on-policy-editor-load="onPolicyEditorLoad"
+      :on-policy-marker-changes="onPolicyMarkerChanges"
+      :format-validation-message="formatValidationMessage"
+      @submit="handleUpdateRule"
+      @cancel="handleCancelEdit"
+    />
 
     <!-- Delete Confirmation Modal -->
     <UiModal v-model="showDeleteModal" title="Delete Policy" size="sm">
@@ -1105,7 +386,7 @@ const formatValidationMessage = (message: string) => {
     </UiModal>
 
       <!-- AI Policy Chat Modal -->
-      <AIPolicyChatModal v-model="showAIChatModal" @usePolicy="handleUseAIPolicy" />
+      <AIPolicyChatModal v-model="showAIChatModal" />
     </template>
   </div>
 </template>

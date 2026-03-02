@@ -3,24 +3,144 @@ import { requireAdmin, type AdminRequest } from '../middleware/auth.js'
 import * as dashboardUserService from '../services/dashboard-user-service.js'
 import * as keyService from '../services/key-service.js'
 import { internalEntityStore } from '../services/internal/internal-entity-store.js'
-import { internalAuthorizationService } from '../services/internal/internal-authorization-service.js'
-import { logInternalAction } from '../utils/internal-audit-helpers.js'
+import { authorizeInternalAdminAction, logAdminRouteAction } from './shared/internal-admin-route-helpers.js'
 
 const router: Router = Router()
 
+const DASHBOARD_ROLES = ['admin', 'viewer', 'user_admin', 'policy_admin'] as const
+
+type DashboardRole = typeof DASHBOARD_ROLES[number]
 
 router.use(requireAdmin)
 
+function isDashboardRole(value: unknown): value is DashboardRole {
+  return typeof value === 'string' && DASHBOARD_ROLES.includes(value as DashboardRole)
+}
+
+function auditAction(req: AdminRequest, res: Response, action: string, resourceId: string, startedAt: number): void {
+  logAdminRouteAction({
+    req,
+    res,
+    action,
+    resourceType: 'dashboard_user',
+    resourceId,
+    startedAt
+  })
+}
+
+function denySelfAction(res: Response, message: string): void {
+  res.status(403).json({
+    error: message,
+    code: 'SELF_MODIFICATION_FORBIDDEN'
+  })
+}
+
+function denyEntityNotFound(res: Response): void {
+  res.status(403).json({
+    error: 'User entity not found',
+    code: 'ENTITY_NOT_FOUND'
+  })
+}
+
+function denyDashboardUserNotFound(res: Response): void {
+  res.status(404).json({
+    error: 'Dashboard user not found',
+    code: 'USER_NOT_FOUND'
+  })
+}
+
+async function getTargetDashboardEntity(res: Response, userId: string) {
+  const targetEntity = await internalEntityStore.getEntity(userId)
+  if (!targetEntity) {
+    denyDashboardUserNotFound(res)
+    return null
+  }
+  return targetEntity
+}
+
+async function requireAdminOnlyAction(
+  req: AdminRequest,
+  res: Response,
+  action: string,
+  deniedMessage: string
+): Promise<boolean> {
+  const principalUserId = req.admin!.userId
+  if (principalUserId === 'ziri') {
+    return true
+  }
+
+  if (!(await internalEntityStore.getEntity(principalUserId))) {
+    denyEntityNotFound(res)
+    return false
+  }
+
+  const authzResult = await authorizeInternalAdminAction({
+    adminUserId: principalUserId,
+    action,
+    resourceType: 'dashboard_users',
+    context: {}
+  })
+
+  if (!authzResult.allowed) {
+    res.status(403).json({
+      error: deniedMessage,
+      code: 'ADMIN_ONLY_ACTION'
+    })
+    return false
+  }
+
+  return true
+}
+
+async function getTargetForMutation(
+  req: AdminRequest,
+  res: Response,
+  userId: string,
+  selfActionMessage: string
+) {
+  if (req.admin!.userId === userId) {
+    denySelfAction(res, selfActionMessage)
+    return null
+  }
+  return getTargetDashboardEntity(res, userId)
+}
+
+async function requireAdminOnlyIf(
+  req: AdminRequest,
+  res: Response,
+  shouldRequire: boolean,
+  action: string,
+  deniedMessage: string
+): Promise<boolean> {
+  if (!shouldRequire) {
+    return true
+  }
+  return requireAdminOnlyAction(req, res, action, deniedMessage)
+}
+
+async function requireKeysDeletionPermission(req: AdminRequest, res: Response): Promise<boolean> {
+  const authzResult = await authorizeInternalAdminAction({
+    adminUserId: req.admin!.userId,
+    action: 'Action::"delete_keys_by_user"',
+    resourceType: 'keys',
+    context: {}
+  })
+
+  if (!authzResult.allowed) {
+    res.status(403).json({
+      error: 'Access denied',
+      code: 'ACCESS_DENIED',
+      reason: authzResult.reason
+    })
+    return false
+  }
+
+  return true
+}
 
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const {
-      search,
-      limit,
-      offset,
-      sortBy,
-      sortOrder
-    } = req.query
+    const { search, limit, offset, sortBy, sortOrder } = req.query
 
     const result = dashboardUserService.listDashboardUsers({
       search: search as string | undefined,
@@ -35,12 +155,10 @@ router.get('/', async (req: Request, res: Response) => {
       total: result.total
     })
   } catch (error: any) {
-
     console.error('dashboard users list failed:', error)
     res.status(500).json({ error: 'Failed to list dashboard users' })
   }
 })
-
 
 router.get('/:userId', async (req: Request, res: Response) => {
   try {
@@ -48,21 +166,16 @@ router.get('/:userId', async (req: Request, res: Response) => {
     const user = dashboardUserService.getDashboardUser(userId)
 
     if (!user) {
-      res.status(404).json({
-        error: 'Dashboard user not found',
-        code: 'USER_NOT_FOUND'
-      })
+      denyDashboardUserNotFound(res)
       return
     }
 
     res.json({ user })
   } catch (error: any) {
-
     console.error('dashboard user get failed:', error)
     res.status(500).json({ error: 'Failed to fetch dashboard user' })
   }
 })
-
 
 router.post('/', async (req: AdminRequest, res: Response) => {
   const actionStart = Date.now()
@@ -77,7 +190,7 @@ router.post('/', async (req: AdminRequest, res: Response) => {
       return
     }
 
-    if (!['admin', 'viewer', 'user_admin', 'policy_admin'].includes(role)) {
+    if (!isDashboardRole(role)) {
       res.status(400).json({
         error: 'Invalid role. Must be one of: admin, viewer, user_admin, policy_admin',
         code: 'INVALID_ROLE'
@@ -85,43 +198,17 @@ router.post('/', async (req: AdminRequest, res: Response) => {
       return
     }
 
-
     if (role === 'admin') {
-      const principalUserId = req.admin!.userId
-      if (principalUserId !== 'ziri') {
-
-        const principal = await internalEntityStore.getEntity(principalUserId)
-        if (!principal) {
-          res.status(403).json({
-            error: 'User entity not found',
-            code: 'ENTITY_NOT_FOUND'
-          })
-          return
-        }
-
-        const principalUid = `DashboardUser::"${principalUserId}"`
-        const authzResult = await internalAuthorizationService.authorize({
-          principal: principalUid,
-          action: 'Action::"create_admin_dashboard_user"',
-          resourceType: 'dashboard_users',
-          context: {}
-        })
-
-        if (!authzResult.allowed) {
-          res.status(403).json({
-            error: 'Only ziri can create admin dashboard users',
-            code: 'ADMIN_ONLY_ACTION'
-          })
-          return
-        }
-      }
+      const allowed = await requireAdminOnlyAction(
+        req,
+        res,
+        'Action::"create_admin_dashboard_user"',
+        'Only ziri can create admin dashboard users'
+      )
+      if (!allowed) return
     }
 
-    const result = await dashboardUserService.createDashboardUser({
-      email,
-      name,
-      role
-    })
+    const result = await dashboardUserService.createDashboardUser({ email, name, role })
 
     res.status(201).json({
       user: result.user,
@@ -131,13 +218,7 @@ router.post('/', async (req: AdminRequest, res: Response) => {
         : 'Dashboard user created. Save the password — it won\'t be shown again.'
     })
 
-    logInternalAction(req, {
-      action: 'create_dashboard_user',
-      resourceType: 'dashboard_user',
-      resourceId: result.user.userId,
-      decisionReason: res.locals.decisionReason ?? null,
-      actionDurationMs: Date.now() - actionStart
-    })
+    auditAction(req, res, 'create_dashboard_user', result.user.userId, actionStart)
   } catch (error: any) {
     if (error.message.includes('already exists')) {
       res.status(409).json({ error: error.message })
@@ -145,71 +226,32 @@ router.post('/', async (req: AdminRequest, res: Response) => {
     }
     console.error('dashboard user create failed:', error)
     res.status(500).json({ error: 'Failed to create dashboard user' })
-
   }
 })
-
 
 router.put('/:userId', async (req: AdminRequest, res: Response) => {
   const actionStart = Date.now()
   try {
     const { userId } = req.params
     const { email, name, role } = req.body
-    const principalUserId = req.admin!.userId
+    const targetEntity = await getTargetForMutation(
+      req,
+      res,
+      userId,
+      'You cannot modify your own account'
+    )
+    if (!targetEntity) return
 
-
-    if (principalUserId === userId) {
-      res.status(403).json({
-        error: 'You cannot modify your own account',
-        code: 'SELF_MODIFICATION_FORBIDDEN'
-      })
-      return
-    }
-
-
-    const targetEntity = await internalEntityStore.getEntity(userId)
-    if (!targetEntity) {
-      res.status(404).json({
-        error: 'Dashboard user not found',
-        code: 'USER_NOT_FOUND'
-      })
-      return
-    }
-
-    const targetUserRole = targetEntity.attrs.role
     const isUpdatingToAdmin = role === 'admin'
-    const isTargetAdmin = targetUserRole === 'admin'
-
-
-    if (isTargetAdmin || isUpdatingToAdmin) {
-      if (principalUserId !== 'ziri') {
-
-        const principal = await internalEntityStore.getEntity(principalUserId)
-        if (!principal) {
-          res.status(403).json({
-            error: 'User entity not found',
-            code: 'ENTITY_NOT_FOUND'
-          })
-          return
-        }
-
-        const principalUid = `DashboardUser::"${principalUserId}"`
-        const authzResult = await internalAuthorizationService.authorize({
-          principal: principalUid,
-          action: 'Action::"update_admin_dashboard_user"',
-          resourceType: 'dashboard_users',
-          context: {}
-        })
-
-        if (!authzResult.allowed) {
-          res.status(403).json({
-            error: 'Only ziri can modify admin dashboard users or promote users to admin',
-            code: 'ADMIN_ONLY_ACTION'
-          })
-          return
-        }
-      }
-    }
+    const isTargetAdmin = targetEntity.attrs.role === 'admin'
+    const canProceed = await requireAdminOnlyIf(
+      req,
+      res,
+      isTargetAdmin || isUpdatingToAdmin,
+      'Action::"update_admin_dashboard_user"',
+      'Only ziri can modify admin dashboard users or promote users to admin'
+    )
+    if (!canProceed) return
 
     if (email !== undefined) {
       res.status(400).json({
@@ -219,10 +261,10 @@ router.put('/:userId', async (req: AdminRequest, res: Response) => {
       return
     }
 
-    const updates: any = {}
+    const updates: { name?: string; role?: DashboardRole } = {}
     if (name !== undefined) updates.name = name
     if (role !== undefined) {
-      if (!['admin', 'viewer', 'user_admin', 'policy_admin'].includes(role)) {
+      if (!isDashboardRole(role)) {
         res.status(400).json({
           error: 'Invalid role. Must be one of: admin, viewer, user_admin, policy_admin',
           code: 'INVALID_ROLE'
@@ -233,16 +275,9 @@ router.put('/:userId', async (req: AdminRequest, res: Response) => {
     }
 
     const user = await dashboardUserService.updateDashboardUser(userId, updates)
-
     res.json({ user })
 
-    logInternalAction(req, {
-      action: 'update_dashboard_user',
-      resourceType: 'dashboard_user',
-      resourceId: user.userId,
-      decisionReason: res.locals.decisionReason ?? null,
-      actionDurationMs: Date.now() - actionStart
-    })
+    auditAction(req, res, 'update_dashboard_user', user.userId, actionStart)
   } catch (error: any) {
     if (error.message === 'Dashboard user not found') {
       res.status(404).json({ error: error.message })
@@ -254,108 +289,48 @@ router.put('/:userId', async (req: AdminRequest, res: Response) => {
     }
     console.error('dashboard user update failed:', error)
     res.status(500).json({ error: 'Failed to update dashboard user' })
-
   }
 })
-
 
 router.delete('/:userId', async (req: AdminRequest, res: Response) => {
   const actionStart = Date.now()
   try {
     const { userId } = req.params
-    const principalUserId = req.admin!.userId
+    const targetEntity = await getTargetForMutation(
+      req,
+      res,
+      userId,
+      'You cannot delete your own account'
+    )
+    if (!targetEntity) return
 
+    const canProceed = await requireAdminOnlyIf(
+      req,
+      res,
+      targetEntity.attrs.role === 'admin',
+      'Action::"delete_admin_dashboard_user"',
+      'Only ziri can delete admin dashboard users'
+    )
+    if (!canProceed) return
 
-    if (principalUserId === userId) {
-      res.status(403).json({
-        error: 'You cannot delete your own account',
-        code: 'SELF_MODIFICATION_FORBIDDEN'
-      })
-      return
-    }
-
-
-    const targetEntity = await internalEntityStore.getEntity(userId)
-    if (!targetEntity) {
-      res.status(404).json({
-        error: 'Dashboard user not found',
-        code: 'USER_NOT_FOUND'
-      })
-      return
-    }
-
-    const targetUserRole = targetEntity.attrs.role
-
-
-    if (targetUserRole === 'admin') {
-      if (principalUserId !== 'ziri') {
-
-        const principal = await internalEntityStore.getEntity(principalUserId)
-        if (!principal) {
-          res.status(403).json({
-            error: 'User entity not found',
-            code: 'ENTITY_NOT_FOUND'
-          })
-          return
-        }
-
-        const principalUid = `DashboardUser::"${principalUserId}"`
-        const authzResult = await internalAuthorizationService.authorize({
-          principal: principalUid,
-          action: 'Action::"delete_admin_dashboard_user"',
-          resourceType: 'dashboard_users',
-          context: {}
-        })
-
-        if (!authzResult.allowed) {
-          res.status(403).json({
-            error: 'Only ziri can delete admin dashboard users',
-            code: 'ADMIN_ONLY_ACTION'
-          })
-          return
-        }
-      }
-    }
-
-    const keysBeforeDelete = keyService.getKeysByUserId(userId)
-    const hadKeys = keysBeforeDelete.length > 0
-
-    if (hadKeys && req.admin) {
-      const principalUid = `DashboardUser::"${req.admin.userId}"`
-      const authzResult = await internalAuthorizationService.authorize({
-        principal: principalUid,
-        action: 'Action::"delete_keys_by_user"',
-        resourceType: 'keys',
-        context: {}
-      })
-      if (!authzResult.allowed) {
-        res.status(403).json({
-          error: 'Access denied',
-          code: 'ACCESS_DENIED',
-          reason: authzResult.reason
-        })
-        return
-      }
+    const hadKeys = keyService.getKeysByUserId(userId).length > 0
+    if (hadKeys) {
+      const canDeleteKeys = await requireKeysDeletionPermission(req, res)
+      if (!canDeleteKeys) return
     }
 
     await dashboardUserService.deleteDashboardUser(userId)
-
     res.json({ success: true })
 
-    logInternalAction(req, {
-      action: 'delete_dashboard_user',
-      resourceType: 'dashboard_user',
-      resourceId: userId,
-      decisionReason: res.locals.decisionReason ?? null,
-      actionDurationMs: Date.now() - actionStart
-    })
+    auditAction(req, res, 'delete_dashboard_user', userId, actionStart)
     if (hadKeys) {
-      logInternalAction(req, {
+      logAdminRouteAction({
+        req,
+        res,
         action: 'delete_keys',
         resourceType: 'api_key',
         resourceId: userId,
-        decisionReason: res.locals.decisionReason ?? null,
-        actionDurationMs: Date.now() - actionStart
+        startedAt: actionStart
       })
     }
   } catch (error: any) {
@@ -365,80 +340,34 @@ router.delete('/:userId', async (req: AdminRequest, res: Response) => {
     }
     console.error('dashboard user delete failed:', error)
     res.status(500).json({ error: 'Failed to delete dashboard user' })
-
   }
 })
-
 
 router.post('/:userId/disable', async (req: AdminRequest, res: Response) => {
   const actionStart = Date.now()
   try {
     const { userId } = req.params
-    const principalUserId = req.admin!.userId
+    const targetEntity = await getTargetForMutation(
+      req,
+      res,
+      userId,
+      'You cannot disable your own account'
+    )
+    if (!targetEntity) return
 
-
-    if (principalUserId === userId) {
-      res.status(403).json({
-        error: 'You cannot disable your own account',
-        code: 'SELF_MODIFICATION_FORBIDDEN'
-      })
-      return
-    }
-
-
-    const targetEntity = await internalEntityStore.getEntity(userId)
-    if (!targetEntity) {
-      res.status(404).json({
-        error: 'Dashboard user not found',
-        code: 'USER_NOT_FOUND'
-      })
-      return
-    }
-
-    const targetUserRole = targetEntity.attrs.role
-
-
-    if (targetUserRole === 'admin') {
-      if (principalUserId !== 'ziri') {
-
-        const principal = await internalEntityStore.getEntity(principalUserId)
-        if (!principal) {
-          res.status(403).json({
-            error: 'User entity not found',
-            code: 'ENTITY_NOT_FOUND'
-          })
-          return
-        }
-
-        const principalUid = `DashboardUser::"${principalUserId}"`
-        const authzResult = await internalAuthorizationService.authorize({
-          principal: principalUid,
-          action: 'Action::"update_admin_dashboard_user"',
-          resourceType: 'dashboard_users',
-          context: {}
-        })
-
-        if (!authzResult.allowed) {
-          res.status(403).json({
-            error: 'Only ziri can disable admin dashboard users',
-            code: 'ADMIN_ONLY_ACTION'
-          })
-          return
-        }
-      }
-    }
+    const canProceed = await requireAdminOnlyIf(
+      req,
+      res,
+      targetEntity.attrs.role === 'admin',
+      'Action::"update_admin_dashboard_user"',
+      'Only ziri can disable admin dashboard users'
+    )
+    if (!canProceed) return
 
     const user = await dashboardUserService.disableDashboardUser(userId)
-
     res.json({ user })
 
-    logInternalAction(req, {
-      action: 'disable_dashboard_user',
-      resourceType: 'dashboard_user',
-      resourceId: user.userId,
-      decisionReason: res.locals.decisionReason ?? null,
-      actionDurationMs: Date.now() - actionStart
-    })
+    auditAction(req, res, 'disable_dashboard_user', user.userId, actionStart)
   } catch (error: any) {
     if (error.message === 'Dashboard user not found' || error.message.includes('Cannot disable')) {
       res.status(400).json({ error: error.message })
@@ -446,80 +375,34 @@ router.post('/:userId/disable', async (req: AdminRequest, res: Response) => {
     }
     console.error('dashboard user disable failed:', error)
     res.status(500).json({ error: 'Failed to disable user' })
-
   }
 })
-
 
 router.post('/:userId/enable', async (req: AdminRequest, res: Response) => {
   const actionStart = Date.now()
   try {
     const { userId } = req.params
-    const principalUserId = req.admin!.userId
+    const targetEntity = await getTargetForMutation(
+      req,
+      res,
+      userId,
+      'You cannot enable your own account (it should already be enabled)'
+    )
+    if (!targetEntity) return
 
-
-    if (principalUserId === userId) {
-      res.status(403).json({
-        error: 'You cannot enable your own account (it should already be enabled)',
-        code: 'SELF_MODIFICATION_FORBIDDEN'
-      })
-      return
-    }
-
-
-    const targetEntity = await internalEntityStore.getEntity(userId)
-    if (!targetEntity) {
-      res.status(404).json({
-        error: 'Dashboard user not found',
-        code: 'USER_NOT_FOUND'
-      })
-      return
-    }
-
-    const targetUserRole = targetEntity.attrs.role
-
-
-    if (targetUserRole === 'admin') {
-      if (principalUserId !== 'ziri') {
-
-        const principal = await internalEntityStore.getEntity(principalUserId)
-        if (!principal) {
-          res.status(403).json({
-            error: 'User entity not found',
-            code: 'ENTITY_NOT_FOUND'
-          })
-          return
-        }
-
-        const principalUid = `DashboardUser::"${principalUserId}"`
-        const authzResult = await internalAuthorizationService.authorize({
-          principal: principalUid,
-          action: 'Action::"update_admin_dashboard_user"',
-          resourceType: 'dashboard_users',
-          context: {}
-        })
-
-        if (!authzResult.allowed) {
-          res.status(403).json({
-            error: 'Only ziri can enable admin dashboard users',
-            code: 'ADMIN_ONLY_ACTION'
-          })
-          return
-        }
-      }
-    }
+    const canProceed = await requireAdminOnlyIf(
+      req,
+      res,
+      targetEntity.attrs.role === 'admin',
+      'Action::"update_admin_dashboard_user"',
+      'Only ziri can enable admin dashboard users'
+    )
+    if (!canProceed) return
 
     const user = await dashboardUserService.enableDashboardUser(userId)
-
     res.json({ user })
 
-    logInternalAction(req, {
-      action: 'enable_dashboard_user',
-      resourceType: 'dashboard_user',
-      resourceId: user.userId,
-      decisionReason: res.locals.decisionReason ?? null,
-      actionDurationMs: Date.now() - actionStart
-    })
+    auditAction(req, res, 'enable_dashboard_user', user.userId, actionStart)
   } catch (error: any) {
     if (error.message === 'Dashboard user not found') {
       res.status(404).json({ error: error.message })
@@ -527,7 +410,6 @@ router.post('/:userId/enable', async (req: AdminRequest, res: Response) => {
     }
     console.error('dashboard user enable failed:', error)
     res.status(500).json({ error: 'Failed to enable user' })
-
   }
 })
 
@@ -535,47 +417,23 @@ router.post('/:userId/reset-password', async (req: AdminRequest, res: Response) 
   const actionStart = Date.now()
   try {
     const { userId } = req.params
-    const principalId = req.admin!.userId
-    if (principalId === userId) {
-      res.status(403).json({
-        error: 'You cannot reset your own password',
-        code: 'SELF_MODIFICATION_FORBIDDEN'
-      })
-      return
-    }
-    const target = await internalEntityStore.getEntity(userId)
-    if (!target) {
-      res.status(404).json({
-        error: 'Dashboard user not found',
-        code: 'USER_NOT_FOUND'
-      })
-      return
-    }
-    const targetRole = target.attrs.role
-    if (targetRole === 'admin' && principalId !== 'ziri') {
-      const principal = await internalEntityStore.getEntity(principalId)
-      if (!principal) {
-        res.status(403).json({
-          error: 'User entity not found',
-          code: 'ENTITY_NOT_FOUND'
-        })
-        return
-      }
-      const principalUid = `DashboardUser::"${principalId}"`
-      const authzResult = await internalAuthorizationService.authorize({
-        principal: principalUid,
-        action: 'Action::"reset_admin_dashboard_user_password"',
-        resourceType: 'dashboard_users',
-        context: {}
-      })
-      if (!authzResult.allowed) {
-        res.status(403).json({
-          error: 'Only ziri can reset an admin dashboard user\'s password',
-          code: 'ADMIN_ONLY_ACTION'
-        })
-        return
-      }
-    }
+    const target = await getTargetForMutation(
+      req,
+      res,
+      userId,
+      'You cannot reset your own password'
+    )
+    if (!target) return
+
+    const canProceed = await requireAdminOnlyIf(
+      req,
+      res,
+      target.attrs.role === 'admin',
+      'Action::"reset_admin_dashboard_user_password"',
+      'Only ziri can reset an admin dashboard user\'s password'
+    )
+    if (!canProceed) return
+
     const result = await dashboardUserService.resetDashUserPw(userId)
     res.json({
       password: result.emailSent ? undefined : result.password,
@@ -583,13 +441,8 @@ router.post('/:userId/reset-password', async (req: AdminRequest, res: Response) 
         ? 'Password reset. New password sent via email.'
         : 'Password reset. Save the password below — email was not sent.'
     })
-    logInternalAction(req, {
-      action: 'reset_dashboard_user_password',
-      resourceType: 'dashboard_user',
-      resourceId: userId,
-      decisionReason: res.locals.decisionReason ?? null,
-      actionDurationMs: Date.now() - actionStart
-    })
+
+    auditAction(req, res, 'reset_dashboard_user_password', userId, actionStart)
   } catch (error: any) {
     if (error.message === 'Dashboard user not found' || error.message.includes('Cannot reset')) {
       res.status(400).json({ error: error.message })
