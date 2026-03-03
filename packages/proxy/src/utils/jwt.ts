@@ -2,7 +2,7 @@
 
 import jwt from 'jsonwebtoken'
 import { getRootKey } from './root-key.js'
-import { createHash } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 
 const JWT_SECRET_KEY = 'jwt-secret'
 const ACCESS_TOKEN_EXPIRY = '1h'
@@ -39,7 +39,8 @@ export function generateRefreshToken(payload: TokenPayload): string {
   const secret = getJwtSecret()
   return jwt.sign(payload, secret, {
     expiresIn: REFRESH_TOKEN_EXPIRY,
-    issuer: 'ziri-proxy'
+    issuer: 'ziri-proxy',
+    jwtid: randomUUID()
   })
 }
 
