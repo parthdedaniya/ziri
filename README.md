@@ -1,6 +1,6 @@
 > **WARNING: This project is a work in progress.** Features may be incomplete, APIs may change without notice, and you will likely encounter bugs. Use at your own risk and please report any issues you find.
 
-# ZIRI
+# ZIRI Gateway
 
 An open-source LLM gateway that enforces policies, rate limits, and spend caps on every request—without changing your code.
 
