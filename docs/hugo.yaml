@@ -1,5 +1,5 @@
 # Hugo configuration file
-baseURL: https://ziri.zstrikehq.com/docs/
+baseURL: https://ziri.zstrikehq.com/
 languageCode: en-us
 title: Ziri
 
