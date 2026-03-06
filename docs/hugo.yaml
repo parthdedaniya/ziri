@@ -49,6 +49,8 @@ params:
     navbar:
         displayTitle: true
         displayLogo: false
+        logo:
+            link: /docs
 
     footer:
         displayCopyright: false
