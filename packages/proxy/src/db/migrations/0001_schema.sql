@@ -1,4 +1,8 @@
-export const CREATE_AUTH_TABLE = `
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  id TEXT PRIMARY KEY,
+  applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS auth (
   id TEXT PRIMARY KEY,
   email TEXT NOT NULL,
@@ -17,9 +21,7 @@ CREATE TABLE IF NOT EXISTS auth (
 CREATE INDEX IF NOT EXISTS idx_auth_email_hash ON auth(email_hash);
 CREATE INDEX IF NOT EXISTS idx_auth_status ON auth(status);
 CREATE INDEX IF NOT EXISTS idx_auth_is_agent ON auth(is_agent);
-`;
 
-export const CREATE_USER_AGENT_KEYS_TABLE = `
 CREATE TABLE IF NOT EXISTS user_agent_keys (
   id TEXT PRIMARY KEY,
   key_value TEXT NOT NULL,
@@ -35,9 +37,7 @@ CREATE INDEX IF NOT EXISTS idx_user_agent_keys_auth_id ON user_agent_keys(auth_i
 CREATE INDEX IF NOT EXISTS idx_user_agent_keys_key_hash ON user_agent_keys(key_hash);
 CREATE INDEX IF NOT EXISTS idx_user_agent_keys_created_at ON user_agent_keys(created_at);
 CREATE INDEX IF NOT EXISTS idx_user_agent_keys_status ON user_agent_keys(status);
-`;
 
-export const CREATE_PROVIDER_KEYS_TABLE = `
 CREATE TABLE IF NOT EXISTS provider_keys (
   id TEXT PRIMARY KEY,
   provider TEXT NOT NULL UNIQUE,
@@ -48,9 +48,7 @@ CREATE TABLE IF NOT EXISTS provider_keys (
 );
 
 CREATE INDEX IF NOT EXISTS idx_provider_keys_provider ON provider_keys(provider);
-`;
 
-export const CREATE_SCHEMA_POLICY_TABLE = `
 CREATE TABLE IF NOT EXISTS schema_policy (
   id TEXT PRIMARY KEY,
   obj_type TEXT NOT NULL CHECK (obj_type IN ('schema', 'policy')),
@@ -68,9 +66,7 @@ CREATE INDEX IF NOT EXISTS idx_schema_policy_status ON schema_policy(status);
 CREATE INDEX IF NOT EXISTS idx_schema_policy_version ON schema_policy(version);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_schema_policy_unique_schema ON schema_policy(obj_type) WHERE obj_type = 'schema';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_schema_policy_policy_id ON schema_policy(policy_id) WHERE obj_type = 'policy' AND policy_id IS NOT NULL;
-`;
 
-export const CREATE_REFRESH_TOKENS_TABLE = `
 CREATE TABLE IF NOT EXISTS refresh_tokens (
   id TEXT PRIMARY KEY,
   auth_id TEXT NOT NULL,
@@ -87,9 +83,7 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_auth_id ON refresh_tokens(auth_id);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token_hash ON refresh_tokens(token_hash);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expires_at);
-`;
 
-export const CREATE_ENTITIES_TABLE = `
 CREATE TABLE IF NOT EXISTS entities (
   etype TEXT NOT NULL,
   eid TEXT NOT NULL,
@@ -103,9 +97,7 @@ CREATE TABLE IF NOT EXISTS entities (
 CREATE INDEX IF NOT EXISTS idx_entities_status ON entities(status);
 CREATE INDEX IF NOT EXISTS idx_entities_etype ON entities(etype);
 CREATE INDEX IF NOT EXISTS idx_entities_created_at ON entities(created_at);
-`;
 
-export const CREATE_MODEL_PRICING_TABLE = `
 CREATE TABLE IF NOT EXISTS model_pricing (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   provider TEXT NOT NULL,
@@ -132,9 +124,7 @@ CREATE TABLE IF NOT EXISTS model_pricing (
 CREATE INDEX IF NOT EXISTS idx_model_pricing_provider ON model_pricing(provider);
 CREATE INDEX IF NOT EXISTS idx_model_pricing_provider_model ON model_pricing(provider, model);
 CREATE INDEX IF NOT EXISTS idx_model_pricing_effective ON model_pricing(effective_from, effective_until);
-`;
 
-export const CREATE_MODEL_ALIASES_TABLE = `
 CREATE TABLE IF NOT EXISTS model_aliases (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   alias TEXT NOT NULL UNIQUE,
@@ -142,9 +132,7 @@ CREATE TABLE IF NOT EXISTS model_aliases (
   canonical_model TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-`;
 
-export const CREATE_AUDIT_LOGS_TABLE = `
 CREATE TABLE IF NOT EXISTS audit_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   request_id TEXT NOT NULL UNIQUE,
@@ -185,9 +173,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_provider ON audit_logs(provider);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_model ON audit_logs(model);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(request_timestamp);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_auth_decision_time ON audit_logs(auth_id, decision, request_timestamp);
-`;
 
-export const CREATE_COST_TRACKING_TABLE = `
 CREATE TABLE IF NOT EXISTS cost_tracking (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   request_id TEXT NOT NULL,
@@ -232,9 +218,7 @@ CREATE INDEX IF NOT EXISTS idx_cost_tracking_model ON cost_tracking(model_used);
 CREATE INDEX IF NOT EXISTS idx_cost_tracking_timestamp ON cost_tracking(request_timestamp);
 CREATE INDEX IF NOT EXISTS idx_cost_tracking_status ON cost_tracking(status);
 CREATE INDEX IF NOT EXISTS idx_cost_tracking_key_time ON cost_tracking(execution_key, request_timestamp);
-`;
 
-export const CREATE_IMAGE_PRICING_TABLE = `
 CREATE TABLE IF NOT EXISTS image_pricing (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   provider TEXT NOT NULL,
@@ -251,9 +235,7 @@ CREATE TABLE IF NOT EXISTS image_pricing (
 );
 
 CREATE INDEX IF NOT EXISTS idx_image_pricing_provider_model ON image_pricing(provider, model);
-`;
 
-export const CREATE_RATE_LIMIT_BUCKETS_TABLE = `
 CREATE TABLE IF NOT EXISTS rate_limit_buckets (
   key TEXT PRIMARY KEY,
   points INTEGER NOT NULL DEFAULT 0,
@@ -261,9 +243,7 @@ CREATE TABLE IF NOT EXISTS rate_limit_buckets (
 );
 
 CREATE INDEX IF NOT EXISTS idx_rate_limit_expire ON rate_limit_buckets(expire);
-`;
 
-export const CREATE_INTERNAL_ENTITIES_TABLE = `
 CREATE TABLE IF NOT EXISTS internal_entities (
   etype TEXT NOT NULL,
   eid TEXT NOT NULL,
@@ -277,9 +257,7 @@ CREATE TABLE IF NOT EXISTS internal_entities (
 CREATE INDEX IF NOT EXISTS idx_internal_entities_status ON internal_entities(status);
 CREATE INDEX IF NOT EXISTS idx_internal_entities_etype ON internal_entities(etype);
 CREATE INDEX IF NOT EXISTS idx_internal_entities_created_at ON internal_entities(created_at);
-`;
 
-export const CREATE_INTERNAL_SCHEMA_POLICY_TABLE = `
 CREATE TABLE IF NOT EXISTS internal_schema_policy (
   id TEXT PRIMARY KEY,
   obj_type TEXT NOT NULL CHECK (obj_type IN ('schema', 'policy')),
@@ -295,9 +273,7 @@ CREATE INDEX IF NOT EXISTS idx_internal_schema_policy_obj_type ON internal_schem
 CREATE INDEX IF NOT EXISTS idx_internal_schema_policy_status ON internal_schema_policy(status);
 CREATE INDEX IF NOT EXISTS idx_internal_schema_policy_version ON internal_schema_policy(version);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_internal_schema_policy_unique_schema ON internal_schema_policy(obj_type) WHERE obj_type = 'schema';
-`;
 
-export const CREATE_INTERNAL_AUDIT_LOGS_TABLE = `
 CREATE TABLE IF NOT EXISTS internal_audit_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   dashboard_user_id TEXT NOT NULL,
@@ -321,29 +297,4 @@ CREATE INDEX IF NOT EXISTS idx_internal_audit_logs_action ON internal_audit_logs
 CREATE INDEX IF NOT EXISTS idx_internal_audit_logs_resource ON internal_audit_logs(resource_type, resource_id);
 CREATE INDEX IF NOT EXISTS idx_internal_audit_logs_decision ON internal_audit_logs(decision);
 CREATE INDEX IF NOT EXISTS idx_internal_audit_logs_outcome ON internal_audit_logs(outcome_status);
-`;
 
-export const ALL_SCHEMAS = [
-  CREATE_AUTH_TABLE,
-  CREATE_USER_AGENT_KEYS_TABLE,
-  CREATE_PROVIDER_KEYS_TABLE,
-  CREATE_SCHEMA_POLICY_TABLE,
-  CREATE_REFRESH_TOKENS_TABLE,
-  CREATE_ENTITIES_TABLE,
-  CREATE_MODEL_PRICING_TABLE,
-  CREATE_MODEL_ALIASES_TABLE,
-  CREATE_AUDIT_LOGS_TABLE,
-  CREATE_COST_TRACKING_TABLE,
-  CREATE_IMAGE_PRICING_TABLE,
-  CREATE_RATE_LIMIT_BUCKETS_TABLE,
-  CREATE_INTERNAL_ENTITIES_TABLE,
-  CREATE_INTERNAL_SCHEMA_POLICY_TABLE,
-  CREATE_INTERNAL_AUDIT_LOGS_TABLE
-];
-
-export const LEGACY_TABLES = [
-  'users',
-  'api_keys',
-  'policies',
-  'schema'
-];
