@@ -76,7 +76,6 @@ const PROVIDER_TEMPLATES: Record<string, { displayName: string; baseUrl: string;
 
  
 onMounted(async () => {
-
   permissionsLoading.value = true
   try {
     const permissions = await checkActions([
@@ -95,7 +94,7 @@ onMounted(async () => {
   }
   
   try {
-    await listProviders()
+    await fetchProviders()
   } catch (e: any) {
     toast.error(getUserMessage(e))
   }
@@ -112,7 +111,7 @@ const testingProvider = ref<string | null>(null)
 
  
 const currentPage = ref(1)
-const itemsPerPage = ref(20)
+const itemsPerPage = ref(10)
 
  
 const sortBy = ref<string | null>(null)
@@ -168,10 +167,7 @@ watch([debouncedSearchQuery, currentPage, itemsPerPage, sortBy, sortOrder], () =
   fetchProviders()
 })
 
-const paginatedProviders = computed(() => {
- 
-  return providers.value
-})
+const paginatedProviders = computed(() => providers.value)
 
 watch(() => newProvider.providerType, (val, prev) => {
   if (!val) return
@@ -209,6 +205,8 @@ const handleAddProvider = async () => {
     newProvider.providerType = 'openai'
     newProvider.apiKey = ''
     newProvider.displayName = ''
+
+    await fetchProviders()
   } catch (e: any) {
     toast.error(getUserMessage(e))
   }
@@ -270,6 +268,7 @@ const handleUpdateProvider = async () => {
     toast.success('Provider updated')
     showEditModal.value = false
     providerToEdit.value = null
+    await fetchProviders()
   } catch (e: any) {
     toast.error(getUserMessage(e))
   }
