@@ -9,7 +9,6 @@ import { errorHandler, notFoundHandler } from './middleware/error-handler.js'
 import { findFreePort } from './utils/port-finder.js'
 import { loadConfig } from './config.js'
 import { initializeEncryptionKey } from './utils/encryption-key.js'
-import { initializeRootKey } from './utils/root-key.js'
 import { getDatabase } from './db/index.js'
 import { serviceFactory } from './services/service-factory.js'
 import { initializeServerSession, getServerSessionId } from './utils/server-session.js'
@@ -99,7 +98,6 @@ let initialized = false
 async function ensureInitialization() {
   if (initialized) return
 
-  initializeRootKey()
   initializeEncryptionKey()
   getDatabase()
   serviceFactory.initialize()
